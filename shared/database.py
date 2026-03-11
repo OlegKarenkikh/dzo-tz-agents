@@ -3,11 +3,10 @@ PostgreSQL хранилище для истории обработок.
 Использует asyncpg (напрямую) через asyncio или psycopg2 (синхронно).
 Fallback: если DATABASE_URL не задан — хранит в памяти (in-memory dict).
 """
-import os
 import json
 import logging
+import os
 from datetime import datetime
-from typing import Optional, List, Dict, Any
 from uuid import uuid4
 
 logger = logging.getLogger("database")
@@ -15,7 +14,7 @@ logger = logging.getLogger("database")
 DATABASE_URL = os.getenv("DATABASE_URL", "")
 
 # In-memory фоллбэк (если нет PostgreSQL)
-_memory_store: Dict[str, Dict] = {}
+_memory_store: dict[str, dict] = {}
 
 
 def _pg_available() -> bool:
@@ -31,7 +30,7 @@ def _get_conn():
 def init_db():
     """Создаёт таблицу jobs если она не существует."""
     if not _pg_available():
-        logger.info("ПостгреSQL не настроен, используется in-memory хранилище.")
+        logger.info("ПостгреСЖЛ не настроен, используется in-memory хранилище.")
         return
     try:
         conn = _get_conn()
@@ -99,9 +98,9 @@ def create_job(agent: str, sender: str = "", subject: str = "") -> str:
 def update_job(
     job_id: str,
     status: str,
-    decision: Optional[str] = None,
-    result: Optional[Dict] = None,
-    error: Optional[str] = None,
+    decision: str | None = None,
+    result: dict | None = None,
+    error: str | None = None,
 ):
     """Oбновляет статус задания."""
     if _pg_available():
@@ -129,7 +128,7 @@ def update_job(
             })
 
 
-def get_job(job_id: str) -> Optional[Dict]:
+def get_job(job_id: str) -> dict | None:
     """Vозвращает задание по job_id или None."""
     if _pg_available():
         try:
@@ -148,30 +147,38 @@ def get_job(job_id: str) -> Optional[Dict]:
 
 
 def get_history(
-    agent: Optional[str] = None,
-    decision: Optional[str] = None,
-    date_from: Optional[str] = None,
-    date_to: Optional[str] = None,
+    agent: str | None = None,
+    decision: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
     limit: int = 100,
     offset: int = 0,
-) -> List[Dict]:
+) -> list[dict]:
     """Vозвращает историю с фильтрами."""
     if _pg_available():
         try:
             import psycopg2.extras
             conn = _get_conn()
             cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-            filters = []
-            params = []
-            if agent:     filters.append("agent = %s");      params.append(agent)
-            if decision:  filters.append("decision = %s");   params.append(decision)
-            if date_from: filters.append("created_at >= %s"); params.append(date_from)
-            if date_to:   filters.append("created_at <= %s"); params.append(date_to)
+            filters: list[str] = []
+            params: list = []
+            if agent:
+                filters.append("agent = %s")
+                params.append(agent)
+            if decision:
+                filters.append("decision = %s")
+                params.append(decision)
+            if date_from:
+                filters.append("created_at >= %s")
+                params.append(date_from)
+            if date_to:
+                filters.append("created_at <= %s")
+                params.append(date_to)
             where = ("WHERE " + " AND ".join(filters)) if filters else ""
             params += [limit, offset]
             cur.execute(
                 f"SELECT * FROM jobs {where} ORDER BY created_at DESC LIMIT %s OFFSET %s",
-                params
+                params,
             )
             rows = cur.fetchall()
             cur.close()
@@ -182,14 +189,16 @@ def get_history(
             return []
     # In-memory фильтрация
     rows = list(_memory_store.values())
-    if agent:    rows = [r for r in rows if r.get("agent") == agent]
-    if decision: rows = [r for r in rows if r.get("decision") == decision]
+    if agent:
+        rows = [r for r in rows if r.get("agent") == agent]
+    if decision:
+        rows = [r for r in rows if r.get("decision") == decision]
     rows.sort(key=lambda r: r.get("created_at", ""), reverse=True)
     return rows[offset:offset + limit]
 
 
-def get_stats() -> Dict[str, Any]:
-    """Aггрегированная статистика для Dashboard."""
+def get_stats() -> dict[str, int]:
+    """Аггрегированная статистика для Dashboard."""
     if _pg_available():
         try:
             import psycopg2.extras
