@@ -4,16 +4,16 @@ help: ## Показать доступные команды
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
 install: ## Установить зависимости
-	pip install -r requirements.txt pytest pytest-cov pytest-asyncio ruff
+	pip install -r requirements.txt
 
 test: ## Запустить тесты
-	pytest tests/ -v --tb=short --cov=. --cov-report=term-missing
+	python -m pytest tests/ -v --tb=short --cov=. --cov-report=term-missing
 
 lint: ## Проверить код
-	ruff check . --config pyproject.toml
+	python -m ruff check . --config pyproject.toml
 
 fmt: ## Отформатировать код
-	ruff format .
+	python -m ruff format .
 
 build: ## Собрать Docker-образ
 	docker compose build
@@ -33,13 +33,13 @@ clean: ## Очистить артефакты
 	rm -rf .coverage coverage.xml htmlcov/ .pytest_cache/
 
 api: ## Запустить FastAPI локально
-	uvicorn api.app:app --reload --port 8000
+	python -m uvicorn api.app:app --reload --port 8000
 
 ui: ## Запустить Streamlit локально
-	streamlit run ui/app.py --server.port 8501
+	python -m streamlit run ui/app.py --server.port 8501
 
 api-ui: ## Запустить API + UI одновременно
-	make -j2 api ui
+	$(MAKE) -j2 api ui
 
 dzo-only: ## Запустить только Агент ДЗО
 	AGENT_MODE=dzo python main.py
