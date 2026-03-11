@@ -3,6 +3,7 @@
 Проверяют: CORS, API key, metrics endpoint, error masking.
 """
 import os
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -16,7 +17,7 @@ from api.app import app  # noqa: E402
 client = TestClient(app, raise_server_exceptions=False)
 
 
-# ─── CORS ───────────────────────────────────────────────────────────
+# ─── CORS ─────────────────────────────────────────────────────
 class TestCORS:
     def test_allowed_origin_returns_cors_header(self):
         resp = client.get("/health", headers={"Origin": "http://localhost:8501"})
@@ -25,7 +26,6 @@ class TestCORS:
 
     def test_disallowed_origin_no_cors_header(self):
         resp = client.get("/health", headers={"Origin": "https://evil.com"})
-        # Нет заголовка ACAO — значит браузер заблокирует запрос
         assert "access-control-allow-origin" not in resp.headers
 
     def test_wildcard_not_used(self):
@@ -43,12 +43,11 @@ class TestCORS:
             },
         )
         allowed = resp.headers.get("access-control-allow-methods", "")
-        # PATCH и PUT не должны быть разрешены
         assert "PATCH" not in allowed
         assert "PUT" not in allowed
 
 
-# ─── API Key auth ───────────────────────────────────────────────
+# ─── API Key auth ────────────────────────────────────────────
 class TestAPIKeyAuth:
     def test_no_key_returns_401(self):
         resp = client.get("/api/v1/jobs")
@@ -77,7 +76,7 @@ class TestAPIKeyAuth:
         assert resp.status_code == 401
 
 
-# ─── Error masking ──────────────────────────────────────────────
+# ─── Error masking ───────────────────────────────────────────
 class TestErrorMasking:
     def test_404_does_not_leak_internals(self):
         resp = client.get(
@@ -86,12 +85,10 @@ class TestErrorMasking:
         )
         assert resp.status_code == 404
         body = resp.text
-        # Стек-трейс не должен просочиться
         assert "Traceback" not in body
         assert "psycopg2" not in body
 
     def test_500_does_not_expose_exception(self):
-        # Imitate broken request body
         resp = client.post(
             "/api/v1/process/dzo",
             headers={"X-API-Key": "test-secret", "Content-Type": "application/json"},
@@ -102,7 +99,7 @@ class TestErrorMasking:
         assert "Traceback" not in body
 
 
-# ─── Metrics endpoint ────────────────────────────────────────────
+# ─── Metrics endpoint ──────────────────────────────────────────
 class TestMetrics:
     def test_metrics_endpoint_accessible(self):
         resp = client.get("/metrics")
@@ -115,22 +112,17 @@ class TestMetrics:
     def test_metrics_contains_expected_names(self):
         resp = client.get("/metrics")
         body = resp.text
-        for metric in [
-            "dzo_tz_api_requests_total",
-            "dzo_tz_api_latency_seconds",
-        ]:
+        for metric in ["dzo_tz_api_requests_total", "dzo_tz_api_latency_seconds"]:
             assert metric in body, f"Метрика {metric} отсутствует"
 
     def test_metrics_not_counted_in_api_requests(self):
-        """Запросы к /metrics не должны попадать в dzo_tz_api_requests_total."""
         client.get("/metrics")
         resp = client.get("/metrics")
         body = resp.text
-        # Проверяем что путь /metrics не записан в метрике запросов
         assert 'endpoint="/metrics"' not in body
 
 
-# ─── Health endpoint ────────────────────────────────────────────
+# ─── Health endpoint ──────────────────────────────────────────
 class TestHealth:
     def test_health_returns_ok(self):
         resp = client.get("/health")
@@ -144,6 +136,5 @@ class TestHealth:
 
     def test_health_no_sensitive_data(self):
         body = client.get("/health").text
-        # API ключ не должен утекаться
         assert "test-secret" not in body
         assert "OPENAI" not in body

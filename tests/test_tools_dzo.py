@@ -1,12 +1,14 @@
 import json
+
 import pytest
+
 from agent1_dzo_inspector.tools import (
-    generate_validation_report,
-    generate_tezis_form,
-    generate_info_request,
-    generate_escalation,
-    generate_response_email,
     generate_corrected_application,
+    generate_escalation,
+    generate_info_request,
+    generate_response_email,
+    generate_tezis_form,
+    generate_validation_report,
 )
 
 
@@ -68,9 +70,7 @@ class TestGenerateInfoRequest:
         payload = json.dumps({
             "dzo_name": "ООО Тест",
             "subject": "Закупка Тест",
-            "missing_fields": [
-                {"field": "Инициатор", "description": "Укажите ФИО"},
-            ],
+            "missing_fields": [{"field": "Инициатор", "description": "Укажите ФИО"}],
             "has_corrected_form": False,
         })
         result = json.loads(generate_info_request.invoke(payload))

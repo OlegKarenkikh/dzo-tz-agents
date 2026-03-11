@@ -1,6 +1,11 @@
+import base64
+import io
+from unittest.mock import MagicMock, patch
+
+import openpyxl
 import pytest
-from unittest.mock import patch, MagicMock
-from shared.file_extractor import extract_text_from_attachment, _rows_to_md
+
+from shared.file_extractor import _rows_to_md, extract_text_from_attachment
 
 
 class TestRowsToMd:
@@ -22,19 +27,16 @@ class TestExtractTextFromAttachment:
         assert "не поддерживается" in result
 
     def test_xlsx_empty(self):
-        import io
-        import openpyxl
         wb = openpyxl.Workbook()
         buf = io.BytesIO()
         wb.save(buf)
         data = buf.getvalue()
-        import base64
         att = {
             "filename": "test.xlsx",
             "ext": "xlsx",
             "data": data,
             "b64": base64.b64encode(data).decode(),
-            "mime": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            "mime": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         }
         result = extract_text_from_attachment(att)
         assert isinstance(result, str)
@@ -44,13 +46,12 @@ class TestExtractTextFromAttachment:
         mock_page = MagicMock()
         mock_page.extract_text.return_value = "Тестовый текст PDF"
         mock_pdfplumber.open.return_value.__enter__.return_value.pages = [mock_page]
-        import base64
         att = {
             "filename": "test.pdf",
             "ext": "pdf",
             "data": b"%PDF-1.4",
             "b64": base64.b64encode(b"%PDF-1.4").decode(),
-            "mime": "application/pdf"
+            "mime": "application/pdf",
         }
         result = extract_text_from_attachment(att)
         assert "Тестовый текст PDF" in result
