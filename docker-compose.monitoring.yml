@@ -1,0 +1,133 @@
+# Мониторинг-стек — подключается поверх основного:
+# docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d
+
+version: "3.9"
+
+services:
+
+  prometheus:
+    image: prom/prometheus:v2.51.2
+    container_name: dzo_tz_prometheus
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=30d
+      - --web.enable-lifecycle
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/rules:/etc/prometheus/rules:ro
+      - prometheus_data:/prometheus
+    networks:
+      - backend
+      - monitoring
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9090/-/healthy || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: dzo_tz_alertmanager
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+    volumes:
+      - ./monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_data:/alertmanager
+    environment:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID}
+    networks:
+      - monitoring
+    deploy:
+      resources:
+        limits:
+          memory: 128m
+
+  grafana:
+    image: grafana/grafana:10.4.2
+    container_name: dzo_tz_grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:?err}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_ROOT_URL: "%(protocol)s://%(domain)s/grafana/"
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    networks:
+      - monitoring
+      - frontend
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+  # Exporters
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.15.0
+    container_name: dzo_tz_pg_exporter
+    restart: unless-stopped
+    environment:
+      DATA_SOURCE_NAME: postgresql://${POSTGRES_USER:-dzo}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-dzo_agents}?sslmode=disable
+    networks:
+      - backend
+      - monitoring
+    deploy:
+      resources:
+        limits:
+          memory: 64m
+
+  node-exporter:
+    image: prom/node-exporter:v1.8.0
+    container_name: dzo_tz_node_exporter
+    restart: unless-stopped
+    command:
+      - --path.rootfs=/host
+    volumes:
+      - /:/host:ro,rslave
+    networks:
+      - monitoring
+    deploy:
+      resources:
+        limits:
+          memory: 64m
+
+  nginx-exporter:
+    image: nginx/nginx-prometheus-exporter:1.1.0
+    container_name: dzo_tz_nginx_exporter
+    restart: unless-stopped
+    command: --nginx.scrape-uri=http://nginx/stub_status
+    networks:
+      - frontend
+      - monitoring
+    deploy:
+      resources:
+        limits:
+          memory: 32m
+
+networks:
+  monitoring:
+    driver: bridge
+    internal: true
+
+volumes:
+  prometheus_data:
+  alertmanager_data:
+  grafana_data:

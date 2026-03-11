@@ -1,0 +1,80 @@
+groups:
+  - name: dzo_tz_agents
+    interval: 30s
+    rules:
+
+      # Агент не обрабатывал письма 15 минут
+      - alert: AgentNoEmailsProcessed
+        expr: increase(dzo_tz_emails_processed_total[15m]) == 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Агент {{ $labels.agent }} не обработал письма 15 минут"
+          description: "Возможно, агент упал или нет подходящих писем."
+
+      # Много ошибок подряд 
+      - alert: AgentHighErrorRate
+        expr: |
+          rate(dzo_tz_emails_errors_total[5m]) /
+          (rate(dzo_tz_emails_processed_total[5m]) + 0.001) > 0.3
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Высокий % ошибок агента {{ $labels.agent }}"
+          description: "Более 30% обработок завершаются ошибкой."
+
+      # Задание висит более 5 минут
+      - alert: JobTooSlow
+        expr: dzo_tz_job_duration_seconds{quantile="0.9"} > 300
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "90% заданий {{ $labels.agent }} обрабатываются дольше 5 минут"
+
+      # API недоступен
+      - alert: APIDown
+        expr: up{job="dzo-tz-api"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "API dzo-tz-agents недоступен"
+          description: "Prometheus не может получить метрики с API."
+
+      # API p95 > 2с
+      - alert: APIHighLatency
+        expr: histogram_quantile(0.95, rate(dzo_tz_api_latency_seconds_bucket[5m])) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "API медленно отвечает (p95 > 2с)"
+
+  - name: infrastructure
+    rules:
+      - alert: PostgresDown
+        expr: up{job="postgres"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "PostgreSQL недоступен"
+
+      - alert: DiskSpaceLow
+        expr: (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) < 0.1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Мало места на диске (< 10%)"
+
+      - alert: HighMemoryUsage
+        expr: (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Память заполнена более чем на 90%"

@@ -1,0 +1,70 @@
+{
+  "title": "DZO/TZ Agents",
+  "uid": "dzo-tz-agents",
+  "schemaVersion": 38,
+  "refresh": "30s",
+  "time": {"from": "now-3h", "to": "now"},
+  "panels": [
+    {
+      "id": 1, "gridPos": {"x": 0, "y": 0, "w": 6, "h": 4},
+      "type": "stat", "title": "Заданий всего",
+      "targets": [{"expr": "sum(dzo_tz_jobs_total)", "legendFormat": ""}],
+      "options": {"colorMode": "background", "graphMode": "area"}
+    },
+    {
+      "id": 2, "gridPos": {"x": 6, "y": 0, "w": 6, "h": 4},
+      "type": "stat", "title": "Заданий сегодня",
+      "targets": [{"expr": "sum(increase(dzo_tz_jobs_total[24h]))", "legendFormat": ""}],
+      "options": {"colorMode": "background", "graphMode": "area"}
+    },
+    {
+      "id": 3, "gridPos": {"x": 12, "y": 0, "w": 6, "h": 4},
+      "type": "stat", "title": "Ошибок за 1ч",
+      "targets": [{"expr": "sum(increase(dzo_tz_emails_errors_total[1h]))", "legendFormat": ""}],
+      "options": {"colorMode": "background", "graphMode": "area",
+        "thresholds": {"steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}}
+    },
+    {
+      "id": 4, "gridPos": {"x": 18, "y": 0, "w": 6, "h": 4},
+      "type": "stat", "title": "Заданий в обработке",
+      "targets": [{"expr": "sum(dzo_tz_jobs_in_progress)", "legendFormat": ""}],
+      "options": {"colorMode": "background"}
+    },
+    {
+      "id": 5, "gridPos": {"x": 0, "y": 4, "w": 12, "h": 8},
+      "type": "timeseries", "title": "Обработка писем (emails/min)",
+      "targets": [
+        {"expr": "rate(dzo_tz_emails_processed_total{agent=\"dzo\"}[5m]) * 60", "legendFormat": "DZO"},
+        {"expr": "rate(dzo_tz_emails_processed_total{agent=\"tz\"}[5m]) * 60", "legendFormat": "TZ"}
+      ]
+    },
+    {
+      "id": 6, "gridPos": {"x": 12, "y": 4, "w": 12, "h": 8},
+      "type": "timeseries", "title": "Время обработки (p50/p90/p99)",
+      "targets": [
+        {"expr": "histogram_quantile(0.5, rate(dzo_tz_job_duration_seconds_bucket[5m]))", "legendFormat": "p50"},
+        {"expr": "histogram_quantile(0.9, rate(dzo_tz_job_duration_seconds_bucket[5m]))", "legendFormat": "p90"},
+        {"expr": "histogram_quantile(0.99, rate(dzo_tz_job_duration_seconds_bucket[5m]))", "legendFormat": "p99"}
+      ]
+    },
+    {
+      "id": 7, "gridPos": {"x": 0, "y": 12, "w": 12, "h": 8},
+      "type": "piechart", "title": "Распределение решений",
+      "targets": [
+        {"expr": "sum by(decision) (dzo_tz_decisions_total)", "legendFormat": "{{ decision }}"}
+      ]
+    },
+    {
+      "id": 8, "gridPos": {"x": 12, "y": 12, "w": 12, "h": 8},
+      "type": "timeseries", "title": "API задержка (p95)",
+      "targets": [
+        {"expr": "histogram_quantile(0.95, rate(dzo_tz_api_latency_seconds_bucket[5m]))", "legendFormat": "p95"}
+      ],
+      "fieldConfig": {"defaults": {"thresholds": {"steps": [
+        {"color": "green", "value": null},
+        {"color": "yellow", "value": 1},
+        {"color": "red", "value": 2}
+      ]}}}
+    }
+  ]
+}
