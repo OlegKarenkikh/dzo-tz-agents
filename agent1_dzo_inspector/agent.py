@@ -63,34 +63,28 @@ SLA (ОБЯЗАТЕЛЬНЫЕ СРОКИ)
 
 ОГРАНИЧЕНИЯ: не оценивай качество ТЗ — только полноту заявки. Вежливый деловой тон."""
 
-# ReAct prompt для моделей без native function-calling (Ollama, vLLM без tool-support и т.д.)
-REACT_TEMPLATE = """Assistant is a helpful AI agent.
+_REACT_TEMPLATE = (
+    "Assistant is a helpful AI agent.\n\n"
+    "Has access to the following tools:\n"
+    "{tools}\n\n"
+    "Use the following format:\n"
+    "Thought: what to do next\n"
+    "Action: tool name (one of [{tool_names}])\n"
+    "Action Input: input to the tool\n"
+    "Observation: result\n"
+    "... (repeat Thought/Action/Observation as needed)\n"
+    "Thought: I now know the final answer\n"
+    "Final Answer: the final answer\n\n"
+    "Begin!\n\n"
+    "System: {system_prompt}\n\n"
+    "Question: {{input}}\n"
+    "{{agent_scratchpad}}"
+)
 
-Has access to the following tools:
-{tools}
-
-Use the following format:
-Thought: what to do next
-Action: tool name (one of [{tool_names}])
-Action Input: input to the tool
-Observation: result
-... (repeat Thought/Action/Observation as needed)
-Thought: I now know the final answer
-Final Answer: the final answer
-
-Begin!
-
-System: """ + SYSTEM_PROMPT + """
-
-Question: {input}
-{agent_scratchpad}"""
+REACT_TEMPLATE = _REACT_TEMPLATE.format(system_prompt=SYSTEM_PROMPT)
 
 
 def _build_llm() -> ChatOpenAI:
-    """LLM с поддержкой любых OpenAI-совместимых эндпоинтов.
-    - OPENAI_API_BASE=<url>  → любой совместимый URL (Ollama, vLLM, DeepSeek, Azure и т.д.)
-    - OPENAI_API_KEY опционален — локальные LLM не требуют ключ, прописывается "ollama" как fallback
-    """
     return ChatOpenAI(
         model=os.getenv("MODEL_NAME", "gpt-4o"),
         temperature=0.2,
@@ -101,11 +95,12 @@ def _build_llm() -> ChatOpenAI:
 
 
 def create_dzo_agent() -> AgentExecutor:
-    """AGENT_TYPE=openai_tools (default) | react
-    • openai_tools — быстрый native function-calling (для GPT-4o, GPT-4-turbo, DeepSeek-V3+)
-    • react — ReAct prompting, работает с любой LLM без tool-support (Ollama llama3, Mistral и т.д.)
+    """AGENT_TYPE=openai_tools (default) | react.
+
+    - openai_tools: native function-calling (GPT-4o, DeepSeek-V3+)
+    - react: ReAct prompting, работает с любой LLM (Ollama, Mistral и т.д.)
     """
-    llm   = _build_llm()
+    llm = _build_llm()
     tools = [
         generate_validation_report,
         generate_tezis_form,
@@ -119,7 +114,7 @@ def create_dzo_agent() -> AgentExecutor:
     agent_type = os.getenv("AGENT_TYPE", "openai_tools").lower()
     if agent_type == "react":
         prompt = PromptTemplate.from_template(REACT_TEMPLATE)
-        agent  = create_react_agent(llm, tools, prompt)
+        agent = create_react_agent(llm, tools, prompt)
     else:
         prompt = ChatPromptTemplate.from_messages([
             ("system", SYSTEM_PROMPT),
