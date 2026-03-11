@@ -13,13 +13,12 @@ import base64
 import csv
 import io
 import time
-from typing import Optional
 
 import httpx
 import streamlit as st
 import streamlit.components.v1 as components
 
-from ui.config import API_KEY, API_URL, AUTH_HEADERS, AUTO_REFRESH_SEC
+from ui.config import API_URL, AUTH_HEADERS, AUTO_REFRESH_SEC
 
 # ---------------------------------------------------------------------------
 # Конфигурация страницы
@@ -62,8 +61,8 @@ st.markdown(
 # ---------------------------------------------------------------------------
 
 
-def _api_get(path: str, params: Optional[dict] = None) -> Optional[dict]:
-    """GET-запрос к REST API."""
+def _api_get(path: str, params: dict | None = None) -> dict | None:
+    """ГЕТ-запрос к REST API."""
     try:
         resp = httpx.get(f"{API_URL}{path}", headers=AUTH_HEADERS, params=params, timeout=10)
         resp.raise_for_status()
@@ -75,8 +74,8 @@ def _api_get(path: str, params: Optional[dict] = None) -> Optional[dict]:
     return None
 
 
-def _api_post(path: str, payload: dict) -> Optional[dict]:
-    """POST-запрос к REST API."""
+def _api_post(path: str, payload: dict) -> dict | None:
+    """ПОСТ-запрос к REST API."""
     try:
         resp = httpx.post(f"{API_URL}{path}", headers=AUTH_HEADERS, json=payload, timeout=30)
         resp.raise_for_status()
@@ -121,7 +120,7 @@ with st.sidebar:
     st.divider()
     health = _api_get("/health")
     if health:
-        st.success(f"🟢 Сервис работает")
+        st.success("🟢 Сервис работает")
         st.caption(f"Uptime: {health.get('uptime_sec', 0)} сек.")
     else:
         st.error("🔴 Сервис недоступен")
@@ -199,7 +198,6 @@ if page == "📊 Дашборд":
                 if result:
                     st.success(f"Задание создано: `{result['job_id']}`")
 
-    # Авто-обновление
     if st.button("🔄 Обновить", key="refresh_dashboard"):
         st.rerun()
     st.caption(f"Страница обновляется каждые {AUTO_REFRESH_SEC} сек. при нажатии кнопки.")
@@ -258,8 +256,8 @@ elif page == "🧪 Тестирование":
                 job_id = job["job_id"]
                 st.info(f"Задание создано: `{job_id}`")
 
-                # Ожидаем завершения (polling)
                 with st.spinner("Ожидаем результат..."):
+                    result = None
                     for _ in range(30):
                         time.sleep(2)
                         result = _api_get(f"/api/v1/jobs/{job_id}")
@@ -301,27 +299,26 @@ elif page == "⚙️ Настройки":
     st.info("Параметры читаются из переменных окружения (.env). Перезапустите сервис после изменения.")
 
     with st.form("settings_form"):
-        model_name = st.selectbox(
+        st.selectbox(
             "Модель OpenAI (MODEL_NAME)",
             options=["gpt-4o", "gpt-4o-mini", "gpt-4-turbo"],
             index=0,
         )
-        poll_interval = st.slider(
+        st.slider(
             "Интервал опроса почты (POLL_INTERVAL_SEC)",
             min_value=60,
             max_value=3600,
             value=300,
             step=60,
         )
-        agent_mode = st.radio(
+        st.radio(
             "Режим агента (AGENT_MODE)",
             options=["both", "dzo", "tz"],
             horizontal=True,
         )
-        manager_email = st.text_input("Email менеджера (MANAGER_EMAIL)", placeholder="manager@company.ru")
+        st.text_input("Еmail менеджера (MANAGER_EMAIL)", placeholder="manager@company.ru")
 
-        submitted = st.form_submit_button("💾 Сохранить")
-        if submitted:
+        if st.form_submit_button("💾 Сохранить"):
             st.warning(
                 "Изменение настроек через UI в данной версии не поддерживается. "
                 "Обновите файл .env и перезапустите сервис."
@@ -342,7 +339,7 @@ elif page == "⚙️ Настройки":
             agents = _api_get("/agents")
             if agents:
                 for a in agents.get("agents", []):
-                    st.info(f"**{a['name']}** (`{a['id']}`): {a['description']}")
+                    st.info(f"**{a['name']}** (`{a['id']}`): {a.get('description', '')}")
 
 # ---------------------------------------------------------------------------
 # 📋 ИСТОРИЯ
@@ -351,7 +348,6 @@ elif page == "⚙️ Настройки":
 elif page == "📋 История":
     st.header("📋 История обработок")
 
-    # Фильтры
     col_f1, col_f2, col_f3 = st.columns(3)
     with col_f1:
         filter_agent = st.selectbox("Агент", ["Все", "ДЗО", "ТЗ"])
@@ -384,10 +380,9 @@ elif page == "📋 История":
                 "job_id": item["job_id"],
             })
 
-        df_display = [{k: v for k, v in r.items() if k != "job_id"} for r in rows]
+        df_display = [{k: v for k, v in row.items() if k != "job_id"} for row in rows]
         st.dataframe(df_display, use_container_width=True, hide_index=True)
 
-        # Экспорт CSV
         buf = io.StringIO()
         if rows:
             writer = csv.DictWriter(buf, fieldnames=rows[0].keys())
@@ -438,13 +433,6 @@ elif page == "📖 Документация":
 - Инициатор — ФИО и контакты
 - Место поставки — точный адрес
 
-### Чек-лист №3: Дополнительные поля
-- Бюджет в рублях (с НДС или без)
-- Предмет закупки
-- Обоснование закупки
-- Желаемая дата поставки
-- Рекомендуемые поставщики (ИНН)
-
 ### Возможные решения
 | Решение | Описание |
 |---|---|
@@ -478,15 +466,6 @@ elif page == "📖 Документация":
 | ✅ Соответствует | ТЗ полное и корректное |
 | ⚠️ Требует доработки | Некоторые разделы отсутствуют или неполные |
 | 🔴 Не соответствует | Критические нарушения требований |
-
-### Пример входных данных
-```
-Техническое задание на поставку серверного оборудования
-1. Цель закупки: приобретение серверов для нужд ЦОД
-2. Количество: 5 единиц
-3. Срок поставки: до 30.06.2025
-...
-```
             """
         )
 
