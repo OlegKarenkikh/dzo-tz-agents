@@ -1,0 +1,22 @@
+version: "3.9"
+
+services:
+  agent-dzo:
+    build: .
+    container_name: agent_dzo_inspector
+    env_file: .env
+    environment:
+      AGENT_MODE: dzo
+    restart: unless-stopped
+    volumes:
+      - ./logs:/app/logs
+
+  agent-tz:
+    build: .
+    container_name: agent_tz_inspector
+    env_file: .env
+    environment:
+      AGENT_MODE: tz
+    restart: unless-stopped
+    volumes:
+      - ./logs:/app/logs
