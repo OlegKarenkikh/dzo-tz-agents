@@ -1,7 +1,6 @@
 name: Deploy
 
-# ─── Триггеры ───────────────────────────────────────────────────────────────
-ona:
+on:
   workflow_run:
     workflows: ["CI"]
     branches: [main]
@@ -108,8 +107,7 @@ jobs:
           echo "ℹ️  Деплой пропущен: SERVER_HOST не настроен."
           echo "Добавьте секреты: GitHub → Settings → Environments → production"
 
-      # secrets используются только в env: — это допустимо;
-      # в if: проверяем только outputs из check_secrets
+      # secrets используются только в env: — это допустимо
       - name: Notify Telegram on success
         if: success() && steps.check_secrets.outputs.telegram == 'true'
         env:
