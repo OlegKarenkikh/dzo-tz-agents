@@ -31,32 +31,49 @@ from pydantic import BaseModel, Field
 
 from api.metrics import (
     API_LATENCY, API_REQUESTS,
-    DECISIONS_TOTAL, JOBS_TOTAL,
-    JobTimer, metrics_router,
+    DECISIONS_TOTAL, JobTimer,
+    metrics_router,
 )
-from shared.database import init_db, create_job, update_job, get_job as db_get_job, get_history as db_get_history, delete_job as db_delete_job
+from shared.database import (
+    init_db, create_job, update_job,
+    get_job as db_get_job,
+    get_history as db_get_history,
+    delete_job as db_delete_job,
+)
 
 load_dotenv()
 
 logger = logging.getLogger("api")
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+
+# ── CORS: читаем из переменной, ДЕФОЛТ — только localhost ──────
+_CORS_ORIGINS = [
+    o.strip()
+    for o in os.getenv("CORS_ORIGINS", "http://localhost:8501").split(",")
+    if o.strip()
+]
 
 app = FastAPI(
     title="DZO/TZ Agents API",
-    description="REST API для обработки заявок ДЗО и технических заданий агентами на базе LLM",
+    description="REST API для обработки заявок ДЗО и ТЗ",
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
+    # Скрываем Swagger в продакшене если задано ENV
+    openapi_url="/openapi.json" if os.getenv("ENABLE_DOCS", "true") == "true" else None,
 )
 
 app.include_router(metrics_router)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_CORS_ORIGINS,       # Было allow_origins=["*"] — ИСПРАВЛЕНО
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "DELETE"],
+    allow_headers=["X-API-Key", "Content-Type", "Accept"],
 )
 
 _start_time = datetime.now()
@@ -68,6 +85,10 @@ _API_KEY = os.getenv("API_KEY", "")
 
 @app.on_event("startup")
 def on_startup():
+    if not _API_KEY:
+        logger.warning(
+            "⚠️  API_KEY не задан — защищённые эндпоинты доступны без аутентификации!"
+        )
     init_db()
 
 
@@ -164,7 +185,6 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                 except Exception:
                     pass
 
-            # Метрики
             if decision:
                 DECISIONS_TOTAL.labels(agent=agent_type, decision=decision).inc()
 
@@ -179,7 +199,7 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
             _run_log.append({"agent": agent_type, "ts": ts, "status": "error",
                              "job_id": job_id, "error": str(e)})
             logger.error(f"[{job_id}] Ошибка: {e}")
-            raise  # перебросить для JobTimer.__exit__
+            raise
 
 
 def _detect_agent_type(request: ProcessRequest) -> str:
@@ -191,7 +211,7 @@ def _detect_agent_type(request: ProcessRequest) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Middleware: логирование + метрики латентности
+# Middleware
 # ---------------------------------------------------------------------------
 
 @app.middleware("http")
@@ -200,7 +220,6 @@ async def _log_and_measure(request: Request, call_next):
     response = await call_next(request)
     duration = time.time() - start
     path = request.url.path
-    # Не измеряем /metrics сам себя
     if path != "/metrics":
         API_LATENCY.labels(method=request.method, endpoint=path).observe(duration)
         API_REQUESTS.labels(
@@ -227,7 +246,7 @@ def health():
     }
 
 
-@app.get("/status", summary="Последние запуски агентов")
+@app.get("/status", summary="Последние запуски")
 def status(limit: int = Query(default=10, ge=1, le=100)):
     return {"runs": len(_run_log), "last_runs": _run_log[-limit:]}
 
@@ -235,11 +254,9 @@ def status(limit: int = Query(default=10, ge=1, le=100)):
 @app.get("/agents", summary="Список агентов")
 def list_agents():
     return {"agents": [
-        {"id": "dzo", "name": "Инспектор заявок ДЗО",
-         "description": "Проверяет входящие заявки от ДЗО на полноту и корректность",
+        {"id": "dzo", "name": "Инспектор ДЗО",
          "decisions": ["Заявка полная", "Требуется доработка", "Требуется эскалация"]},
-        {"id": "tz",  "name": "Инспектор технических заданий",
-         "description": "Проверяет ТЗ на соответствие стандартам",
+        {"id": "tz",  "name": "Инспектор ТЗ",
          "decisions": ["Соответствует", "Требует доработки", "Не соответствует"]},
     ]}
 
@@ -273,7 +290,7 @@ def process_auto(request: ProcessRequest, background_tasks: BackgroundTasks,
     return JobResponse(**{**db_get_job(job_id), "result": None, "error": None})
 
 
-@app.get("/api/v1/jobs", summary="Список всех заданий")
+@app.get("/api/v1/jobs", summary="Список заданий")
 def list_jobs(agent: Optional[str] = Query(default=None),
              status: Optional[str] = Query(default=None),
              _: str = Depends(_require_api_key)):
@@ -298,7 +315,7 @@ def delete_job(job_id: str, _: str = Depends(_require_api_key)):
     return {"message": f"Задание {job_id!r} удалено"}
 
 
-@app.get("/api/v1/history", summary="История обработок")
+@app.get("/api/v1/history", summary="История")
 def history(agent: Optional[str] = Query(default=None),
            status: Optional[str] = Query(default=None),
            limit: int = Query(default=50, ge=1, le=500),
@@ -313,4 +330,4 @@ def history(agent: Optional[str] = Query(default=None),
 async def _generic_exception_handler(request: Request, exc: Exception):
     logger.error(f"Необработанная ошибка: {exc}")
     return JSONResponse(status_code=500,
-                        content={"деталь": "Внутренняя ошибка", "error": str(exc)})
+                        content={"detail": "Внутренняя ошибка"})
