@@ -44,13 +44,15 @@ SYSTEM_PROMPT = """Ты — ИИ-инспектор «Контролер ТЗ».
 
 ОГРАНИЧЕНИЯ: не оценивай правильность характеристик — только наличие и формальное соответствие. Нейтральный вежливый тон."""
 
+# {tools}/{tool_names} экранируем двойными скобками — LangChain подставит их позже через PromptTemplate,
+# а .format(system_prompt=...) обрабатывает только {system_prompt}.
 _REACT_TEMPLATE = (
     "Assistant is a helpful AI agent.\n\n"
     "Has access to the following tools:\n"
-    "{tools}\n\n"
+    "{{tools}}\n\n"
     "Use the following format:\n"
     "Thought: what to do next\n"
-    "Action: tool name (one of [{tool_names}])\n"
+    "Action: tool name (one of [{{tool_names}}])\n"
     "Action Input: input to the tool\n"
     "Observation: result\n"
     "... (repeat Thought/Action/Observation as needed)\n"
