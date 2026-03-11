@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
 
-  # ─── Lint ───────────────────────────────────────────────────
+  # ─── Lint ───────────────────────────────────────────
   lint:
     runs-on: ubuntu-latest
     steps:
@@ -22,10 +22,12 @@ jobs:
           python-version: "3.11"
       - name: Install ruff
         run: pip install ruff
+      - name: Ruff autofix (safe fixes)
+        run: ruff check . --fix --config pyproject.toml
       - name: Lint
         run: ruff check . --config pyproject.toml
 
-  # ─── Tests (matrix) ──────────────────────────────────────
+  # ─── Tests (matrix) ────────────────────────────────
   test:
     runs-on: ubuntu-latest
     needs: lint
@@ -60,7 +62,7 @@ jobs:
           file: coverage.xml
           fail_ci_if_error: false
 
-  # ─── Docker build + Trivy CVE scan ─────────────────────────────
+  # ─── Docker build + Trivy CVE scan ──────────────────────────────
   docker:
     runs-on: ubuntu-latest
     needs: test
@@ -107,10 +109,6 @@ jobs:
           artifact-name: sbom-${{ github.sha }}.spdx.json
           format: spdx-json
 
-      # Чтобы включить пуш в Docker Hub:
-      #   Settings → Variables → New repository variable
-      #   Имя: DOCKER_PUSH, значение: true
-      # secrets.DOCKER_USERNAME / DOCKER_PASSWORD — установить там же в Secrets.
       - name: Login to Docker Hub
         if: github.ref == 'refs/heads/main' && vars.DOCKER_PUSH == 'true'
         uses: docker/login-action@v3
