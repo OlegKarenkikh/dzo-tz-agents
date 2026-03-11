@@ -1,47 +1,189 @@
 version: "3.9"
 
 services:
-  agent-dzo:
-    build: .
-    container_name: agent_dzo_inspector
-    env_file: .env
-    environment:
-      AGENT_MODE: dzo
-    restart: unless-stopped
-    volumes:
-      - ./logs:/app/logs
 
-  agent-tz:
-    build: .
-    container_name: agent_tz_inspector
-    env_file: .env
-    environment:
-      AGENT_MODE: tz
+  # ─── PostgreSQL ───────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: dzo_tz_postgres
     restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-dzo_agents}
+      POSTGRES_USER: ${POSTGRES_USER:-dzo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?err}
     volumes:
-      - ./logs:/app/logs
+      - postgres_data:/var/lib/postgresql/data
+      - ./shared/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dzo} -d ${POSTGRES_DB:-dzo_agents}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - backend
+    deploy:
+      resources:
+        limits:
+          memory: 512m
 
+  # ─── FastAPI ──────────────────────────────────────────────────
   api:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    image: dzo-tz-agents:latest
     container_name: dzo_tz_api
-    command: uvicorn api.app:app --host 0.0.0.0 --port 8000
-    ports:
-      - "8000:8000"
-    env_file: .env
+    command: uvicorn api.app:app --host 0.0.0.0 --port 8000 --workers 2 --log-level info
     restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-dzo}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-dzo_agents}
+    depends_on:
+      postgres:
+        condition: service_healthy
     volumes:
       - ./logs:/app/logs
+    networks:
+      - backend
+      - frontend
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+          cpus: "1.0"
+    security_opt:
+      - no-new-privileges:true
+    read_only: false
+    tmpfs:
+      - /tmp
 
+  # ─── Streamlit UI ─────────────────────────────────────────────
   ui:
-    build: .
+    image: dzo-tz-agents:latest
     container_name: dzo_tz_ui
-    command: streamlit run ui/app.py --server.port 8501 --server.address 0.0.0.0 --server.headless true
-    ports:
-      - "8501:8501"
+    command: streamlit run ui/app.py --server.port 8501 --server.address 0.0.0.0 --server.headless true --server.enableCORS false
+    restart: unless-stopped
     env_file: .env
     environment:
       UI_API_URL: http://api:8000
     depends_on:
-      - api
-    restart: unless-stopped
+      api:
+        condition: service_healthy
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - frontend
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8501/_stcore/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+          cpus: "0.5"
+    security_opt:
+      - no-new-privileges:true
 
+  # ─── Агент ДЗО ────────────────────────────────────────────────
+  agent-dzo:
+    image: dzo-tz-agents:latest
+    container_name: agent_dzo_inspector
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      AGENT_MODE: dzo
+      DATABASE_URL: postgresql://${POSTGRES_USER:-dzo}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-dzo_agents}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - backend
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+          cpus: "1.0"
+    security_opt:
+      - no-new-privileges:true
+
+  # ─── Агент ТЗ ─────────────────────────────────────────────────
+  agent-tz:
+    image: dzo-tz-agents:latest
+    container_name: agent_tz_inspector
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      AGENT_MODE: tz
+      DATABASE_URL: postgresql://${POSTGRES_USER:-dzo}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-dzo_agents}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - backend
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+          cpus: "1.0"
+    security_opt:
+      - no-new-privileges:true
+
+  # ─── Nginx reverse proxy ──────────────────────────────────────
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: dzo_tz_nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/certs:/etc/nginx/certs:ro
+      - nginx_logs:/var/log/nginx
+    depends_on:
+      api:
+        condition: service_healthy
+      ui:
+        condition: service_healthy
+    networks:
+      - frontend
+    healthcheck:
+      test: ["CMD-SHELL", "nginx -t && curl -sf http://localhost/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 128m
+          cpus: "0.25"
+    security_opt:
+      - no-new-privileges:true
+
+networks:
+  backend:
+    driver: bridge
+    internal: true          # postgres и агенты не доступны снаружи
+  frontend:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local
+  nginx_logs:
+    driver: local

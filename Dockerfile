@@ -1,14 +1,37 @@
-FROM python:3.11-slim
+# syntax=docker/dockerfile:1
+FROM python:3.11-slim AS base
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        poppler-utils \
+        libpq-dev \
+        curl \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y \
-    libpoppler-cpp-dev poppler-utils \
-    && rm -rf /var/lib/apt/lists/*
-
+# ─── Зависимости (кэшируются отдельно) ────────────────────────
+FROM base AS deps
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --upgrade pip && pip install -r requirements.txt
 
-COPY . .
+# ─── Production образ ──────────────────────────────────────────
+FROM deps AS production
+
+# Создаём непривилегированного пользователя
+RUN groupadd -r appuser && useradd -r -g appuser appuser
+
+COPY --chown=appuser:appuser . .
+
+# Директории для логов
+RUN mkdir -p /app/logs && chown appuser:appuser /app/logs
+
+USER appuser
+
+EXPOSE 8000 8501
 
 CMD ["python", "main.py"]
