@@ -45,11 +45,8 @@ RUN find /app -perm /6000 -type f 2>/dev/null | xargs -r chmod a-s
 
 USER appuser
 
-# Проверка импортов при сборке
-RUN python -c "
-import shared, api, agent1_dzo_inspector, agent2_tz_inspector
-print('Import check OK')
-"
+# Проверка импортов при сборке — однострочный вызов, нет риска парсинга как Dockerfile-инструкций
+RUN python -c "import shared, api, agent1_dzo_inspector, agent2_tz_inspector; print('Import check OK')"
 
 EXPOSE 8000 8501
 
