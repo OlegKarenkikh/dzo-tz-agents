@@ -1,10 +1,12 @@
 import os
-import schedule
 import time
+
+import schedule
 from dotenv import load_dotenv
+
 load_dotenv()
 
-from shared.logger import setup_logger
+from shared.logger import setup_logger  # noqa: E402
 
 logger = setup_logger("main")
 
@@ -25,7 +27,6 @@ def run():
         logger.info("Агент ТЗ подключён.")
 
     logger.info("Polling запущен. Нажмите Ctrl+C для остановки.")
-    # Выполнить сразу при старте
     schedule.run_all()
     while True:
         schedule.run_pending()
