@@ -1,5 +1,6 @@
 import json
 from datetime import datetime
+
 from langchain.tools import tool
 
 
@@ -101,10 +102,7 @@ def generate_email_to_dzo(query: str) -> str:
         corrected_note = ""
         if d.get("has_corrected_tz"):
             corrected_note = (
-                "<p>📎 К письму приложен <strong>проект исправленного ТЗ</strong> с цветовой разметкой: "
-                "<span style='background:#FFFF00;color:#CC0000;padding:1px 4px'>[ДОБАВЛЕНО]</span> — новые разделы, "
-                "<span style='background:#D7FFD7;padding:1px 4px'>[СТАЛО]</span> — исправленный текст, "
-                "<span style='background:#FFD7D7;text-decoration:line-through;padding:1px 4px'>[БЫЛО]</span> — удалённый текст.</p>"
+                "<p>📎 К письму приложен проект исправленного ТЗ с цветовой разметкой.</p>"
             )
 
         html = f"""<div style="font-family:Arial;font-size:14px;line-height:1.8">
