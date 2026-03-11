@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import patch
+from unittest.mock import patch  # noqa: F401
 import shared.database as db
 
 
@@ -77,7 +77,7 @@ class TestInMemoryStorage:
         assert rows[0]["decision"] == "Требуется доработка"
 
     def test_get_history_limit(self, no_postgres):
-        for i in range(10):
+        for _ in range(10):
             db.create_job("dzo")
         rows = db.get_history(limit=3)
         assert len(rows) == 3
