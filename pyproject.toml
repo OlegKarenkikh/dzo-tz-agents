@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools>=72", "wheel"]
-build-backend = "setuptools.backends.legacy:build"
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "dzo-tz-agents"
@@ -74,17 +74,19 @@ exclude = ["tests*", "ui*", "nginx*", "monitoring*"]
 [tool.setuptools.package-data]
 "shared.migrations" = ["*.sql"]
 
-# ─── Ruff ──────────────────────────────────────────────────────────────
+# ─── Ruff ───────────────────────────────────────────────────────────────
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+
+[tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "C4"]
 ignore = ["E501", "B008", "B904"]
 
-[tool.ruff.isort]
+[tool.ruff.lint.isort]
 known-first-party = ["shared", "agent1_dzo_inspector", "agent2_tz_inspector", "api", "ui"]
 
-# ─── Pytest ──────────────────────────────────────────────────────────
+# ─── Pytest ────────────────────────────────────────────────────
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
@@ -93,7 +95,7 @@ python_functions = ["test_*"]
 addopts = "-v --tb=short"
 filterwarnings = ["ignore::DeprecationWarning"]
 
-# ─── Coverage ─────────────────────────────────────────────────────────
+# ─── Coverage ───────────────────────────────────────────────────
 [tool.coverage.run]
 source = ["agent1_dzo_inspector", "agent2_tz_inspector", "shared", "api"]
 omit = ["tests/*", "ui/*", "*/migrations/*"]
