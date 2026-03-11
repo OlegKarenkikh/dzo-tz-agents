@@ -1,22 +1,57 @@
 name: Deploy
 
+# ─── Триггеры ───────────────────────────────────────────────────────────
 on:
-  push:
+  # Авто: запускается ТОЛЬКО после успешного CI на main
+  workflow_run:
+    workflows: ["CI"]
     branches: [main]
-  workflow_dispatch:            # ручной запуск из GitHub UI
+    types: [completed]
+
+  # Ручной: из GitHub UI или gh cli
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "Git SHA для деплоя (default: HEAD main)"
+        required: false
+        default: ""
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    needs: []                   # запускается только если CI прошёл (workflow_run не нужен)
-    environment: production     # GitHub Environment с required reviewers
+
+    # Автозапуск: только если CI завершился успешно
+    # Ручной запуск: всегда разрешён
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+
+    environment: production     # GitHub Environment — required reviewers / secrets
+
     concurrency:
       group: deploy-production
-      cancel-in-progress: false # никогда не отменять деплой
+      cancel-in-progress: false
+
     steps:
       - uses: actions/checkout@v4
+        with:
+          # При workflow_run checkout по SHA, который прошёл CI
+          ref: ${{ github.event.workflow_run.head_sha || github.event.inputs.sha || github.sha }}
 
+      # ── Проверяем наличие секрета SERVER_HOST ───────────────────────
+      - name: Check deploy secrets
+        id: check_secrets
+        run: |
+          if [ -z "${{ secrets.SERVER_HOST }}" ]; then
+            echo "configured=false" >> $GITHUB_OUTPUT
+            echo "::warning::SERVER_HOST не задан — SSH деплой пропущен. Добавьте секреты в GitHub → Settings → Environments → production."
+          else
+            echo "configured=true" >> $GITHUB_OUTPUT
+          fi
+
+      # ── SSH-деплой (выполняется только если секрет задан) ─────────
       - name: Deploy via SSH (zero-downtime)
+        if: steps.check_secrets.outputs.configured == 'true'
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SERVER_HOST }}
@@ -27,15 +62,17 @@ jobs:
             set -euo pipefail
             cd /opt/dzo-tz-agents
 
-            echo "=== [1/5] Pull latest code ==="
+            DEPLOY_SHA="${{ github.event.workflow_run.head_sha || github.sha }}"
+            echo "=== [1/5] Pull latest code (SHA: ${DEPLOY_SHA}) ==="
             git fetch origin main
             git reset --hard origin/main
 
             echo "=== [2/5] Build new image ==="
-            docker build --target production -t dzo-tz-agents:${{ github.sha }} -t dzo-tz-agents:latest .
+            docker build --target production \
+              -t dzo-tz-agents:${DEPLOY_SHA} \
+              -t dzo-tz-agents:latest .
 
             echo "=== [3/5] Zero-downtime rolling update ==="
-            # Обновляем поочередно: сначала API, потом UI, затем агенты
             docker compose up -d --no-deps --build api
             sleep 10
             docker compose up -d --no-deps --build ui
@@ -43,8 +80,10 @@ jobs:
             docker compose up -d --no-deps --build agent-dzo agent-tz
 
             echo "=== [4/5] Healthcheck ==="
+            STATUS="fail"
             for i in $(seq 1 12); do
-              STATUS=$(curl -sf http://localhost:8000/health | python3 -c "import sys,json; print(json.load(sys.stdin)['status'])" 2>/dev/null || echo "fail")
+              STATUS=$(curl -sf http://localhost:8000/health \
+                | python3 -c "import sys,json; print(json.load(sys.stdin)['status'])" 2>/dev/null || echo "fail")
               if [ "$STATUS" = "ok" ]; then
                 echo "✅ API здоров"
                 break
@@ -54,31 +93,49 @@ jobs:
             done
             if [ "$STATUS" != "ok" ]; then
               echo "❌ API не ответил за 2 минуты — rollback"
+              git reset --hard HEAD~1
               docker compose up -d --no-deps --build api
               exit 1
             fi
 
             echo "=== [5/5] Cleanup old images ==="
             docker image prune -f --filter "until=24h"
-
             echo "✨ Деплой успешно завершён: $(date)"
 
+      # ── Скип-результат если секреты не заданы ──────────────────
+      - name: Skip notice
+        if: steps.check_secrets.outputs.configured == 'false'
+        run: |
+          echo "ℹ️  Деплой пропущен: SERVER_HOST не настроен."
+          echo "Для активации добавьте секреты в GitHub → Settings → Environments → production:"
+          echo "  - SERVER_HOST    (ИП / хост сервера)"
+          echo "  - SERVER_USER    (SSH-пользователь, напр. deploy)"
+          echo "  - SERVER_SSH_KEY (приватный SSH-ключ)"
+          echo "  - SERVER_PORT    (опц., default 22)"
+
+      # ── Telegram-уведомления ─────────────────────────────────────
       - name: Notify Telegram on success
-        if: success() && env.TELEGRAM_BOT_TOKEN != ''
+        if: |
+          success() &&
+          steps.check_secrets.outputs.configured == 'true' &&
+          secrets.TELEGRAM_BOT_TOKEN != ''
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             -d chat_id="${TELEGRAM_CHAT_ID}" \
-            -d text="✅ dzo-tz-agents деплой успешен%0AСоммит: ${{ github.sha }}%0AАвтор: ${{ github.actor }}"
+            -d text="%E2%9C%85 dzo-tz-agents %D0%B4%D0%B5%D0%BF%D0%BB%D0%BE%D0%B9 %D1%83%D1%81%D0%BF%D0%B5%D1%88%D0%B5%D0%BD%0A${{ github.event.workflow_run.head_sha || github.sha }}%0A${{ github.actor }}"
 
       - name: Notify Telegram on failure
-        if: failure() && env.TELEGRAM_BOT_TOKEN != ''
+        if: |
+          failure() &&
+          steps.check_secrets.outputs.configured == 'true' &&
+          secrets.TELEGRAM_BOT_TOKEN != ''
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             -d chat_id="${TELEGRAM_CHAT_ID}" \
-            -d text="❌ dzo-tz-agents деплой НЕ УДАЛСЯ%0AСоммит: ${{ github.sha }}%0AАвтор: ${{ github.actor }}"
+            -d text="%E2%9D%8C dzo-tz-agents %D0%B4%D0%B5%D0%BF%D0%BB%D0%BE%D0%B9 %D0%9D%D0%95%20%D0%A3%D0%94%D0%90%D0%9B%D0%A1%D0%AF%0A${{ github.event.workflow_run.head_sha || github.sha }}%0A${{ github.actor }}"
