@@ -1,14 +1,11 @@
 name: Deploy
 
-# ─── Триггеры ───────────────────────────────────────────────────────────
-on:
-  # Авто: запускается ТОЛЬКО после успешного CI на main
+# ─── Триггеры ───────────────────────────────────────────────────────────────
+ona:
   workflow_run:
     workflows: ["CI"]
     branches: [main]
     types: [completed]
-
-  # Ручной: из GitHub UI или gh cli
   workflow_dispatch:
     inputs:
       sha:
@@ -19,14 +16,11 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
-    # Автозапуск: только если CI завершился успешно
-    # Ручной запуск: всегда разрешён
     if: |
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
 
-    environment: production     # GitHub Environment — required reviewers / secrets
+    environment: production
 
     concurrency:
       group: deploy-production
@@ -35,21 +29,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # При workflow_run checkout по SHA, который прошёл CI
           ref: ${{ github.event.workflow_run.head_sha || github.event.inputs.sha || github.sha }}
 
-      # ── Проверяем наличие секрета SERVER_HOST ───────────────────────
+      # Проверяем наличие секретов через run: — только там доступен secrets
       - name: Check deploy secrets
         id: check_secrets
+        env:
+          _SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          _TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         run: |
-          if [ -z "${{ secrets.SERVER_HOST }}" ]; then
+          if [ -z "${_SERVER_HOST}" ]; then
             echo "configured=false" >> $GITHUB_OUTPUT
-            echo "::warning::SERVER_HOST не задан — SSH деплой пропущен. Добавьте секреты в GitHub → Settings → Environments → production."
+            echo "::warning::SERVER_HOST не задан — SSH деплой пропущен."
           else
             echo "configured=true" >> $GITHUB_OUTPUT
           fi
+          if [ -n "${_TELEGRAM_TOKEN}" ]; then
+            echo "telegram=true" >> $GITHUB_OUTPUT
+          else
+            echo "telegram=false" >> $GITHUB_OUTPUT
+          fi
 
-      # ── SSH-деплой (выполняется только если секрет задан) ─────────
       - name: Deploy via SSH (zero-downtime)
         if: steps.check_secrets.outputs.configured == 'true'
         uses: appleboy/ssh-action@v1.0.3
@@ -102,23 +102,16 @@ jobs:
             docker image prune -f --filter "until=24h"
             echo "✨ Деплой успешно завершён: $(date)"
 
-      # ── Скип-результат если секреты не заданы ──────────────────
       - name: Skip notice
         if: steps.check_secrets.outputs.configured == 'false'
         run: |
           echo "ℹ️  Деплой пропущен: SERVER_HOST не настроен."
-          echo "Для активации добавьте секреты в GitHub → Settings → Environments → production:"
-          echo "  - SERVER_HOST    (ИП / хост сервера)"
-          echo "  - SERVER_USER    (SSH-пользователь, напр. deploy)"
-          echo "  - SERVER_SSH_KEY (приватный SSH-ключ)"
-          echo "  - SERVER_PORT    (опц., default 22)"
+          echo "Добавьте секреты: GitHub → Settings → Environments → production"
 
-      # ── Telegram-уведомления ─────────────────────────────────────
+      # secrets используются только в env: — это допустимо;
+      # в if: проверяем только outputs из check_secrets
       - name: Notify Telegram on success
-        if: |
-          success() &&
-          steps.check_secrets.outputs.configured == 'true' &&
-          secrets.TELEGRAM_BOT_TOKEN != ''
+        if: success() && steps.check_secrets.outputs.telegram == 'true'
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -128,10 +121,7 @@ jobs:
             -d text="%E2%9C%85 dzo-tz-agents %D0%B4%D0%B5%D0%BF%D0%BB%D0%BE%D0%B9 %D1%83%D1%81%D0%BF%D0%B5%D1%88%D0%B5%D0%BD%0A${{ github.event.workflow_run.head_sha || github.sha }}%0A${{ github.actor }}"
 
       - name: Notify Telegram on failure
-        if: |
-          failure() &&
-          steps.check_secrets.outputs.configured == 'true' &&
-          secrets.TELEGRAM_BOT_TOKEN != ''
+        if: failure() && steps.check_secrets.outputs.telegram == 'true'
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
