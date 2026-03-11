@@ -10,6 +10,7 @@ from shared.email_sender import send_email
 from shared.telegram_notify import notify
 from shared.logger import setup_logger
 from agent1_dzo_inspector.agent import create_dzo_agent
+from api.metrics import EMAILS_PROCESSED, EMAILS_ERRORS, POLL_CYCLES, JobTimer
 import config
 
 logger = setup_logger("agent_dzo")
@@ -17,6 +18,8 @@ logger = setup_logger("agent_dzo")
 
 def process_dzo_emails():
     logger.info("Проверяю входящие письма (Инспектор Заявок ДЗО)...")
+    POLL_CYCLES.labels(agent="dzo").inc()
+
     emails = fetch_unseen_emails(
         imap_host=config.DZO_IMAP_HOST,
         imap_user=config.DZO_IMAP_USER,
@@ -41,6 +44,7 @@ def process_dzo_emails():
                     html_body="<p>В вашем письме не обнаружено вложений. Пожалуйста, приложите заявку.</p>",
                     from_addr=config.DZO_SMTP_FROM,
                 )
+                EMAILS_PROCESSED.labels(agent="dzo").inc()
                 continue
 
             attachment_texts = []
@@ -58,28 +62,22 @@ def process_dzo_emails():
             chat_input = (
                 f"📧 ВХОДЯЩАЯ ЗАЯВКА ОТ ДЗО\n"
                 f"═══════════════════════════════════════════\n"
-                f"От: {mail['from']}\n"
-                f"Тема: {mail['subject']}\n"
-                f"Дата: {mail['date']}\n"
-                f"Время получения: {datetime.now().isoformat()}\n\n"
+                f"От: {mail['from']}\nТема: {mail['subject']}\n"
+                f"Дата: {mail['date']}\nВремя: {datetime.now().isoformat()}\n\n"
                 f"── ТЕЛО ПИСЬМА ──\n{mail['body']}\n\n"
-                f"── ПЕРВИЧНАЯ ПРОВЕРКА ──\n"
+                f"── ПРЕДВАРИТЕЛЬНАЯ ПРОВЕРКА ──\n"
                 f"Всего вложений: {len(mail['attachments'])}\n"
-                f"Файл ТЗ обнаружен: {'ДА' if has_tz else 'НЕТ'}\n"
-                f"Спецификация обнаружена: {'ДА' if has_spec else 'НЕТ'}\n\n"
-                f"═══════════════════════════════════════════\n"
-                f"📎 СОДЕРЖИМОЕ ВЛОЖЕНИЙ ({len(mail['attachments'])} шт.)\n"
-                f"═══════════════════════════════════════════\n\n"
+                f"Файл ТЗ: {'DA' if has_tz else 'НЕТ'}\n"
+                f"Спецификация: {'DA' if has_spec else 'НЕТ'}\n\n"
                 + "\n\n".join(attachment_texts)
             )
 
-            result   = agent.invoke({"input": chat_input})
-            email_html      = ""
-            corrected_html  = ""
-            tezis_html      = ""
-            escalation_html = ""
-            decision        = "Требуется доработка"
-            reply_subject   = ""
+            with JobTimer("dzo"):
+                result = agent.invoke({"input": chat_input})
+
+            email_html = corrected_html = tezis_html = escalation_html = ""
+            decision = "Требуется доработка"
+            reply_subject = ""
 
             for step in result.get("intermediate_steps", []):
                 try:
@@ -95,38 +93,29 @@ def process_dzo_emails():
                 email_html = f"<div style='font-family:Arial'>{result['output'].replace(chr(10), '<br>')}</div>"
 
             if "эскалация" in decision.lower():
-                send_email(
-                    to=config.MANAGER_EMAIL,
-                    subject=reply_subject or "⚠️ Эскалация заявки ДЗО",
-                    html_body=escalation_html or email_html,
-                    from_addr=config.DZO_SMTP_FROM,
-                )
+                send_email(to=config.MANAGER_EMAIL, subject=reply_subject or "⚠️ Эскалация заявки ДЗО",
+                           html_body=escalation_html or email_html, from_addr=config.DZO_SMTP_FROM)
                 notify(f"⚠️ Эскалация от {mail['from']}\nТема: {mail['subject']}", level="warning")
             elif "полная" in decision.lower():
-                send_email(
-                    to=mail["from"],
-                    subject=f"Заявка принята: {mail['subject']}",
-                    html_body=email_html,
-                    from_addr=config.DZO_SMTP_FROM,
-                    attachment_bytes=tezis_html.encode("utf-8") if tezis_html else None,
-                    attachment_name="Заявка_Тезис.html" if tezis_html else None,
-                )
+                send_email(to=mail["from"], subject=f"Заявка принята: {mail['subject']}",
+                           html_body=email_html, from_addr=config.DZO_SMTP_FROM,
+                           attachment_bytes=tezis_html.encode("utf-8") if tezis_html else None,
+                           attachment_name="Заявка_Тезис.html" if tezis_html else None)
                 notify(f"✅ Заявка принята от {mail['from']}", level="success")
             else:
-                send_email(
-                    to=mail["from"],
-                    subject=reply_subject or f"Запрос информации по заявке: {mail['subject']}",
-                    html_body=email_html,
-                    from_addr=config.DZO_SMTP_FROM,
-                    attachment_bytes=corrected_html.encode("utf-8") if corrected_html else None,
-                    attachment_name="Проект_исправленной_заявки.html" if corrected_html else None,
-                )
+                send_email(to=mail["from"],
+                           subject=reply_subject or f"Запрос информации: {mail['subject']}",
+                           html_body=email_html, from_addr=config.DZO_SMTP_FROM,
+                           attachment_bytes=corrected_html.encode("utf-8") if corrected_html else None,
+                           attachment_name="Проект_исправленной_заявки.html" if corrected_html else None)
                 notify(f"ℹ️ Запрошены данные от {mail['from']}", level="info")
 
+            EMAILS_PROCESSED.labels(agent="dzo").inc()
             logger.info(f"Обработано. Решение: {decision}")
 
         except Exception as e:
-            logger.error(f"Критическая ошибка при обработке письма: {e}")
+            EMAILS_ERRORS.labels(agent="dzo", error_type=type(e).__name__).inc()
+            logger.error(f"Критическая ошибка: {e}")
             notify(f"🔴 Ошибка Агент-ДЗО\nОт: {mail['from']}\n{e}", level="error")
 
 

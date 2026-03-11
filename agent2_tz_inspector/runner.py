@@ -10,6 +10,7 @@ from shared.email_sender import send_email
 from shared.telegram_notify import notify
 from shared.logger import setup_logger
 from agent2_tz_inspector.agent import create_tz_agent
+from api.metrics import EMAILS_PROCESSED, EMAILS_ERRORS, POLL_CYCLES, JobTimer
 import config
 
 logger = setup_logger("agent_tz")
@@ -17,6 +18,8 @@ logger = setup_logger("agent_tz")
 
 def process_tz_emails():
     logger.info("Проверяю входящие письма (Инспектор ТЗ)...")
+    POLL_CYCLES.labels(agent="tz").inc()
+
     emails = fetch_unseen_emails(
         imap_host=config.TZ_IMAP_HOST,
         imap_user=config.TZ_IMAP_USER,
@@ -32,59 +35,62 @@ def process_tz_emails():
     agent = create_tz_agent()
 
     for mail in emails:
-        logger.info(f"Обрабатываю ТЗ: '{mail['subject']}' от {mail['from']}")
+        logger.info(f"Обрабатываю: '{mail['subject']}' от {mail['from']}")
         try:
-            if not mail["attachments"]:
-                continue
-
             attachment_texts = []
             for att in mail["attachments"]:
                 text = extract_text_from_attachment(att)
                 attachment_texts.append(f"──── Файл: {att['filename']} ────\n{text}")
 
             chat_input = (
-                f"📧 МЕТАДАННЫЕ ПИСЬМА:\n"
-                f"От: {mail['from']}\n"
-                f"Тема: {mail['subject']}\n"
-                f"Дата: {mail['date']}\n"
-                f"Тело письма: {mail['body']}\n\n"
+                f"📝 ВХОДЯЩЕЕ ТЕХНИЧЕСКОЕ ЗАДАНИЕ\n"
                 f"═══════════════════════════════════════════\n"
-                f"📎 ВЛОЖЕНИЯ ({len(mail['attachments'])} шт.):\n"
-                f"═══════════════════════════════════════════\n\n"
+                f"От: {mail['from']}\nТема: {mail['subject']}\n"
+                f"Дата: {mail['date']}\nВремя: {datetime.now().isoformat()}\n\n"
+                f"── ТЕЛО ПИСЬМА ──\n{mail['body']}\n\n"
+                f"── ТЕКСТ ТЗ ({len(mail['attachments'])} вложений) ──\n"
                 + "\n\n".join(attachment_texts)
             )
 
-            result         = agent.invoke({"input": chat_input})
-            email_html     = ""
-            corrected_html = ""
-            decision       = "Требует доработки"
-            reply_subject  = ""
+            with JobTimer("tz"):
+                result = agent.invoke({"input": chat_input})
+
+            email_html = corrected_tz_html = ""
+            decision = "Требует доработки"
+            reply_subject = ""
+            issues: list[str] = []
 
             for step in result.get("intermediate_steps", []):
                 try:
                     obs = json.loads(step[1]) if isinstance(step[1], str) else step[1]
-                    if obs.get("emailHtml"): email_html = obs["emailHtml"]; decision = obs.get("decision", decision); reply_subject = obs.get("subject", "")
-                    if obs.get("html"):      corrected_html = obs["html"]
+                    if obs.get("emailHtml"):  email_html        = obs["emailHtml"]; decision = obs.get("decision", decision); reply_subject = obs.get("subject", "")
+                    if obs.get("html"):       corrected_tz_html = obs["html"]
+                    if obs.get("issues"):     issues            = obs["issues"]
                 except Exception:
                     pass
 
             if not email_html:
                 email_html = f"<div style='font-family:Arial'>{result['output'].replace(chr(10), '<br>')}</div>"
 
-            send_email(
-                to=mail["from"],
-                subject=reply_subject or f"Результат проверки ТЗ: {mail['subject']}",
-                html_body=email_html,
-                from_addr=config.TZ_SMTP_FROM,
-                attachment_bytes=corrected_html.encode("utf-8") if corrected_html else None,
-                attachment_name="Исправленное_ТЗ.html" if corrected_html else None,
-            )
+            if "соответствует" in decision.lower():
+                send_email(to=mail["from"],
+                           subject=reply_subject or f"ТЗ принято: {mail['subject']}",
+                           html_body=email_html, from_addr=config.TZ_SMTP_FROM)
+                notify(f"✅ ТЗ принято от {mail['from']}", level="success")
+            else:
+                send_email(to=mail["from"],
+                           subject=reply_subject or f"Замечания по ТЗ: {mail['subject']}",
+                           html_body=email_html, from_addr=config.TZ_SMTP_FROM,
+                           attachment_bytes=corrected_tz_html.encode("utf-8") if corrected_tz_html else None,
+                           attachment_name="ТЗ_с_замечаниями.html" if corrected_tz_html else None)
+                notify(f"ℹ️ ТЗ отправлено на доработку {mail['from']}", level="info")
 
-            notify(f"{'✅' if 'Соответствует' in decision else 'ℹ️'} ТЗ проверено\nОт: {mail['from']}\nРешение: {decision}", level="success" if "Соответствует" in decision else "info")
-            logger.info(f"ТЗ обработано. Решение: {decision}")
+            EMAILS_PROCESSED.labels(agent="tz").inc()
+            logger.info(f"Обработано. Решение: {decision}")
 
         except Exception as e:
-            logger.error(f"Критическая ошибка при обработке ТЗ: {e}")
+            EMAILS_ERRORS.labels(agent="tz", error_type=type(e).__name__).inc()
+            logger.error(f"Критическая ошибка: {e}")
             notify(f"🔴 Ошибка Агент-ТЗ\nОт: {mail['from']}\n{e}", level="error")
 
 
