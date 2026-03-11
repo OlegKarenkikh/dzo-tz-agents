@@ -1,18 +1,39 @@
+# LLM / Langchain
 langchain>=0.2.0
 langchain-openai>=0.1.0
 openai>=1.30.0
+
+# Email
 imapclient>=2.3.1
+
+# File extraction
 python-docx>=1.1.0
 pdfplumber>=0.11.0
 openpyxl>=3.1.2
 xlrd>=2.0.1
+
+# Utils
 python-dotenv>=1.0.0
 beautifulsoup4>=4.12.0
 Pillow>=10.0.0
 httpx[http2]>=0.27.0
 schedule>=1.2.0
+
+# API
 fastapi>=0.111.0
 uvicorn[standard]>=0.30.0
-streamlit>=1.35.0
 pydantic>=2.7.0
+
+# UI
+streamlit>=1.35.0
+
+# Database
+psycopg2-binary>=2.9.9
+
+# Monitoring
+prometheus-client>=0.20.0
+
+# Tests
+pytest>=8.2.0
 pytest-asyncio>=0.23.0
+pytest-cov>=5.0.0
