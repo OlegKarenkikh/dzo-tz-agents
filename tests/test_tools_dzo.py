@@ -1,0 +1,118 @@
+import json
+import pytest
+from agent1_dzo_inspector.tools import (
+    generate_validation_report,
+    generate_tezis_form,
+    generate_info_request,
+    generate_escalation,
+    generate_response_email,
+    generate_corrected_application,
+)
+
+
+class TestGenerateValidationReport:
+    def test_full_report(self):
+        payload = json.dumps({
+            "decision": "Заявка полная",
+            "checklist_attachments": [{"item": "ТЗ", "status": "Да"}],
+            "checklist_required": [{"item": "Наименование", "status": "ОК"}],
+            "checklist_additional": [{"item": "Бюджет", "status": "ОК"}],
+            "missing_fields": [],
+        })
+        result = json.loads(generate_validation_report.invoke(payload))
+        assert result["decision"] == "Заявка полная"
+        assert result["stats"]["attachments_ok"] == 1
+        assert result["stats"]["required_ok"] == 1
+        assert result["stats"]["additional_ok"] == 1
+
+    def test_empty_input(self):
+        result = json.loads(generate_validation_report.invoke("{}"))
+        assert result["decision"] == "Не определено"
+        assert result["stats"]["attachments_ok"] == 0
+
+    def test_invalid_json(self):
+        result = json.loads(generate_validation_report.invoke("not-json"))
+        assert "error" in result
+
+
+class TestGenerateTezisForm:
+    def test_filled_form(self):
+        payload = json.dumps({
+            "procurement_subject": "Поставка СИЗО",
+            "justification": "Производственная необходимость",
+            "budget": "500000",
+            "initiator_name": "Иванов И..И.",
+            "initiator_contacts": "+7-900-000-00-00",
+            "budget_manager": "Петров П.П.",
+            "recommended_suppliers": [{"name": "ООО Ромашка", "inn": "7701234567"}],
+            "additional_info": "Нет",
+            "tz_filename": "tz.docx",
+        })
+        result = json.loads(generate_tezis_form.invoke(payload))
+        assert "tezisFormHtml" in result
+        assert "ТЕЗИС" in result["tezisFormHtml"]
+        assert "filled" in result["tezisFormHtml"]
+
+    def test_partial_form_has_empty_class(self):
+        payload = json.dumps({"procurement_subject": "Тест"})
+        result = json.loads(generate_tezis_form.invoke(payload))
+        assert "empty" in result["tezisFormHtml"]
+
+    def test_invalid_json(self):
+        result = json.loads(generate_tezis_form.invoke("bad"))
+        assert "error" in result
+
+
+class TestGenerateInfoRequest:
+    def test_basic(self):
+        payload = json.dumps({
+            "dzo_name": "ООО Тест",
+            "subject": "Закупка Тест",
+            "missing_fields": [
+                {"field": "Инициатор", "description": "Укажите ФИО"},
+            ],
+            "has_corrected_form": False,
+        })
+        result = json.loads(generate_info_request.invoke(payload))
+        assert result["decision"] == "Требуется доработка"
+        assert "Инициатор" in result["emailHtml"]
+        assert "Запрос" in result["subject"]
+
+
+class TestGenerateEscalation:
+    def test_escalation(self):
+        payload = json.dumps({
+            "subject": "Непонятная заявка",
+            "reason": "Противоречие данных",
+            "details": "Бюджет превышает лимит",
+        })
+        result = json.loads(generate_escalation.invoke(payload))
+        assert result["decision"] == "Требуется эскалация"
+        assert "ЭСКАЛАЦИЯ" in result["escalationHtml"]
+        assert "⚠️" in result["subject"]
+
+
+class TestGenerateResponseEmail:
+    def test_response(self):
+        payload = json.dumps({
+            "decision": "Заявка полная",
+            "subject": "Закупка оборудования",
+            "agent_summary": "Все реквизиты заполнены.",
+        })
+        result = json.loads(generate_response_email.invoke(payload))
+        assert "emailHtml" in result
+        assert "Заявка полная" in result["emailHtml"]
+
+
+class TestGenerateCorrectedApplication:
+    def test_changed_field(self):
+        payload = json.dumps({
+            "fields": [
+                {"name": "Бюджет", "old_value": "100", "new_value": "200", "status": "changed"},
+                {"name": "Новое поле", "old_value": "", "new_value": "Значение", "status": "added"},
+            ]
+        })
+        result = json.loads(generate_corrected_application.invoke(payload))
+        assert "correctedHtml" in result
+        assert "БЫЛО" in result["correctedHtml"]
+        assert "ДОБАВЛЕНО" in result["correctedHtml"]
