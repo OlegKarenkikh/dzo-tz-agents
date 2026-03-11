@@ -1,9 +1,9 @@
 import json
-import pytest
+
 from agent2_tz_inspector.tools import (
-    generate_json_report,
     generate_corrected_tz,
     generate_email_to_dzo,
+    generate_json_report,
 )
 
 
