@@ -1,8 +1,8 @@
 import os
 
-from langchain.agents import AgentExecutor, create_openai_tools_agent
+from langchain.agents import AgentExecutor, create_openai_tools_agent, create_react_agent
 from langchain.memory import ConversationBufferWindowMemory
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder, PromptTemplate
 from langchain_openai import ChatOpenAI
 
 from agent1_dzo_inspector.tools import (
@@ -63,15 +63,49 @@ SLA (ОБЯЗАТЕЛЬНЫЕ СРОКИ)
 
 ОГРАНИЧЕНИЯ: не оценивай качество ТЗ — только полноту заявки. Вежливый деловой тон."""
 
+# ReAct prompt для моделей без native function-calling (Ollama, vLLM без tool-support и т.д.)
+REACT_TEMPLATE = """Assistant is a helpful AI agent.
 
-def create_dzo_agent() -> AgentExecutor:
-    llm = ChatOpenAI(
+Has access to the following tools:
+{tools}
+
+Use the following format:
+Thought: what to do next
+Action: tool name (one of [{tool_names}])
+Action Input: input to the tool
+Observation: result
+... (repeat Thought/Action/Observation as needed)
+Thought: I now know the final answer
+Final Answer: the final answer
+
+Begin!
+
+System: """ + SYSTEM_PROMPT + """
+
+Question: {input}
+{agent_scratchpad}"""
+
+
+def _build_llm() -> ChatOpenAI:
+    """LLM с поддержкой любых OpenAI-совместимых эндпоинтов.
+    - OPENAI_API_BASE=<url>  → любой совместимый URL (Ollama, vLLM, DeepSeek, Azure и т.д.)
+    - OPENAI_API_KEY опционален — локальные LLM не требуют ключ, прописывается "ollama" как fallback
+    """
+    return ChatOpenAI(
         model=os.getenv("MODEL_NAME", "gpt-4o"),
         temperature=0.2,
         max_tokens=8192,
-        api_key=os.getenv("OPENAI_API_KEY"),
+        api_key=os.getenv("OPENAI_API_KEY") or "ollama",
         base_url=os.getenv("OPENAI_API_BASE") or None,
     )
+
+
+def create_dzo_agent() -> AgentExecutor:
+    """AGENT_TYPE=openai_tools (default) | react
+    • openai_tools — быстрый native function-calling (для GPT-4o, GPT-4-turbo, DeepSeek-V3+)
+    • react — ReAct prompting, работает с любой LLM без tool-support (Ollama llama3, Mistral и т.д.)
+    """
+    llm   = _build_llm()
     tools = [
         generate_validation_report,
         generate_tezis_form,
@@ -80,14 +114,21 @@ def create_dzo_agent() -> AgentExecutor:
         generate_response_email,
         generate_corrected_application,
     ]
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", SYSTEM_PROMPT),
-        MessagesPlaceholder("chat_history", optional=True),
-        ("human", "{input}"),
-        MessagesPlaceholder("agent_scratchpad"),
-    ])
-    agent  = create_openai_tools_agent(llm, tools, prompt)
     memory = ConversationBufferWindowMemory(k=20, return_messages=True, memory_key="chat_history")
+
+    agent_type = os.getenv("AGENT_TYPE", "openai_tools").lower()
+    if agent_type == "react":
+        prompt = PromptTemplate.from_template(REACT_TEMPLATE)
+        agent  = create_react_agent(llm, tools, prompt)
+    else:
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", SYSTEM_PROMPT),
+            MessagesPlaceholder("chat_history", optional=True),
+            ("human", "{input}"),
+            MessagesPlaceholder("agent_scratchpad"),
+        ])
+        agent = create_openai_tools_agent(llm, tools, prompt)
+
     return AgentExecutor(
         agent=agent,
         tools=tools,
