@@ -7,10 +7,7 @@ import os
 import pytest
 from fastapi.testclient import TestClient
 
-# Задаём API-ключ до импорта приложения
-os.environ.setdefault("OPENAI_API_KEY", "sk-test")
-os.environ["API_KEY"] = "test-key-12345"
-
+# API_KEY устанавлен в conftest.py (значение: "test-secret")
 from api.app import app  # noqa: E402
 from shared.database import _memory_store  # noqa: E402
 
@@ -28,7 +25,7 @@ def clear_jobs():
     _memory_store.clear()
 
 
-HEADERS = {"X-API-Key": "test-key-12345"}
+HEADERS = {"X-API-Key": "test-secret"}
 
 
 class TestHealth:
