@@ -80,8 +80,10 @@ class TestGenerateEmailToDzo:
         })
         result = json.loads(generate_email_to_dzo.invoke(payload))
         assert result["decision"] == "Требует доработки"
-        assert "ДОБАВЛЕНО" in result["emailHtml"]
-        assert "Отсутствует" in result["emailHtml"]
+        # generate_email_to_dzo не содержит слово "ДОБАВЛЕНО" — проверяем реальное содержимое
+        assert "Отсутствует раздел 3" in result["emailHtml"]
+        assert "Добавьте количество" in result["emailHtml"]
+        assert "приложен" in result["emailHtml"]  # corrected_note при has_corrected_tz=True
 
     def test_approved(self):
         payload = json.dumps({

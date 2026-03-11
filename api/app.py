@@ -50,7 +50,6 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 
-# ── CORS: читаем из переменной, ДЕФОЛТ — только localhost ────────────
 CORS_ORIGINS = [
     o.strip()
     for o in os.getenv("CORS_ORIGINS", "http://localhost:8501").split(",")
@@ -80,12 +79,16 @@ _start_time = datetime.now()
 _run_log: list[dict] = []
 
 _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
-_API_KEY = os.getenv("API_KEY", "")
+
+# FIX: не кешируем на уровне модуля — читаем динамически при каждом запросе,
+# чтобы тесты могли менять os.environ["API_KEY"] между сессиями.
+def _get_api_key() -> str:
+    return os.getenv("API_KEY", "")
 
 
 @app.on_event("startup")
 def on_startup():
-    if not _API_KEY:
+    if not _get_api_key():
         logger.warning(
             "⚠️  API_KEY не задан — защищённые эндпоинты доступны без аутентификации!"
         )
@@ -93,9 +96,10 @@ def on_startup():
 
 
 def _require_api_key(key: str | None = Depends(_api_key_header)) -> str:
-    if not _API_KEY:
+    api_key = _get_api_key()
+    if not api_key:
         return ""
-    if key != _API_KEY:
+    if key != api_key:
         raise HTTPException(status_code=401, detail="Неверный или отсутствующий API-ключ")
     return key
 
