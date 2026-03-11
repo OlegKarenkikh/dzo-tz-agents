@@ -86,6 +86,11 @@ ignore = ["E501", "B008", "B904"]
 [tool.ruff.lint.per-file-ignores]
 # tests: F401 fixture imports, E402 post-env imports, I001 intentional ordering
 "tests/*.py" = ["F401", "E402", "I001"]
+# agents: I001/E402 — load_dotenv() must run before first-party imports
+"agent1_dzo_inspector/runner.py" = ["I001", "E402"]
+"agent2_tz_inspector/runner.py" = ["I001", "E402"]
+# api: I001 — load_dotenv() block position, app.py multi-group imports
+"api/app.py" = ["I001"]
 # shared: UP006/UP035 — typing generics kept where needed
 "shared/*.py" = ["UP006", "UP035"]
 

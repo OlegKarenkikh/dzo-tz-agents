@@ -5,14 +5,15 @@ FastAPI сервер для:
 - /run/tz    — ручной запуск Агента ТЗ
 - /run/both  — запустить оба агента
 """
-from fastapi import FastAPI, BackgroundTasks
-from datetime import datetime
 import os
+from datetime import datetime
+
+from fastapi import BackgroundTasks, FastAPI
 
 app = FastAPI(
     title="DZO/TZ Agents",
     description="ИНСПекторы ЗАЯВОК ДЗО и ТЗ",
-    version="1.0.0"
+    version="1.0.0",
 )
 
 start_time = datetime.now()
@@ -34,7 +35,7 @@ def health():
 def status():
     return {
         "runs": len(_run_log),
-        "last_runs": _run_log[-10:],  # последние 10
+        "last_runs": _run_log[-10:],
     }
 
 
