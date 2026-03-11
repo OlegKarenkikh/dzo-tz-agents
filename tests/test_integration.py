@@ -1,3 +1,4 @@
+# ruff: noqa: I001
 """
 Интеграционные тесты полного pipeline обработки документов.
 LLM и SMTP/IMAP заменены mock-объектами.
@@ -28,7 +29,9 @@ os_environ_patch = {
     "POLL_INTERVAL_SEC": "300",
 }
 
-os.environ.setdefault("OPENAI_API_KEY", "sk-test")  # noqa: I001
+os.environ.setdefault("OPENAI_API_KEY", "sk-test")
+
+# Явный импорт submodules необходим для корректной работы unittest.mock.patch
 import agent1_dzo_inspector.runner  # noqa: E402
 import agent2_tz_inspector.runner  # noqa: E402
 
