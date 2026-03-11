@@ -6,7 +6,7 @@ import json
 import os
 from unittest.mock import MagicMock, patch
 
-import pytest
+import pytest  # noqa: F401
 
 os_environ_patch = {
     "OPENAI_API_KEY": "sk-test",
@@ -28,9 +28,7 @@ os_environ_patch = {
     "POLL_INTERVAL_SEC": "300",
 }
 
-os.environ.setdefault("OPENAI_API_KEY", "sk-test")
-
-# Явный импорт submodules необходим для корректной работы unittest.mock.patch  # noqa: I001
+os.environ.setdefault("OPENAI_API_KEY", "sk-test")  # noqa: I001
 import agent1_dzo_inspector.runner  # noqa: E402
 import agent2_tz_inspector.runner  # noqa: E402
 

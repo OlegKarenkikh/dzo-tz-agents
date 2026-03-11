@@ -1,9 +1,10 @@
-import imaplib
-import email
 import base64
+import email
+import imaplib
 import logging
 from email.header import decode_header
-from typing import List, Dict
+
+from shared.logger import setup_logger  # noqa: F401 - keep logger consistent
 
 logger = logging.getLogger("email_client")
 
@@ -25,7 +26,7 @@ def fetch_unseen_emails(
     imap_password: str,
     imap_port: int = 993,
     folder: str = "INBOX",
-) -> List[Dict]:
+) -> list[dict]:
     """
     Подключается к IMAP, забирает UNSEEN письма с вложениями.
     Помечает письма как прочитанные после обработки.
@@ -42,8 +43,8 @@ def fetch_unseen_emails(
                 _, data = M.fetch(uid, "(RFC822)")
                 msg = email.message_from_bytes(data[0][1])
 
-                subject  = _decode_str(msg.get("Subject", ""))
-                from_    = _decode_str(msg.get("From", ""))
+                subject = _decode_str(msg.get("Subject", ""))
+                from_ = _decode_str(msg.get("From", ""))
                 date_str = msg.get("Date", "")
 
                 body = ""
@@ -63,24 +64,24 @@ def fetch_unseen_emails(
                             body = payload.decode("utf-8", errors="ignore")
                     elif "attachment" in cd or part.get_filename():
                         filename = _decode_str(part.get_filename() or "unknown")
-                        payload  = part.get_payload(decode=True)
+                        payload = part.get_payload(decode=True)
                         if payload:
                             ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
                             attachments.append({
                                 "filename": filename,
-                                "ext":      ext,
-                                "data":     payload,
-                                "mime":     part.get_content_type(),
-                                "b64":      base64.b64encode(payload).decode(),
+                                "ext": ext,
+                                "data": payload,
+                                "mime": part.get_content_type(),
+                                "b64": base64.b64encode(payload).decode(),
                             })
 
                 M.store(uid, "+FLAGS", "\\Seen")
                 emails.append({
-                    "uid":         uid.decode(),
-                    "from":        from_,
-                    "subject":     subject,
-                    "date":        date_str,
-                    "body":        body,
+                    "uid": uid.decode(),
+                    "from": from_,
+                    "subject": subject,
+                    "date": date_str,
+                    "body": body,
                     "attachments": attachments,
                 })
             except Exception as e:

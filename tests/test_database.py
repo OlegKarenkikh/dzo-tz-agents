@@ -1,5 +1,4 @@
 import pytest
-
 from unittest.mock import patch  # noqa: F401
 
 import shared.database as db

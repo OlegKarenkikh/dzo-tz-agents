@@ -1,9 +1,10 @@
-import smtplib
 import os
+import smtplib
+from email import encoders
+from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from email.mime.base import MIMEBase
-from email import encoders
+
 from shared.logger import setup_logger
 
 logger = setup_logger("email_sender")
@@ -20,8 +21,8 @@ def send_email(
     """Отправляет HTML-письмо с опциональным вложением."""
     sender = from_addr or os.getenv("SENDER_EMAIL", "ucz@company.ru")
     msg = MIMEMultipart("mixed")
-    msg["From"]    = sender
-    msg["To"]      = to
+    msg["From"] = sender
+    msg["To"] = to
     msg["Subject"] = subject
     msg.attach(MIMEText(html_body, "html", "utf-8"))
 
