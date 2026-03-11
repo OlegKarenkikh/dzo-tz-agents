@@ -2,7 +2,6 @@
 Интеграционные тесты полного pipeline обработки документов.
 LLM и SMTP/IMAP заменены mock-объектами.
 """
-
 import json
 import os
 from unittest.mock import MagicMock, patch
@@ -29,17 +28,12 @@ os_environ_patch = {
     "POLL_INTERVAL_SEC": "300",
 }
 
-# Устанавливаем OPENAI_API_KEY перед импортом модулей с module-level клиентом
 os.environ.setdefault("OPENAI_API_KEY", "sk-test")
 
 # Явный импорт submodules необходим для корректной работы unittest.mock.patch
 import agent1_dzo_inspector.runner  # noqa: E402
 import agent2_tz_inspector.runner  # noqa: E402
 
-
-# ---------------------------------------------------------------------------
-# Вспомогательные данные для тестов
-# ---------------------------------------------------------------------------
 
 SAMPLE_DZO_EMAIL = {
     "uid": "1",
@@ -77,26 +71,18 @@ SAMPLE_TZ_EMAIL = {
 
 
 def _make_agent_result(decision: str, email_html: str = "", tezis_html: str = "") -> dict:
-    """Формирует mock-результат агента LangChain."""
     steps = []
     if email_html:
-        steps.append(
-            (
-                MagicMock(),
-                json.dumps({"decision": decision, "emailHtml": email_html, "subject": "Re: Тест"}),
-            )
-        )
+        steps.append((
+            MagicMock(),
+            json.dumps({"decision": decision, "emailHtml": email_html, "subject": "Re: Тест"}),
+        ))
     if tezis_html:
         steps.append((MagicMock(), json.dumps({"tezisFormHtml": tezis_html})))
     return {
         "output": f"Решение агента: {decision}",
         "intermediate_steps": steps,
     }
-
-
-# ---------------------------------------------------------------------------
-# Тесты pipeline ДЗО
-# ---------------------------------------------------------------------------
 
 
 class TestDzoPipeline:
@@ -106,18 +92,9 @@ class TestDzoPipeline:
     @patch("agent1_dzo_inspector.runner.extract_text_from_attachment")
     @patch("agent1_dzo_inspector.runner.fetch_unseen_emails")
     @patch("agent1_dzo_inspector.runner.create_dzo_agent")
-    def test_full_pipeline_approved(
-        self,
-        mock_create_agent,
-        mock_fetch,
-        mock_extract,
-        mock_notify,
-        mock_send,
-    ):
-        """Полный pipeline: заявка принята → отправляется письмо об одобрении."""
+    def test_full_pipeline_approved(self, mock_create_agent, mock_fetch, mock_extract, mock_notify, mock_send):
         mock_fetch.return_value = [SAMPLE_DZO_EMAIL]
         mock_extract.return_value = "Текст ТЗ из вложения"
-
         mock_agent = MagicMock()
         mock_create_agent.return_value = mock_agent
         mock_agent.invoke.return_value = _make_agent_result(
@@ -125,16 +102,13 @@ class TestDzoPipeline:
             email_html="<p>Заявка принята</p>",
             tezis_html="<html>Тезис форма</html>",
         )
-
         from agent1_dzo_inspector.runner import process_dzo_emails
-
         process_dzo_emails()
-
         mock_agent.invoke.assert_called_once()
         mock_send.assert_called_once()
         call_kwargs = mock_send.call_args
         assert call_kwargs.kwargs["to"] == SAMPLE_DZO_EMAIL["from"]
-        assert "Заявка принята" in call_kwargs.kwargs["subject"] or "принята" in call_kwargs.kwargs["html_body"].lower()
+        assert "принята" in call_kwargs.kwargs["subject"] or "принята" in call_kwargs.kwargs["html_body"].lower()
 
     @patch.dict("os.environ", os_environ_patch)
     @patch("agent1_dzo_inspector.runner.send_email")
@@ -142,32 +116,19 @@ class TestDzoPipeline:
     @patch("agent1_dzo_inspector.runner.extract_text_from_attachment")
     @patch("agent1_dzo_inspector.runner.fetch_unseen_emails")
     @patch("agent1_dzo_inspector.runner.create_dzo_agent")
-    def test_pipeline_requires_revision(
-        self,
-        mock_create_agent,
-        mock_fetch,
-        mock_extract,
-        mock_notify,
-        mock_send,
-    ):
-        """Pipeline: заявка требует доработки → запрос информации."""
+    def test_pipeline_requires_revision(self, mock_create_agent, mock_fetch, mock_extract, mock_notify, mock_send):
         mock_fetch.return_value = [SAMPLE_DZO_EMAIL]
         mock_extract.return_value = "Неполный текст"
-
         mock_agent = MagicMock()
         mock_create_agent.return_value = mock_agent
         mock_agent.invoke.return_value = _make_agent_result(
             decision="Требуется доработка",
             email_html="<p>Требуется доработка</p>",
         )
-
         from agent1_dzo_inspector.runner import process_dzo_emails
-
         process_dzo_emails()
-
         mock_send.assert_called_once()
-        call_kwargs = mock_send.call_args
-        assert call_kwargs.kwargs["to"] == SAMPLE_DZO_EMAIL["from"]
+        assert mock_send.call_args.kwargs["to"] == SAMPLE_DZO_EMAIL["from"]
 
     @patch.dict("os.environ", os_environ_patch)
     @patch("agent1_dzo_inspector.runner.config")
@@ -177,15 +138,8 @@ class TestDzoPipeline:
     @patch("agent1_dzo_inspector.runner.fetch_unseen_emails")
     @patch("agent1_dzo_inspector.runner.create_dzo_agent")
     def test_pipeline_escalation_sends_to_manager(
-        self,
-        mock_create_agent,
-        mock_fetch,
-        mock_extract,
-        mock_notify,
-        mock_send,
-        mock_config,
+        self, mock_create_agent, mock_fetch, mock_extract, mock_notify, mock_send, mock_config
     ):
-        """При эскалации письмо уходит менеджеру, а не отправителю."""
         mock_config.MANAGER_EMAIL = os_environ_patch["MANAGER_EMAIL"]
         mock_config.DZO_SMTP_FROM = os_environ_patch["DZO_SMTP_FROM"]
         mock_config.DZO_IMAP_HOST = os_environ_patch["DZO_IMAP_HOST"]
@@ -195,35 +149,25 @@ class TestDzoPipeline:
         mock_config.DZO_IMAP_FOLDER = "INBOX"
         mock_fetch.return_value = [SAMPLE_DZO_EMAIL]
         mock_extract.return_value = "Противоречивые данные"
-
         mock_agent = MagicMock()
         mock_create_agent.return_value = mock_agent
         mock_agent.invoke.return_value = _make_agent_result(
             decision="Требуется эскалация",
             email_html="<p>Эскалация</p>",
         )
-
         from agent1_dzo_inspector.runner import process_dzo_emails
-
         process_dzo_emails()
-
         mock_send.assert_called_once()
-        call_kwargs = mock_send.call_args
-        # Письмо должно уйти менеджеру, не отправителю
-        assert call_kwargs.kwargs["to"] == os_environ_patch["MANAGER_EMAIL"]
+        assert mock_send.call_args.kwargs["to"] == os_environ_patch["MANAGER_EMAIL"]
 
     @patch.dict("os.environ", os_environ_patch)
     @patch("agent1_dzo_inspector.runner.send_email")
     @patch("agent1_dzo_inspector.runner.notify")
     @patch("agent1_dzo_inspector.runner.fetch_unseen_emails")
     def test_no_emails_does_nothing(self, mock_fetch, mock_notify, mock_send):
-        """Пустой INBOX — агент не запускается."""
         mock_fetch.return_value = []
-
         from agent1_dzo_inspector.runner import process_dzo_emails
-
         process_dzo_emails()
-
         mock_send.assert_not_called()
 
     @patch.dict("os.environ", os_environ_patch)
@@ -231,22 +175,13 @@ class TestDzoPipeline:
     @patch("agent1_dzo_inspector.runner.notify")
     @patch("agent1_dzo_inspector.runner.fetch_unseen_emails")
     def test_email_without_attachments_requests_resend(self, mock_fetch, mock_notify, mock_send):
-        """Письмо без вложений — отправляется запрос на повторную отправку."""
         no_att_email = dict(SAMPLE_DZO_EMAIL)
         no_att_email["attachments"] = []
         mock_fetch.return_value = [no_att_email]
-
         from agent1_dzo_inspector.runner import process_dzo_emails
-
         process_dzo_emails()
-
         mock_send.assert_called_once()
         assert "вложени" in mock_send.call_args.kwargs["html_body"].lower()
-
-
-# ---------------------------------------------------------------------------
-# Тесты pipeline ТЗ
-# ---------------------------------------------------------------------------
 
 
 class TestTzPipeline:
@@ -256,46 +191,29 @@ class TestTzPipeline:
     @patch("agent2_tz_inspector.runner.extract_text_from_attachment")
     @patch("agent2_tz_inspector.runner.fetch_unseen_emails")
     @patch("agent2_tz_inspector.runner.create_tz_agent")
-    def test_tz_pipeline_compliant(
-        self,
-        mock_create_agent,
-        mock_fetch,
-        mock_extract,
-        mock_notify,
-        mock_send,
-    ):
-        """ТЗ соответствует требованиям → отправляется одобрение."""
+    def test_tz_pipeline_compliant(self, mock_create_agent, mock_fetch, mock_extract, mock_notify, mock_send):
         mock_fetch.return_value = [SAMPLE_TZ_EMAIL]
         mock_extract.return_value = "Текст технического задания"
-
         mock_agent = MagicMock()
         mock_create_agent.return_value = mock_agent
         mock_agent.invoke.return_value = _make_agent_result(
             decision="Соответствует",
             email_html="<p>ТЗ одобрено</p>",
         )
-
         from agent2_tz_inspector.runner import process_tz_emails
-
         process_tz_emails()
-
         mock_agent.invoke.assert_called_once()
         mock_send.assert_called_once()
-        call_kwargs = mock_send.call_args
-        assert call_kwargs.kwargs["to"] == SAMPLE_TZ_EMAIL["from"]
+        assert mock_send.call_args.kwargs["to"] == SAMPLE_TZ_EMAIL["from"]
 
     @patch.dict("os.environ", os_environ_patch)
     @patch("agent2_tz_inspector.runner.send_email")
     @patch("agent2_tz_inspector.runner.notify")
     @patch("agent2_tz_inspector.runner.fetch_unseen_emails")
     def test_tz_no_emails(self, mock_fetch, mock_notify, mock_send):
-        """Пустой INBOX для ТЗ-агента."""
         mock_fetch.return_value = []
-
         from agent2_tz_inspector.runner import process_tz_emails
-
         process_tz_emails()
-
         mock_send.assert_not_called()
 
     @patch.dict("os.environ", os_environ_patch)
@@ -305,28 +223,19 @@ class TestTzPipeline:
     @patch("agent2_tz_inspector.runner.fetch_unseen_emails")
     @patch("agent2_tz_inspector.runner.create_tz_agent")
     def test_tz_extract_called_for_each_attachment(
-        self,
-        mock_create_agent,
-        mock_fetch,
-        mock_extract,
-        mock_notify,
-        mock_send,
+        self, mock_create_agent, mock_fetch, mock_extract, mock_notify, mock_send
     ):
-        """extract_text_from_attachment вызывается для каждого вложения."""
         email_with_two_att = dict(SAMPLE_TZ_EMAIL)
         email_with_two_att["attachments"] = [
             {"filename": "tz1.pdf", "ext": "pdf", "data": b"%PDF", "b64": "abc", "mime": "application/pdf"},
-            {"filename": "tz2.docx", "ext": "docx", "data": b"PK", "b64": "xyz", "mime": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"},
+            {"filename": "tz2.docx", "ext": "docx", "data": b"PK", "b64": "xyz",
+             "mime": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"},
         ]
         mock_fetch.return_value = [email_with_two_att]
         mock_extract.return_value = "Текст"
-
         mock_agent = MagicMock()
         mock_create_agent.return_value = mock_agent
         mock_agent.invoke.return_value = _make_agent_result("Соответствует", "<p>ok</p>")
-
         from agent2_tz_inspector.runner import process_tz_emails
-
         process_tz_emails()
-
         assert mock_extract.call_count == 2
