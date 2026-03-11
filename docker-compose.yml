@@ -10,21 +10,32 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-dzo_agents}
       POSTGRES_USER: ${POSTGRES_USER:-dzo}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?err}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD не задан}
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./shared/migrations:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dzo} -d ${POSTGRES_DB:-dzo_agents}"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-dzo} -d $${POSTGRES_DB:-dzo_agents}"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 10s
     networks:
       - backend
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
+      - DAC_READ_SEARCH
+    security_opt:
+      - no-new-privileges:true
     deploy:
       resources:
         limits:
           memory: 512m
+          cpus: "0.5"
 
   # ─── FastAPI ──────────────────────────────────────────────────
   api:
@@ -53,16 +64,21 @@ services:
       timeout: 10s
       retries: 3
       start_period: 15s
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /tmp/pycache
     deploy:
       resources:
         limits:
           memory: 1g
           cpus: "1.0"
-    security_opt:
-      - no-new-privileges:true
-    read_only: false
-    tmpfs:
-      - /tmp
 
   # ─── Streamlit UI ─────────────────────────────────────────────
   ui:
@@ -86,13 +102,21 @@ services:
       timeout: 10s
       retries: 3
       start_period: 20s
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /tmp/pycache
     deploy:
       resources:
         limits:
           memory: 512m
           cpus: "0.5"
-    security_opt:
-      - no-new-privileges:true
 
   # ─── Агент ДЗО ────────────────────────────────────────────────
   agent-dzo:
@@ -110,13 +134,19 @@ services:
       - ./logs:/app/logs
     networks:
       - backend
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /tmp/pycache
     deploy:
       resources:
         limits:
           memory: 1g
           cpus: "1.0"
-    security_opt:
-      - no-new-privileges:true
 
   # ─── Агент ТЗ ─────────────────────────────────────────────────
   agent-tz:
@@ -134,13 +164,19 @@ services:
       - ./logs:/app/logs
     networks:
       - backend
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /tmp/pycache
     deploy:
       resources:
         limits:
           memory: 1g
           cpus: "1.0"
-    security_opt:
-      - no-new-privileges:true
 
   # ─── Nginx reverse proxy ──────────────────────────────────────
   nginx:
@@ -167,18 +203,25 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+      - CHOWN
+      - SETUID
+      - SETGID
+    security_opt:
+      - no-new-privileges:true
     deploy:
       resources:
         limits:
           memory: 128m
           cpus: "0.25"
-    security_opt:
-      - no-new-privileges:true
 
 networks:
   backend:
     driver: bridge
-    internal: true          # postgres и агенты не доступны снаружи
+    internal: true
   frontend:
     driver: bridge
 
