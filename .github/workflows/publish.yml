@@ -1,0 +1,91 @@
+name: Publish to PyPI
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"   # v1.0.0, v1.2.3, ...
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "PyPI target"
+        required: true
+        default: testpypi
+        type: choice
+        options: [testpypi, pypi]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build tools
+        run: pip install build twine
+
+      - name: Extract version from tag
+        id: meta
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}   # v1.0.0 → 1.0.0
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          # Проверяем совпадение тэга и version в pyproject.toml
+          PY_VER=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          if [ "$VERSION" != "$PY_VER" ]; then
+            echo "❌ Тэг $VERSION не совпадает с version в pyproject.toml ($PY_VER)"
+            exit 1
+          fi
+
+      - name: Build sdist + wheel
+        run: python -m build
+
+      - name: Check dist
+        run: twine check dist/*
+
+      - name: Upload dist artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ steps.meta.outputs.version }}
+          path: dist/
+
+  publish-testpypi:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'testpypi'
+    environment: testpypi
+    permissions:
+      id-token: write   # OIDC Trusted Publisher — без паролей
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist-${{ needs.build.outputs.version }}
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+
+  publish-pypi:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    environment: pypi
+    permissions:
+      id-token: write   # OIDC Trusted Publisher — без паролей
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist-${{ needs.build.outputs.version }}
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+          body: |
+            См. [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md)

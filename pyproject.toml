@@ -1,3 +1,80 @@
+[build-system]
+requires = ["setuptools>=72", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "dzo-tz-agents"
+version = "1.0.0"
+description = "LLM-агенты для автоматической проверки заявок ДЗО и ТЗ по электронной почте"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.11"
+keywords = ["llm", "agent", "fastapi", "openai", "langchain", "email", "dzo"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Office/Business",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "langchain>=0.2.0",
+    "langchain-openai>=0.1.0",
+    "openai>=1.30.0",
+    "imapclient>=2.3.1",
+    "python-docx>=1.1.0",
+    "pdfplumber>=0.11.0",
+    "openpyxl>=3.1.2",
+    "xlrd>=2.0.1",
+    "python-dotenv>=1.0.0",
+    "beautifulsoup4>=4.12.0",
+    "Pillow>=10.0.0",
+    "httpx[http2]>=0.27.0",
+    "schedule>=1.2.0",
+    "fastapi>=0.111.0",
+    "uvicorn[standard]>=0.30.0",
+    "pydantic>=2.7.0",
+    "psycopg2-binary>=2.9.9",
+    "prometheus-client>=0.20.0",
+]
+
+[project.optional-dependencies]
+ui = ["streamlit>=1.35.0"]
+dev = [
+    "pytest>=8.2.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=5.0.0",
+    "ruff>=0.4.0",
+    "pip-audit>=2.7.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/OlegKarenkikh/dzo-tz-agents"
+Repository = "https://github.com/OlegKarenkikh/dzo-tz-agents"
+Changelog = "https://github.com/OlegKarenkikh/dzo-tz-agents/blob/main/CHANGELOG.md"
+Issues = "https://github.com/OlegKarenkikh/dzo-tz-agents/issues"
+
+[project.scripts]
+dzo-agents   = "main:run"
+dzo-api      = "api.app:app"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = [
+    "agent1_dzo_inspector*",
+    "agent2_tz_inspector*",
+    "shared*",
+    "api*",
+]
+exclude = ["tests*", "ui*", "nginx*", "monitoring*"]
+
+[tool.setuptools.package-data]
+"shared.migrations" = ["*.sql"]
+
+# ─── Ruff ──────────────────────────────────────────────────────────────
 [tool.ruff]
 line-length = 100
 target-version = "py311"
@@ -7,6 +84,7 @@ ignore = ["E501", "B008", "B904"]
 [tool.ruff.isort]
 known-first-party = ["shared", "agent1_dzo_inspector", "agent2_tz_inspector", "api", "ui"]
 
+# ─── Pytest ──────────────────────────────────────────────────────────
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
@@ -15,6 +93,7 @@ python_functions = ["test_*"]
 addopts = "-v --tb=short"
 filterwarnings = ["ignore::DeprecationWarning"]
 
+# ─── Coverage ─────────────────────────────────────────────────────────
 [tool.coverage.run]
 source = ["agent1_dzo_inspector", "agent2_tz_inspector", "shared", "api"]
 omit = ["tests/*", "ui/*", "*/migrations/*"]
