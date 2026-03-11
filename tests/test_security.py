@@ -7,14 +7,15 @@ import os
 import pytest
 from fastapi.testclient import TestClient
 
-os.environ.setdefault("DATABASE_URL", "")
-os.environ.setdefault("OPENAI_API_KEY", "test-key")
-os.environ.setdefault("API_KEY", "test-secret")
+# API_KEY устанавлен в conftest.py (значение: "test-secret")
+# Не переопределяем здесь, чтобы не конфликтовать с test_api.py
 os.environ.setdefault("CORS_ORIGINS", "http://localhost:8501")
 
 from api.app import app  # noqa: E402
 
 client = TestClient(app, raise_server_exceptions=False)
+
+TEST_KEY = "test-secret"  # Соответствует conftest.py
 
 
 # ─── CORS ─────────────────────────────────────────────────────
@@ -58,7 +59,7 @@ class TestAPIKeyAuth:
         assert resp.status_code == 401
 
     def test_correct_key_returns_200(self):
-        resp = client.get("/api/v1/jobs", headers={"X-API-Key": "test-secret"})
+        resp = client.get("/api/v1/jobs", headers={"X-API-Key": TEST_KEY})
         assert resp.status_code == 200
 
     def test_public_endpoints_no_key_needed(self):
@@ -76,12 +77,12 @@ class TestAPIKeyAuth:
         assert resp.status_code == 401
 
 
-# ─── Error masking ───────────────────────────────────────────
+# ─── Error masking ────────────────────────────────────────────
 class TestErrorMasking:
     def test_404_does_not_leak_internals(self):
         resp = client.get(
             "/api/v1/jobs/nonexistent-id",
-            headers={"X-API-Key": "test-secret"},
+            headers={"X-API-Key": TEST_KEY},
         )
         assert resp.status_code == 404
         body = resp.text
@@ -91,7 +92,7 @@ class TestErrorMasking:
     def test_500_does_not_expose_exception(self):
         resp = client.post(
             "/api/v1/process/dzo",
-            headers={"X-API-Key": "test-secret", "Content-Type": "application/json"},
+            headers={"X-API-Key": TEST_KEY, "Content-Type": "application/json"},
             content=b"{invalid json",
         )
         assert resp.status_code in (422, 500)
@@ -99,7 +100,7 @@ class TestErrorMasking:
         assert "Traceback" not in body
 
 
-# ─── Metrics endpoint ──────────────────────────────────────────
+# ─── Metrics endpoint ────────────────────────────────────────────
 class TestMetrics:
     def test_metrics_endpoint_accessible(self):
         resp = client.get("/metrics")
@@ -122,7 +123,7 @@ class TestMetrics:
         assert 'endpoint="/metrics"' not in body
 
 
-# ─── Health endpoint ──────────────────────────────────────────
+# ─── Health endpoint ────────────────────────────────────────────
 class TestHealth:
     def test_health_returns_ok(self):
         resp = client.get("/health")

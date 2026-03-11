@@ -1,13 +1,18 @@
 """
 conftest.py — общие фикстуры и mock-объекты для тестов.
-
 Создаёт заглушки модулей langchain для окружений без реального API ключа.
 """
 
+import os
 import sys
 from unittest.mock import MagicMock
 
 import pytest
+
+# Устанавливаем единый API_KEY до любых импортов — один источник истины для всех тестов.
+# test_api.py и test_security.py оба должны использовать этот ключ.
+os.environ["OPENAI_API_KEY"] = "sk-test"
+os.environ["API_KEY"] = "test-secret"
 
 
 def _install_langchain_mocks() -> None:
