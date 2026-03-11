@@ -1,8 +1,11 @@
 import os
+
 from dotenv import load_dotenv
+
 load_dotenv()
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_API_KEY  = os.getenv("OPENAI_API_KEY")
+OPENAI_API_BASE = os.getenv("OPENAI_API_BASE")  # None → дефолт langchain (api.openai.com/v1)
 
 # IMAP — Агент ДЗО
 DZO_IMAP_HOST     = os.getenv("DZO_IMAP_HOST", os.getenv("IMAP_HOST", "imap.company.ru"))
