@@ -30,7 +30,7 @@ os_environ_patch = {
 
 os.environ.setdefault("OPENAI_API_KEY", "sk-test")
 
-# Явный импорт submodules необходим для корректной работы unittest.mock.patch
+# Явный импорт submodules необходим для корректной работы unittest.mock.patch  # noqa: I001
 import agent1_dzo_inspector.runner  # noqa: E402
 import agent2_tz_inspector.runner  # noqa: E402
 
@@ -42,9 +42,7 @@ SAMPLE_DZO_EMAIL = {
     "date": "Mon, 01 Jan 2024 12:00:00 +0000",
     "body": "Просим согласовать закупку серверов. Инициатор: Иванов И.И. Количество: 5 шт.",
     "attachments": [{
-        "filename": "tz.docx",
-        "ext": "docx",
-        "data": b"fake-docx-content",
+        "filename": "tz.docx", "ext": "docx", "data": b"fake-docx-content",
         "b64": "ZmFrZS1kb2N4LWNvbnRlbnQ=",
         "mime": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     }],
@@ -57,11 +55,8 @@ SAMPLE_TZ_EMAIL = {
     "date": "Mon, 01 Jan 2024 12:00:00 +0000",
     "body": "ТЗ на поставку серверного оборудования.",
     "attachments": [{
-        "filename": "техзадание.pdf",
-        "ext": "pdf",
-        "data": b"%PDF-1.4 fake content",
-        "b64": "JVBER...fake",
-        "mime": "application/pdf",
+        "filename": "техзадание.pdf", "ext": "pdf", "data": b"%PDF-1.4 fake content",
+        "b64": "JVBER...fake", "mime": "application/pdf",
     }],
 }
 

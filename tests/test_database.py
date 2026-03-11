@@ -1,7 +1,8 @@
 import pytest
 
-import shared.database as db
 from unittest.mock import patch  # noqa: F401
+
+import shared.database as db
 
 
 @pytest.fixture(autouse=True)

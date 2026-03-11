@@ -1,11 +1,13 @@
-import httpx
 import os
+
+import httpx
+
 from shared.logger import setup_logger
 
 logger = setup_logger("telegram")
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
-TELEGRAM_CHAT_ID   = os.getenv("TELEGRAM_CHAT_ID", "")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 
 
 def notify(message: str, level: str = "info"):
