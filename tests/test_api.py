@@ -11,7 +11,8 @@ from fastapi.testclient import TestClient
 os.environ.setdefault("OPENAI_API_KEY", "sk-test")
 os.environ["API_KEY"] = "test-key-12345"
 
-from api.app import _jobs, app  # noqa: E402
+from api.app import app  # noqa: E402
+from shared.database import _memory_store  # noqa: E402
 
 
 @pytest.fixture()
@@ -22,9 +23,9 @@ def client():
 
 @pytest.fixture(autouse=True)
 def clear_jobs():
-    _jobs.clear()
+    _memory_store.clear()
     yield
-    _jobs.clear()
+    _memory_store.clear()
 
 
 HEADERS = {"X-API-Key": "test-key-12345"}
