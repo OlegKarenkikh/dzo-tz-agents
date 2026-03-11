@@ -1,5 +1,6 @@
 import json
 from datetime import datetime
+
 from langchain.tools import tool
 
 
@@ -162,12 +163,16 @@ def generate_corrected_application(query: str) -> str:
             old = f.get("old_value", "")
             new = f.get("new_value", "")
             if f.get("status") == "added":
-                rows += (f"<tr><th>{f['name']}</th>"
-                         f"<td style='background:#FFFF00;color:#CC0000'>[ДОБАВЛЕНО: {new}]</td></tr>")
+                rows += (
+                    f"<tr><th>{f['name']}</th>"
+                    f"<td style='background:#FFFF00;color:#CC0000'>[ДОБАВЛЕНО: {new}]</td></tr>"
+                )
             elif old and new:
-                rows += (f"<tr><th>{f['name']}</th><td>"
-                         f"<span style='background:#FFD7D7;text-decoration:line-through'>[БЫЛО: {old}]</span> → "
-                         f"<span style='background:#D7FFD7'>[СТАЛО: {new}]</span></td></tr>")
+                rows += (
+                    f"<tr><th>{f['name']}</th><td>"
+                    f"<span style='background:#FFD7D7;text-decoration:line-through'>[БЫЛО: {old}]</span> → "
+                    f"<span style='background:#D7FFD7'>[СТАЛО: {new}]</span></td></tr>"
+                )
             else:
                 rows += f"<tr><th>{f['name']}</th><td>{new or old}</td></tr>"
         html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>

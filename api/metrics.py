@@ -2,16 +2,21 @@
 Prometheus-метрики для FastAPI.
 Подключается через app.include_router(metrics_router) в api/app.py.
 """
-from prometheus_client import (
-    Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
-)
+import time
+
 from fastapi import APIRouter
 from fastapi.responses import Response
-import time
+from prometheus_client import (
+    CONTENT_TYPE_LATEST,
+    Counter,
+    Gauge,
+    Histogram,
+    generate_latest,
+)
 
 metrics_router = APIRouter()
 
-# ── Счётчики ──────────────────────────────────────────────────
+# ── Счётчики ──────────────────────────────────────────────
 JOBS_TOTAL = Counter(
     "dzo_tz_jobs_total",
     "Общее кол-во заданий",
@@ -77,6 +82,7 @@ def metrics():
 
 class JobTimer:
     """Контекстный менеджер для измерения времени задания."""
+
     def __init__(self, agent: str):
         self.agent = agent
         self.start = None
