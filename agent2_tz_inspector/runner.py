@@ -1,17 +1,18 @@
 import json
-import os
 from datetime import datetime
+
 from dotenv import load_dotenv
+
 load_dotenv()
 
-from shared.email_client import fetch_unseen_emails
-from shared.file_extractor import extract_text_from_attachment
-from shared.email_sender import send_email
-from shared.telegram_notify import notify
-from shared.logger import setup_logger
-from agent2_tz_inspector.agent import create_tz_agent
-from api.metrics import EMAILS_PROCESSED, EMAILS_ERRORS, POLL_CYCLES, JobTimer
-import config
+import config  # noqa: E402
+from agent2_tz_inspector.agent import create_tz_agent  # noqa: E402
+from api.metrics import EMAILS_ERRORS, EMAILS_PROCESSED, JobTimer, POLL_CYCLES  # noqa: E402
+from shared.email_client import fetch_unseen_emails  # noqa: E402
+from shared.email_sender import send_email  # noqa: E402
+from shared.file_extractor import extract_text_from_attachment  # noqa: E402
+from shared.logger import setup_logger  # noqa: E402
+from shared.telegram_notify import notify  # noqa: E402
 
 logger = setup_logger("agent_tz")
 
@@ -58,14 +59,16 @@ def process_tz_emails():
             email_html = corrected_tz_html = ""
             decision = "Требует доработки"
             reply_subject = ""
-            issues: list[str] = []
 
             for step in result.get("intermediate_steps", []):
                 try:
                     obs = json.loads(step[1]) if isinstance(step[1], str) else step[1]
-                    if obs.get("emailHtml"):  email_html        = obs["emailHtml"]; decision = obs.get("decision", decision); reply_subject = obs.get("subject", "")
-                    if obs.get("html"):       corrected_tz_html = obs["html"]
-                    if obs.get("issues"):     issues            = obs["issues"]
+                    if obs.get("emailHtml"):
+                        email_html = obs["emailHtml"]
+                        decision = obs.get("decision", decision)
+                        reply_subject = obs.get("subject", "")
+                    if obs.get("html"):
+                        corrected_tz_html = obs["html"]
                 except Exception:
                     pass
 
@@ -73,16 +76,22 @@ def process_tz_emails():
                 email_html = f"<div style='font-family:Arial'>{result['output'].replace(chr(10), '<br>')}</div>"
 
             if "соответствует" in decision.lower():
-                send_email(to=mail["from"],
-                           subject=reply_subject or f"ТЗ принято: {mail['subject']}",
-                           html_body=email_html, from_addr=config.TZ_SMTP_FROM)
+                send_email(
+                    to=mail["from"],
+                    subject=reply_subject or f"ТЗ принято: {mail['subject']}",
+                    html_body=email_html,
+                    from_addr=config.TZ_SMTP_FROM,
+                )
                 notify(f"✅ ТЗ принято от {mail['from']}", level="success")
             else:
-                send_email(to=mail["from"],
-                           subject=reply_subject or f"Замечания по ТЗ: {mail['subject']}",
-                           html_body=email_html, from_addr=config.TZ_SMTP_FROM,
-                           attachment_bytes=corrected_tz_html.encode("utf-8") if corrected_tz_html else None,
-                           attachment_name="ТЗ_с_замечаниями.html" if corrected_tz_html else None)
+                send_email(
+                    to=mail["from"],
+                    subject=reply_subject or f"Замечания по ТЗ: {mail['subject']}",
+                    html_body=email_html,
+                    from_addr=config.TZ_SMTP_FROM,
+                    attachment_bytes=corrected_tz_html.encode("utf-8") if corrected_tz_html else None,
+                    attachment_name="ТЗ_с_замечаниями.html" if corrected_tz_html else None,
+                )
                 notify(f"ℹ️ ТЗ отправлено на доработку {mail['from']}", level="info")
 
             EMAILS_PROCESSED.labels(agent="tz").inc()
