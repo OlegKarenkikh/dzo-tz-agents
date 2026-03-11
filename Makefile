@@ -1,4 +1,4 @@
-.PHONY: help install test lint fmt build up down logs clean
+.PHONY: help install test lint fmt build up down logs clean api ui api-ui
 
 help: ## Показать доступные команды
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -37,3 +37,13 @@ dzo-only: ## Запустить только Агент ДЗО
 
 tz-only: ## Запустить только Агент ТЗ
 	AGENT_MODE=tz python main.py
+
+api: ## Запустить REST API (порт 8000)
+	uvicorn api.app:app --reload --host 0.0.0.0 --port 8000
+
+ui: ## Запустить Web UI (порт 8501)
+	streamlit run ui/app.py --server.port 8501 --server.address 0.0.0.0
+
+api-ui: ## Запустить API и UI одновременно
+	make api & make ui
+
