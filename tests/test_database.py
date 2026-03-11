@@ -1,11 +1,11 @@
 import pytest
-from unittest.mock import patch  # noqa: F401
+
 import shared.database as db
+from unittest.mock import patch  # noqa: F401
 
 
 @pytest.fixture(autouse=True)
 def clear_memory_store():
-    """Oчищает in-memory хранилище до каждого теста."""
     db._memory_store.clear()
     yield
     db._memory_store.clear()
@@ -27,8 +27,7 @@ class TestInMemoryStorage:
 
     def test_update_job(self, no_postgres):
         job_id = db.create_job("tz")
-        db.update_job(job_id, status="done", decision="Соответствует",
-                      result={"sections": 8})
+        db.update_job(job_id, status="done", decision="Соответствует", result={"sections": 8})
         job = db.get_job(job_id)
         assert job["status"] == "done"
         assert job["decision"] == "Соответствует"
@@ -56,8 +55,7 @@ class TestInMemoryStorage:
         db.create_job("dzo", subject="Заявка 1")
         db.create_job("tz", subject="ТЗ 1")
         db.create_job("dzo", subject="Заявка 2")
-        rows = db.get_history()
-        assert len(rows) == 3
+        assert len(db.get_history()) == 3
 
     def test_get_history_filter_agent(self, no_postgres):
         db.create_job("dzo")
@@ -79,8 +77,7 @@ class TestInMemoryStorage:
     def test_get_history_limit(self, no_postgres):
         for _ in range(10):
             db.create_job("dzo")
-        rows = db.get_history(limit=3)
-        assert len(rows) == 3
+        assert len(db.get_history(limit=3)) == 3
 
     def test_get_stats(self, no_postgres):
         j1 = db.create_job("dzo")

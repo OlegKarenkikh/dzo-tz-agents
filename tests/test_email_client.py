@@ -2,11 +2,11 @@
 Тесты для shared/email_client.py.
 Используются mock-объекты для imaplib.IMAP4_SSL.
 """
-
+import base64
 import email
 import imaplib
-from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -19,7 +19,6 @@ def _make_email_bytes(
     from_addr: str = "sender@example.com",
     body: str = "Тело письма",
 ) -> bytes:
-    """Вспомогательная функция: строит простое MIME-письмо."""
     msg = MIMEMultipart()
     msg["Subject"] = subject
     msg["From"] = from_addr
@@ -39,41 +38,32 @@ class TestDecodeStr:
         assert _decode_str(None) == ""
 
     def test_cyrillic_encoded(self):
-        """Декодирование кириллического заголовка в формате RFC 2047."""
-        # =?utf-8?b?...?= — base64-закодированный UTF-8
-        import base64
         cyrillic = "Заявка на закупку"
         encoded = f"=?utf-8?b?{base64.b64encode(cyrillic.encode()).decode()}?="
-        result = _decode_str(encoded)
-        assert result == cyrillic
+        assert _decode_str(encoded) == cyrillic
 
     def test_cyrillic_quoted_printable(self):
-        """Декодирование QP-кодировки для кириллицы."""
         import quopri
+
         cyrillic = "Привет мир"
         qp_encoded = quopri.encodestring(cyrillic.encode("utf-8")).decode("ascii")
         encoded = f"=?utf-8?q?{qp_encoded.replace(' ', '_')}?="
         result = _decode_str(encoded)
-        assert "Привет" in result or result  # декодирование должно вернуть строку
+        assert "Привет" in result or result
 
 
 class TestFetchUnseenEmails:
     @patch("shared.email_client.imaplib.IMAP4_SSL")
     def test_successful_fetch(self, mock_imap_class):
-        """Успешное получение одного письма из INBOX."""
         mock_imap = MagicMock()
         mock_imap_class.return_value = mock_imap
-
         mail_bytes = _make_email_bytes(subject="Закупка оборудования", body="Тело письма")
-
         mock_imap.login.return_value = ("OK", [b"Logged in"])
         mock_imap.select.return_value = ("OK", [b"1"])
         mock_imap.search.return_value = ("OK", [b"1"])
         mock_imap.fetch.return_value = ("OK", [(b"1 (RFC822 {100})", mail_bytes)])
         mock_imap.store.return_value = ("OK", [b"1"])
-
         result = fetch_unseen_emails("imap.test.ru", "user@test.ru", "secret")
-
         assert len(result) == 1
         assert result[0]["subject"] == "Закупка оборудования"
         assert result[0]["body"] == "Тело письма"
@@ -81,73 +71,50 @@ class TestFetchUnseenEmails:
 
     @patch("shared.email_client.imaplib.IMAP4_SSL")
     def test_empty_inbox(self, mock_imap_class):
-        """Пустой INBOX — возвращается пустой список."""
         mock_imap = MagicMock()
         mock_imap_class.return_value = mock_imap
-
         mock_imap.login.return_value = ("OK", [b"Logged in"])
         mock_imap.select.return_value = ("OK", [b"0"])
         mock_imap.search.return_value = ("OK", [b""])
-
         result = fetch_unseen_emails("imap.test.ru", "user@test.ru", "secret")
-
         assert result == []
         mock_imap.logout.assert_called_once()
 
     @patch("shared.email_client.imaplib.IMAP4_SSL")
     def test_connection_error_returns_empty_list(self, mock_imap_class):
-        """Ошибка подключения — возвращается пустой список, исключение не пробрасывается."""
         mock_imap_class.side_effect = imaplib.IMAP4.error("Connection refused")
-
-        result = fetch_unseen_emails("imap.test.ru", "user@test.ru", "wrong_password")
-
-        assert result == []
+        assert fetch_unseen_emails("imap.test.ru", "user@test.ru", "wrong_password") == []
 
     @patch("shared.email_client.imaplib.IMAP4_SSL")
     def test_login_failure_returns_empty_list(self, mock_imap_class):
-        """Ошибка авторизации — возвращается пустой список."""
         mock_imap = MagicMock()
         mock_imap_class.return_value = mock_imap
         mock_imap.login.side_effect = imaplib.IMAP4.error("AUTHENTICATIONFAILED")
-
-        result = fetch_unseen_emails("imap.test.ru", "user@test.ru", "bad_password")
-
-        assert result == []
+        assert fetch_unseen_emails("imap.test.ru", "user@test.ru", "bad_password") == []
 
     @patch("shared.email_client.imaplib.IMAP4_SSL")
     def test_cyrillic_subject_decoded(self, mock_imap_class):
-        """Кириллическая тема письма декодируется корректно."""
-        import base64
-
         mock_imap = MagicMock()
         mock_imap_class.return_value = mock_imap
-
         cyrillic_subject = "Заявка на закупку оборудования"
         b64_subject = base64.b64encode(cyrillic_subject.encode("utf-8")).decode()
         encoded_subject = f"=?utf-8?b?{b64_subject}?="
-
         mail_bytes = _make_email_bytes(subject=encoded_subject, body="Тело")
-
         mock_imap.login.return_value = ("OK", [b"Logged in"])
         mock_imap.select.return_value = ("OK", [b"1"])
         mock_imap.search.return_value = ("OK", [b"1"])
         mock_imap.fetch.return_value = ("OK", [(b"1 (RFC822 {100})", mail_bytes)])
         mock_imap.store.return_value = ("OK", [b"1"])
-
         result = fetch_unseen_emails("imap.test.ru", "user@test.ru", "secret")
-
         assert len(result) == 1
         assert result[0]["subject"] == cyrillic_subject
 
     @patch("shared.email_client.imaplib.IMAP4_SSL")
     def test_multiple_emails(self, mock_imap_class):
-        """Получение нескольких писем."""
         mock_imap = MagicMock()
         mock_imap_class.return_value = mock_imap
-
         mail1 = _make_email_bytes(subject="Письмо 1")
         mail2 = _make_email_bytes(subject="Письмо 2")
-
         mock_imap.login.return_value = ("OK", [b"Logged in"])
         mock_imap.select.return_value = ("OK", [b"2"])
         mock_imap.search.return_value = ("OK", [b"1 2"])
@@ -156,9 +123,7 @@ class TestFetchUnseenEmails:
             ("OK", [(b"1 (RFC822 {100})", mail2)]),
         ]
         mock_imap.store.return_value = ("OK", [b""])
-
         result = fetch_unseen_emails("imap.test.ru", "user@test.ru", "secret")
-
         assert len(result) == 2
         subjects = [r["subject"] for r in result]
         assert "Письмо 1" in subjects
