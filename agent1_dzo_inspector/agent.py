@@ -1,15 +1,17 @@
 import os
-from langchain_openai import ChatOpenAI
+
 from langchain.agents import AgentExecutor, create_openai_tools_agent
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain.memory import ConversationBufferWindowMemory
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_openai import ChatOpenAI
+
 from agent1_dzo_inspector.tools import (
-    generate_validation_report,
-    generate_tezis_form,
-    generate_info_request,
-    generate_escalation,
-    generate_response_email,
     generate_corrected_application,
+    generate_escalation,
+    generate_info_request,
+    generate_response_email,
+    generate_tezis_form,
+    generate_validation_report,
 )
 
 SYSTEM_PROMPT = """Ты — ИИ-инспектор «Контролер заявок ДЗО». Твоя задача — проверять входящие заявки от дочерних обществ (ДЗО), поступающие по электронной почте, на полноту и корректность перед регистрацией в системе ЭДО «Тезис».
@@ -68,6 +70,7 @@ def create_dzo_agent() -> AgentExecutor:
         temperature=0.2,
         max_tokens=8192,
         api_key=os.getenv("OPENAI_API_KEY"),
+        base_url=os.getenv("OPENAI_API_BASE") or None,
     )
     tools = [
         generate_validation_report,
