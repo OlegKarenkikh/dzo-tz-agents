@@ -1,12 +1,14 @@
 import os
-from langchain_openai import ChatOpenAI
+
 from langchain.agents import AgentExecutor, create_openai_tools_agent
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain.memory import ConversationBufferWindowMemory
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_openai import ChatOpenAI
+
 from agent2_tz_inspector.tools import (
-    generate_json_report,
     generate_corrected_tz,
     generate_email_to_dzo,
+    generate_json_report,
 )
 
 SYSTEM_PROMPT = """Ты — ИИ-инспектор «Контролер ТЗ». Проверяешь технические задания от ДЗО на соответствие корпоративному шаблону.
@@ -49,6 +51,7 @@ def create_tz_agent() -> AgentExecutor:
         temperature=0.2,
         max_tokens=8192,
         api_key=os.getenv("OPENAI_API_KEY"),
+        base_url=os.getenv("OPENAI_API_BASE") or None,
     )
     tools  = [generate_json_report, generate_corrected_tz, generate_email_to_dzo]
     prompt = ChatPromptTemplate.from_messages([
