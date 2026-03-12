@@ -10,9 +10,22 @@ from docx import Document
 from openai import OpenAI
 
 logger = logging.getLogger("file_extractor")
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 IMAGE_EXTS = {"jpg", "jpeg", "png", "tiff", "tif", "bmp", "gif", "webp"}
+
+# Ленивая инициализация клиента — не создаём при импорте модуля.
+# Использует OPENAI_API_BASE, чтобы OCR работал с Ollama/vLLM/DeepSeek.
+_client: OpenAI | None = None
+
+
+def _get_client() -> OpenAI:
+    global _client
+    if _client is None:
+        _client = OpenAI(
+            api_key=os.getenv("OPENAI_API_KEY") or "ollama",
+            base_url=os.getenv("OPENAI_API_BASE") or None,
+        )
+    return _client
 
 
 def extract_text_from_attachment(att: dict[str, Any]) -> str:
@@ -64,10 +77,10 @@ def _extract_docx(data: bytes, b64: str, mime: str) -> str:
 
 
 def _ocr_vision(b64: str, mime: str, doc_type: str) -> str:
-    """OCR через GPT-4o Vision."""
+    """OCR через GPT-4o Vision (или совместимую модель через OPENAI_API_BASE)."""
     try:
         model = os.getenv("MODEL_NAME", "gpt-4o")
-        resp = client.chat.completions.create(
+        resp = _get_client().chat.completions.create(
             model=model,
             messages=[
                 {
