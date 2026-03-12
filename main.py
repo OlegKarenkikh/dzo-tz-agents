@@ -14,7 +14,9 @@ logger = setup_logger("main")
 def run():
     mode = os.getenv("AGENT_MODE", "both").lower()
     interval = int(os.getenv("POLL_INTERVAL_SEC", 300))
-    logger.info(f"Запуск в режиме: {mode}, интервал: {interval} сек.")
+    # RUN_ON_START=false позволяет отключить немедленный запуск всех агентов при старте
+    run_on_start = os.getenv("RUN_ON_START", "true").lower() != "false"
+    logger.info(f"Запуск в режиме: {mode}, интервал: {interval} сек., RUN_ON_START={run_on_start}")
 
     if mode in ("dzo", "both"):
         from agent1_dzo_inspector.runner import process_dzo_emails
@@ -27,7 +29,9 @@ def run():
         logger.info("Агент ТЗ подключён.")
 
     logger.info("Polling запущен. Нажмите Ctrl+C для остановки.")
-    schedule.run_all()
+    if run_on_start:
+        logger.info("Немедленный запуск всех агентов (RUN_ON_START=true).")
+        schedule.run_all()
     while True:
         schedule.run_pending()
         time.sleep(30)

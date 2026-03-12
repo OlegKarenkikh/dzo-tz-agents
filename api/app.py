@@ -13,10 +13,14 @@ FastAPI REST API для обработки документов агентами
   GET  /api/v1/jobs/{job_id}       — статус конкретного задания
   DELETE /api/v1/jobs/{job_id}     — удалить задание
   GET  /api/v1/history             — история обработок
+  GET  /api/v1/stats               — аггрегированная статистика
 """
+import base64
+import json
 import logging
 import os
 import time
+from collections import deque
 from datetime import datetime
 
 from dotenv import load_dotenv
@@ -38,6 +42,7 @@ from shared.database import (
     delete_job as db_delete_job,
     get_history as db_get_history,
     get_job as db_get_job,
+    get_stats as db_get_stats,
     init_db,
     update_job,
 )
@@ -76,11 +81,12 @@ app.add_middleware(
 )
 
 _start_time = datetime.now()
-_run_log: list[dict] = []
+# deque с maxlen=500 — автоматически вытесняет старые записи, нет утечки памяти
+_run_log: deque[dict] = deque(maxlen=500)
 
 _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
-# FIX: не кешируем на уровне модуля — читаем динамически при каждом запросе,
+# Не кешируем на уровне модуля — читаем динамически при каждом запросе,
 # чтобы тесты могли менять os.environ["API_KEY"] между сессиями.
 def _get_api_key() -> str:
     return os.getenv("API_KEY", "")
@@ -146,8 +152,6 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
 
     with JobTimer(agent_type):
         try:
-            import base64
-
             from shared.file_extractor import extract_text_from_attachment
 
             attachment_texts: list[str] = []
@@ -187,7 +191,6 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
             email_html = ""
             for step in result.get("intermediate_steps", []):
                 try:
-                    import json
                     obs = json.loads(step[1]) if isinstance(step[1], str) else step[1]
                     if obs.get("decision"):
                         decision = obs["decision"]
@@ -260,7 +263,8 @@ def health():
 
 @app.get("/status", summary="Последние запуски")
 def status(limit: int = Query(default=10, ge=1, le=100)):
-    return {"runs": len(_run_log), "last_runs": _run_log[-limit:]}
+    log_list = list(_run_log)
+    return {"runs": len(log_list), "last_runs": log_list[-limit:]}
 
 
 @app.get("/agents", summary="Список агентов")
@@ -317,9 +321,8 @@ def list_jobs(
     status: str | None = Query(default=None),
     _: str = Depends(_require_api_key),
 ):
-    jobs = db_get_history(agent=agent)
-    if status:
-        jobs = [j for j in jobs if j.get("status") == status]
+    # Фильтрация по status теперь выполняется в SQL (не в Python)
+    jobs = db_get_history(agent=agent, status=status)
     return {"total": len(jobs), "jobs": jobs}
 
 
@@ -345,10 +348,15 @@ def history(
     limit: int = Query(default=50, ge=1, le=500),
     _: str = Depends(_require_api_key),
 ):
-    jobs = db_get_history(agent=agent, limit=limit)
-    if status:
-        jobs = [j for j in jobs if j.get("status") == status]
+    # Фильтрация по status в SQL
+    jobs = db_get_history(agent=agent, status=status, limit=limit)
     return {"total": len(jobs), "items": jobs}
+
+
+@app.get("/api/v1/stats", summary="Аггрегированная статистика")
+def get_stats(_: str = Depends(_require_api_key)):
+    """Статистика для Dashboard: total, today, errors, approved, rework, escalated."""
+    return db_get_stats()
 
 
 @app.exception_handler(Exception)
