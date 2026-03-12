@@ -7,7 +7,7 @@ import json
 import logging
 import os
 from contextlib import contextmanager
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from uuid import uuid4
 
 logger = logging.getLogger("database")
