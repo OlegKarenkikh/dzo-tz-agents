@@ -36,7 +36,7 @@ def _get_client() -> OpenAI:
 def extract_text_from_attachment(att: dict[str, Any]) -> str:
     """
     Route text extraction by file type.
-    Mirrors the Switch node in n8n: PDF / DOCX / DOC / XLSX / XLS / IMAGE / other.
+    PDF / DOCX / DOC / XLSX / XLS / IMAGE / other.
     """
     ext = att.get("ext", "").lower()
     data = att["data"]
@@ -44,26 +44,32 @@ def extract_text_from_attachment(att: dict[str, Any]) -> str:
     mime = att.get("mime", "application/octet-stream")
 
     if ext == "pdf":
-        # fix #1: pass only raw bytes; conversion to PNG is handled inside _extract_pdf
         return _extract_pdf(data)
     elif ext == "docx":
         return _extract_docx(data, b64, mime)
     elif ext == "doc":
-        # fix #4: DOC is a binary format, not an image.
-        # GPT-4o Vision cannot process application/msword via data-URL.
-        # Full support requires antiword or LibreOffice conversion.
+        # fix #4: DOC is binary, not an image - GPT-4o Vision cannot process it.
         filename = att.get("filename", "file.doc")
-        logger.warning("DOC format not supported for Vision OCR: %s", filename)
+        logger.warning("Format .doc not supported for Vision OCR: %s", filename)
         return (
-            f"[Unsupported format .doc ('{filename}'). "
-            "Please convert to .docx or .pdf and resend.]"
+            f"[\u26a0\ufe0f \u0424\u043e\u0440\u043c\u0430\u0442 .doc ('{filename}') "
+            "\u043d\u0435 \u043f\u043e\u0434\u0434\u0435\u0440\u0436\u0438\u0432\u0430\u0435\u0442\u0441\u044f "
+            "\u0434\u043b\u044f \u0430\u0432\u0442\u043e\u043c\u0430\u0442\u0438\u0447\u0435\u0441\u043a\u043e\u0433\u043e "
+            "\u0438\u0437\u0432\u043b\u0435\u0447\u0435\u043d\u0438\u044f \u0442\u0435\u043a\u0441\u0442\u0430. "
+            "\u041f\u043e\u0436\u0430\u043b\u0443\u0439\u0441\u0442\u0430, \u043a\u043e\u043d\u0432\u0435\u0440\u0442\u0438\u0440\u0443\u0439\u0442\u0435 "
+            "\u0444\u0430\u0439\u043b \u0432 .docx \u0438\u043b\u0438 .pdf \u0438 "
+            "\u043e\u0442\u043f\u0440\u0430\u0432\u044c\u0442\u0435 \u043f\u043e\u0432\u0442\u043e\u0440\u043d\u043e.]"
         )
     elif ext in ("xlsx", "xls"):
         return _extract_spreadsheet(data, ext)
     elif ext in IMAGE_EXTS:
         return _ocr_vision(b64, mime, "IMAGE")
     else:
-        return f"[Unsupported format '{att.get('filename', '?')}' ({ext})]"
+        filename = att.get('filename', '?')
+        return (
+            f"[\u26a0\ufe0f \u0424\u043e\u0440\u043c\u0430\u0442 '{filename}' ({ext}) "
+            "\u043d\u0435 \u043f\u043e\u0434\u0434\u0435\u0440\u0436\u0438\u0432\u0430\u0435\u0442\u0441\u044f]"
+        )
 
 
 def _extract_pdf(data: bytes) -> str:
@@ -73,7 +79,7 @@ def _extract_pdf(data: bytes) -> str:
     2. pdf2image   - converts each page to PNG then sends to Vision OCR.
 
     GPT-4o Vision does NOT accept 'application/pdf' via data-URL;
-    scanned PDFs must be converted to image format first.
+    scanned PDFs must be converted to image format first (fix #1).
     """
     try:
         with pdfplumber.open(io.BytesIO(data)) as pdf:
