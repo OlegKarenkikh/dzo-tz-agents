@@ -38,7 +38,7 @@ def process_tz_emails():
         return
 
     for mail in emails:
-        # fix #2: агент создаётся внутри цикла, чтобы каждое письмо
+        # fix #2: агент создается внутри цикла, чтобы каждое письмо
         # получало собственный изолированный ConversationBufferWindowMemory.
         agent = create_tz_agent()
 
@@ -50,8 +50,7 @@ def process_tz_emails():
             dup = db.find_duplicate_job("tz", sender, subject)
             if dup:
                 logger.info(
-                    "[dedup] Пропускаем дубль: '%s' от %s "
-                    "(ранее обработано %s, решение: %s)",
+                    "[dedup] Пропускаем дубль: '%s' от %s (ранее обработано %s, решение: %s)",
                     subject, sender,
                     dup["created_at"][:10], dup.get("decision", "?"),
                 )
@@ -63,15 +62,14 @@ def process_tz_emails():
             for att in mail["attachments"]:
                 text = extract_text_from_attachment(att)
                 attachment_texts.append(
-                    f"---- {att['filename']} ----\n{text}"
+                    "---- Файл: " + att["filename"] + " ----\n" + text
                 )
 
             chat_input = (
-                "[TZ] Входящее техническое задание\n"
+                "INCOMING TECHNICAL SPECIFICATION\n"
                 "===========================================\n"
                 f"От: {sender}\nТема: {subject}\n"
-                f"Дата: {mail['date']}\n"
-                f"Время: {datetime.now(UTC).isoformat()}\n\n"
+                f"Дата: {mail['date']}\nВремя: {datetime.now(UTC).isoformat()}\n\n"
                 f"-- ТЕЛО ПИСЬМА --\n{mail['body']}\n\n"
                 f"-- ТЕКСТ ТЗ ({len(mail['attachments'])} вложений) --\n"
                 + "\n\n".join(attachment_texts)
@@ -101,9 +99,9 @@ def process_tz_emails():
 
             if not email_html:
                 email_html = (
-                    f"<div style='font-family:Arial'>"
-                    f"{result['output'].replace(chr(10), '<br>')}"
-                    f"</div>"
+                    "<div style='font-family:Arial'>"
+                    + result["output"].replace(chr(10), "<br>")
+                    + "</div>"
                 )
 
             if "соответствует" in decision.lower():
@@ -113,26 +111,20 @@ def process_tz_emails():
                     html_body=email_html,
                     from_addr=config.TZ_SMTP_FROM,
                 )
-                notify("ТЗ принято от %s" % sender, level="success")
+                notify("ТЗ принято от " + sender, level="success")
             else:
                 send_email(
                     to=sender,
                     subject=reply_subject or f"Замечания по ТЗ: {subject}",
                     html_body=email_html,
                     from_addr=config.TZ_SMTP_FROM,
-                    attachment_bytes=(
-                        corrected_tz_html.encode("utf-8") if corrected_tz_html else None
-                    ),
-                    attachment_name=(
-                        "ТЗ_с_замечаниями.html" if corrected_tz_html else None
-                    ),
+                    attachment_bytes=corrected_tz_html.encode("utf-8") if corrected_tz_html else None,
+                    attachment_name="ТЗ_с_замечаниями.html" if corrected_tz_html else None,
                 )
-                notify("ТЗ на доработку: %s" % sender, level="info")
+                notify("ТЗ на доработку: " + sender, level="info")
 
             db.update_job(
-                job_id,
-                status="done",
-                decision=decision,
+                job_id, status="done", decision=decision,
                 result={
                     "attachments": len(mail["attachments"]),
                     "overall_status": json_report.get("overall_status", ""),
@@ -146,7 +138,7 @@ def process_tz_emails():
             EMAILS_ERRORS.labels(agent="tz", error_type=type(e).__name__).inc()
             db.update_job(job_id, status="error", error=str(e))
             logger.error("Критическая ошибка: %s", e)
-            notify("Ошибка Агент-ТЗ\nОт: %s\n%s" % (sender, e), level="error")
+            notify("Ошибка Агент-ТЗ. От: " + sender + ". " + str(e), level="error")
 
 
 if __name__ == "__main__":
