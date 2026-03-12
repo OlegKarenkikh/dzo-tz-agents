@@ -64,9 +64,11 @@ class TestProcessDzo:
         )
         assert resp.status_code == 200
         data = resp.json()
-        assert "job_id" in data
-        assert data["agent"] == "dzo"
-        assert data["status"] in ("pending", "running", "done")
+        assert "job" in data
+        job = data["job"]
+        assert "job_id" in job
+        assert job["agent"] == "dzo"
+        assert job["status"] in ("pending", "running", "done")
 
     def test_process_dzo_without_api_key_returns_401(self, client):
         resp = client.post("/api/v1/process/dzo", json={"text": "Тест"})
@@ -82,8 +84,10 @@ class TestProcessTz:
         )
         assert resp.status_code == 200
         data = resp.json()
-        assert "job_id" in data
-        assert data["agent"] == "tz"
+        assert "job" in data
+        job = data["job"]
+        assert "job_id" in job
+        assert job["agent"] == "tz"
 
     def test_process_tz_without_api_key_returns_401(self, client):
         resp = client.post("/api/v1/process/tz", json={"text": "Тест"})
@@ -98,7 +102,7 @@ class TestProcessAuto:
             headers=HEADERS,
         )
         assert resp.status_code == 200
-        assert resp.json()["agent"] == "tz"
+        assert resp.json()["job"]["agent"] == "tz"
 
     def test_auto_defaults_to_dzo(self, client):
         resp = client.post(
@@ -107,7 +111,7 @@ class TestProcessAuto:
             headers=HEADERS,
         )
         assert resp.status_code == 200
-        assert resp.json()["agent"] == "dzo"
+        assert resp.json()["job"]["agent"] == "dzo"
 
 
 class TestJobs:
@@ -129,14 +133,14 @@ class TestJobs:
 
     def test_get_job_after_create(self, client):
         create_resp = client.post("/api/v1/process/dzo", json={"text": "Тест"}, headers=HEADERS)
-        job_id = create_resp.json()["job_id"]
+        job_id = create_resp.json()["job"]["job_id"]
         resp = client.get(f"/api/v1/jobs/{job_id}", headers=HEADERS)
         assert resp.status_code == 200
         assert resp.json()["job_id"] == job_id
 
     def test_delete_job(self, client):
         create_resp = client.post("/api/v1/process/dzo", json={"text": "Тест"}, headers=HEADERS)
-        job_id = create_resp.json()["job_id"]
+        job_id = create_resp.json()["job"]["job_id"]
         del_resp = client.delete(f"/api/v1/jobs/{job_id}", headers=HEADERS)
         assert del_resp.status_code == 200
         assert client.get(f"/api/v1/jobs/{job_id}", headers=HEADERS).status_code == 404

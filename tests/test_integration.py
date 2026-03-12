@@ -34,6 +34,13 @@ os.environ.setdefault("OPENAI_API_KEY", "sk-test")
 # Явный импорт submodules необходим для корректной работы unittest.mock.patch
 import agent1_dzo_inspector.runner  # noqa: E402
 import agent2_tz_inspector.runner  # noqa: E402
+from shared.database import _memory_store
+
+@pytest.fixture(autouse=True)
+def clear_jobs():
+    _memory_store.clear()
+    yield
+    _memory_store.clear()
 
 
 SAMPLE_DZO_EMAIL = {
