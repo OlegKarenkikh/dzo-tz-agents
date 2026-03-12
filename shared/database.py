@@ -14,10 +14,7 @@ logger = logging.getLogger("database")
 
 DATABASE_URL = os.getenv("DATABASE_URL", "")
 
-# In-memory фоллбэк (если нет PostgreSQL)
 _memory_store: dict[str, dict] = {}
-
-# Пул соединений — инициализируется при первом обращении (lazy)
 _pool = None
 
 
@@ -36,7 +33,6 @@ def _get_pool():
 
 @contextmanager
 def _get_conn():
-    """Context manager: берёт соединение из пула и возвращает в пул через finally."""
     pool = _get_pool()
     conn = pool.getconn()
     try:
@@ -70,6 +66,7 @@ def init_db():
                 CREATE INDEX IF NOT EXISTS idx_jobs_status     ON jobs(status);
                 CREATE INDEX IF NOT EXISTS idx_jobs_created_at ON jobs(created_at DESC);
                 CREATE INDEX IF NOT EXISTS idx_jobs_decision   ON jobs(decision);
+                CREATE INDEX IF NOT EXISTS idx_jobs_sender     ON jobs(sender);
             """)
             conn.commit()
             cur.close()
@@ -82,8 +79,52 @@ def _now_utc() -> str:
     return datetime.now(UTC).isoformat()
 
 
+def find_duplicate_job(
+    agent: str,
+    sender: str,
+    subject: str,
+) -> dict | None:
+    """Ищет последнее завершённое задание с тем же (agent, sender, subject).
+
+    Возвращает dict задания если дубль найден, иначе None.
+    Учитываются только задания со статусом 'done'.
+    """
+    if not sender and not subject:
+        return None
+    if _pg_available():
+        try:
+            import psycopg2.extras
+            with _get_conn() as conn:
+                cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+                cur.execute("""
+                    SELECT * FROM jobs
+                    WHERE agent = %s
+                      AND sender = %s
+                      AND subject = %s
+                      AND status = 'done'
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                """, (agent, sender, subject))
+                row = cur.fetchone()
+                cur.close()
+            return dict(row) if row else None
+        except Exception as e:
+            logger.error(f"find_duplicate_job ошибка: {e}")
+            return None
+    # In-memory
+    rows = [
+        r for r in _memory_store.values()
+        if r.get("agent") == agent
+        and r.get("sender") == sender
+        and r.get("subject") == subject
+        and r.get("status") == "done"
+    ]
+    if not rows:
+        return None
+    return max(rows, key=lambda r: r.get("created_at", ""))
+
+
 def create_job(agent: str, sender: str = "", subject: str = "") -> str:
-    """Создаёт новое задание, возвращает job_id."""
     job_id = str(uuid4())
     now = _now_utc()
     record = {
@@ -122,7 +163,6 @@ def update_job(
     result: dict | None = None,
     error: str | None = None,
 ):
-    """Обновляет статус задания."""
     if _pg_available():
         try:
             with _get_conn() as conn:
@@ -148,7 +188,6 @@ def update_job(
 
 
 def get_job(job_id: str) -> dict | None:
-    """Возвращает задание по job_id или None."""
     if _pg_available():
         try:
             import psycopg2.extras
@@ -173,7 +212,6 @@ def get_history(
     limit: int = 100,
     offset: int = 0,
 ) -> list[dict]:
-    """Возвращает историю с фильтрами, включая фильтрацию по status в SQL."""
     if _pg_available():
         try:
             import psycopg2.extras
@@ -208,7 +246,6 @@ def get_history(
         except Exception as e:
             logger.error(f"get_history ошибка: {e}")
             return []
-    # In-memory фильтрация
     rows = list(_memory_store.values())
     if agent:
         rows = [r for r in rows if r.get("agent") == agent]
@@ -221,7 +258,6 @@ def get_history(
 
 
 def get_stats() -> dict[str, int]:
-    """Аггрегированная статистика для Dashboard."""
     if _pg_available():
         try:
             import psycopg2.extras
@@ -256,7 +292,6 @@ def get_stats() -> dict[str, int]:
 
 
 def delete_job(job_id: str) -> bool:
-    """Удаляет задание. Возвращает True если задание существовало."""
     if _pg_available():
         try:
             with _get_conn() as conn:

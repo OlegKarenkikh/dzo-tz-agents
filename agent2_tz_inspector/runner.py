@@ -1,4 +1,5 @@
 import json
+import os
 from datetime import UTC, datetime
 
 from dotenv import load_dotenv
@@ -16,6 +17,8 @@ from shared.logger import setup_logger  # noqa: E402
 from shared.telegram_notify import notify  # noqa: E402
 
 logger = setup_logger("agent_tz")
+
+FORCE_REPROCESS = os.getenv("FORCE_REPROCESS", "false").lower() == "true"
 
 
 def process_tz_emails():
@@ -37,8 +40,20 @@ def process_tz_emails():
     agent = create_tz_agent()
 
     for mail in emails:
-        logger.info(f"Обрабатываю: '{mail['subject']}' от {mail['from']}")
-        job_id = db.create_job("tz", sender=mail["from"], subject=mail["subject"])
+        sender  = mail["from"]
+        subject = mail["subject"]
+        logger.info(f"Обрабатываю: '{subject}' от {sender}")
+
+        if not FORCE_REPROCESS:
+            dup = db.find_duplicate_job("tz", sender, subject)
+            if dup:
+                logger.info(
+                    f"[dedup] Пропускаем дубль: '{subject}' от {sender} "
+                    f"(ранее обработано {dup['created_at'][:10]}, решение: {dup.get('decision', '?')})"
+                )
+                continue
+
+        job_id = db.create_job("tz", sender=sender, subject=subject)
         try:
             attachment_texts = []
             for att in mail["attachments"]:
@@ -48,7 +63,7 @@ def process_tz_emails():
             chat_input = (
                 f"📝 ВХОДЯЩЕЕ ТЕХНИЧЕСКОЕ ЗАДАНИЕ\n"
                 f"═══════════════════════════════════════════\n"
-                f"От: {mail['from']}\nТема: {mail['subject']}\n"
+                f"От: {sender}\nТема: {subject}\n"
                 f"Дата: {mail['date']}\nВремя: {datetime.now(UTC).isoformat()}\n\n"
                 f"── ТЕЛО ПИСЬМА ──\n{mail['body']}\n\n"
                 f"── ТЕКСТ ТЗ ({len(mail['attachments'])} вложений) ──\n"
@@ -58,10 +73,6 @@ def process_tz_emails():
             with JobTimer("tz"):
                 result = agent.invoke({"input": chat_input})
 
-            # Структура ответов инструментов:
-            #   generate_email_to_dzo   -> {emailHtml, decision, subject}
-            #   generate_corrected_tz   -> {html, title}       <-- ключ 'html', не 'correctedHtml'!
-            #   generate_json_report    -> {timestamp, overall_status, ...}
             email_html = corrected_tz_html = ""
             decision = "Требует доработки"
             reply_subject = ""
@@ -74,7 +85,6 @@ def process_tz_emails():
                         email_html = obs["emailHtml"]
                         decision = obs.get("decision", decision)
                         reply_subject = obs.get("subject", "")
-                    # generate_corrected_tz возвращает поле 'html' (не 'correctedHtml')
                     if obs.get("html"):
                         corrected_tz_html = obs["html"]
                     if obs.get("overall_status"):
@@ -87,27 +97,25 @@ def process_tz_emails():
 
             if "соответствует" in decision.lower():
                 send_email(
-                    to=mail["from"],
-                    subject=reply_subject or f"ТЗ принято: {mail['subject']}",
+                    to=sender,
+                    subject=reply_subject or f"ТЗ принято: {subject}",
                     html_body=email_html,
                     from_addr=config.TZ_SMTP_FROM,
                 )
-                notify(f"✅ ТЗ принято от {mail['from']}", level="success")
+                notify(f"✅ ТЗ принято от {sender}", level="success")
             else:
                 send_email(
-                    to=mail["from"],
-                    subject=reply_subject or f"Замечания по ТЗ: {mail['subject']}",
+                    to=sender,
+                    subject=reply_subject or f"Замечания по ТЗ: {subject}",
                     html_body=email_html,
                     from_addr=config.TZ_SMTP_FROM,
                     attachment_bytes=corrected_tz_html.encode("utf-8") if corrected_tz_html else None,
                     attachment_name="ТЗ_с_замечаниями.html" if corrected_tz_html else None,
                 )
-                notify(f"ℹ️ ТЗ отправлено на доработку {mail['from']}", level="info")
+                notify(f"ℹ️ ТЗ отправлено на доработку {sender}", level="info")
 
             db.update_job(
-                job_id,
-                status="done",
-                decision=decision,
+                job_id, status="done", decision=decision,
                 result={
                     "attachments": len(mail["attachments"]),
                     "overall_status": json_report.get("overall_status", ""),
@@ -121,7 +129,7 @@ def process_tz_emails():
             EMAILS_ERRORS.labels(agent="tz", error_type=type(e).__name__).inc()
             db.update_job(job_id, status="error", error=str(e))
             logger.error(f"Критическая ошибка: {e}")
-            notify(f"🔴 Ошибка Агент-ТЗ\nОт: {mail['from']}\n{e}", level="error")
+            notify(f"🔴 Ошибка Агент-ТЗ\nОт: {sender}\n{e}", level="error")
 
 
 if __name__ == "__main__":

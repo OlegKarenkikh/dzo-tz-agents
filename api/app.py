@@ -2,18 +2,19 @@
 FastAPI REST API для обработки документов агентами ДЗО и ТЗ.
 
 Эндпоинты:
-  GET  /health                     — статус сервиса
-  GET  /status                     — последние N запусков агентов
-  GET  /agents                     — список доступных агентов
-  GET  /metrics                    — Prometheus scrape
-  POST /api/v1/process/dzo         — обработать заявку ДЗО
-  POST /api/v1/process/tz          — обработать ТЗ
-  POST /api/v1/process/auto        — автоопределение типа
-  GET  /api/v1/jobs                — список всех заданий
-  GET  /api/v1/jobs/{job_id}       — статус конкретного задания
-  DELETE /api/v1/jobs/{job_id}     — удалить задание
-  GET  /api/v1/history             — история обработок
-  GET  /api/v1/stats               — аггрегированная статистика
+  GET  /health                         — статус сервиса
+  GET  /status                         — последние N запусков агентов
+  GET  /agents                         — список доступных агентов
+  GET  /metrics                        — Prometheus scrape
+  POST /api/v1/process/dzo             — обработать заявку ДЗО
+  POST /api/v1/process/tz              — обработать ТЗ
+  POST /api/v1/process/auto            — автоопределение типа
+  GET  /api/v1/check-duplicate         — проверить дубликат без обработки
+  GET  /api/v1/jobs                    — список всех заданий
+  GET  /api/v1/jobs/{job_id}           — статус конкретного задания
+  DELETE /api/v1/jobs/{job_id}         — удалить задание
+  GET  /api/v1/history                 — история обработок
+  GET  /api/v1/stats                   — аггрегированная статистика
 """
 import base64
 import json
@@ -21,7 +22,7 @@ import logging
 import os
 import time
 from collections import deque
-from datetime import datetime
+from datetime import UTC, datetime
 
 from dotenv import load_dotenv
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request
@@ -40,6 +41,7 @@ from api.metrics import (
 from shared.database import (
     create_job,
     delete_job as db_delete_job,
+    find_duplicate_job,
     get_history as db_get_history,
     get_job as db_get_job,
     get_stats as db_get_stats,
@@ -64,7 +66,7 @@ CORS_ORIGINS = [
 app = FastAPI(
     title="DZO/TZ Agents API",
     description="REST API для обработки заявок ДЗО и ТЗ",
-    version="1.0.0",
+    version="1.1.0",
     docs_url="/docs",
     redoc_url="/redoc",
     openapi_url="/openapi.json" if os.getenv("ENABLE_DOCS", "true") == "true" else None,
@@ -80,14 +82,12 @@ app.add_middleware(
     allow_headers=["X-API-Key", "Content-Type", "Accept"],
 )
 
-_start_time = datetime.now()
-# deque с maxlen=500 — автоматически вытесняет старые записи, нет утечки памяти
+_start_time = datetime.now(UTC)
 _run_log: deque[dict] = deque(maxlen=500)
 
 _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
-# Не кешируем на уровне модуля — читаем динамически при каждом запросе,
-# чтобы тесты могли менять os.environ["API_KEY"] между сессиями.
+
 def _get_api_key() -> str:
     return os.getenv("API_KEY", "")
 
@@ -126,6 +126,10 @@ class ProcessRequest(BaseModel):
     sender_email: str = Field(default="", description="Email отправителя")
     subject: str = Field(default="", description="Тема письма")
     attachments: list[AttachmentData] = Field(default_factory=list, description="Вложения в base64")
+    force: bool = Field(
+        default=False,
+        description="Обработать заново, даже если дубликат уже есть",
+    )
 
 
 class JobResponse(BaseModel):
@@ -135,6 +139,13 @@ class JobResponse(BaseModel):
     created_at: str
     result: dict | None = None
     error: str | None = None
+
+
+class DuplicateResponse(BaseModel):
+    duplicate: bool
+    existing_job_id: str | None = None
+    job: dict | None = None
+    message: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -147,7 +158,7 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
         return
 
     update_job(job_id, status="running")
-    ts = datetime.now().isoformat()
+    ts = datetime.now(UTC).isoformat()
     logger.info(f"[{job_id}] Запуск агента {agent_type.upper()}")
 
     with JobTimer(agent_type):
@@ -225,6 +236,34 @@ def _detect_agent_type(request: ProcessRequest) -> str:
     return "dzo"
 
 
+def _check_and_process(
+    agent_type: str,
+    request: ProcessRequest,
+    background_tasks: BackgroundTasks,
+) -> dict:
+    """Общая логика для всех эндпоинтов обработки: проверка дубля → запуск."""
+    if not request.force:
+        dup = find_duplicate_job(agent_type, request.sender_email, request.subject)
+        if dup:
+            logger.info(
+                f"[dedup] Дубликат для {agent_type}/{request.sender_email!r}/{request.subject!r} "
+                f"→ существующее задание {dup['job_id']}"
+            )
+            return {
+                "duplicate": True,
+                "existing_job_id": dup["job_id"],
+                "job": dup,
+                "message": (
+                    f"Письмо уже было обработано ({dup['created_at'][:10]}). "
+                    "Добавьте force=true чтобы переобработать."
+                ),
+            }
+    job_id = create_job(agent_type, sender=request.sender_email, subject=request.subject)
+    background_tasks.add_task(_process_with_agent, job_id, agent_type, request)
+    job = db_get_job(job_id)
+    return {"duplicate": False, "existing_job_id": None, "job": job, "message": ""}
+
+
 # ---------------------------------------------------------------------------
 # Middleware
 # ---------------------------------------------------------------------------
@@ -253,11 +292,11 @@ async def _log_and_measure(request: Request, call_next):
 def health():
     return {
         "status": "ok",
-        "uptime_sec": int((datetime.now() - _start_time).total_seconds()),
-        "version": "1.0.0",
+        "uptime_sec": int((datetime.now(UTC) - _start_time).total_seconds()),
+        "version": "1.1.0",
         "agent_mode": os.getenv("AGENT_MODE", "both"),
         "model": os.getenv("MODEL_NAME", "gpt-4o"),
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     }
 
 
@@ -281,38 +320,51 @@ def list_agents():
 # Защищённые эндпоинты
 # ---------------------------------------------------------------------------
 
-@app.post("/api/v1/process/dzo", response_model=JobResponse, summary="Обработать заявку ДЗО")
+@app.get("/api/v1/check-duplicate", summary="Проверить дубликат")
+def check_duplicate(
+    agent: str = Query(..., description="dzo или tz"),
+    sender: str = Query(default=""),
+    subject: str = Query(default=""),
+    _: str = Depends(_require_api_key),
+):
+    """Проверяет наличие уже обработанного задания без запуска агента. Идеально для UI."""
+    dup = find_duplicate_job(agent, sender, subject)
+    if dup:
+        return DuplicateResponse(
+            duplicate=True,
+            existing_job_id=dup["job_id"],
+            job=dup,
+            message=f"Обработано {dup['created_at'][:10]}, решение: {dup.get('decision', '—')}",
+        )
+    return DuplicateResponse(duplicate=False, message="Дубликатов не найдено")
+
+
+@app.post("/api/v1/process/dzo", summary="Обработать заявку ДЗО")
 def process_dzo(
     request: ProcessRequest,
     background_tasks: BackgroundTasks,
     _: str = Depends(_require_api_key),
 ):
-    job_id = create_job("dzo", sender=request.sender_email, subject=request.subject)
-    background_tasks.add_task(_process_with_agent, job_id, "dzo", request)
-    return JobResponse(**{**db_get_job(job_id), "result": None, "error": None})
+    return _check_and_process("dzo", request, background_tasks)
 
 
-@app.post("/api/v1/process/tz", response_model=JobResponse, summary="Обработать ТЗ")
+@app.post("/api/v1/process/tz", summary="Обработать ТЗ")
 def process_tz(
     request: ProcessRequest,
     background_tasks: BackgroundTasks,
     _: str = Depends(_require_api_key),
 ):
-    job_id = create_job("tz", sender=request.sender_email, subject=request.subject)
-    background_tasks.add_task(_process_with_agent, job_id, "tz", request)
-    return JobResponse(**{**db_get_job(job_id), "result": None, "error": None})
+    return _check_and_process("tz", request, background_tasks)
 
 
-@app.post("/api/v1/process/auto", response_model=JobResponse, summary="Автоопределение типа")
+@app.post("/api/v1/process/auto", summary="Автоопределение типа")
 def process_auto(
     request: ProcessRequest,
     background_tasks: BackgroundTasks,
     _: str = Depends(_require_api_key),
 ):
     agent_type = _detect_agent_type(request)
-    job_id = create_job(agent_type, sender=request.sender_email, subject=request.subject)
-    background_tasks.add_task(_process_with_agent, job_id, agent_type, request)
-    return JobResponse(**{**db_get_job(job_id), "result": None, "error": None})
+    return _check_and_process(agent_type, request, background_tasks)
 
 
 @app.get("/api/v1/jobs", summary="Список заданий")
@@ -321,7 +373,6 @@ def list_jobs(
     status: str | None = Query(default=None),
     _: str = Depends(_require_api_key),
 ):
-    # Фильтрация по status теперь выполняется в SQL (не в Python)
     jobs = db_get_history(agent=agent, status=status)
     return {"total": len(jobs), "jobs": jobs}
 
@@ -348,14 +399,12 @@ def history(
     limit: int = Query(default=50, ge=1, le=500),
     _: str = Depends(_require_api_key),
 ):
-    # Фильтрация по status в SQL
     jobs = db_get_history(agent=agent, status=status, limit=limit)
     return {"total": len(jobs), "items": jobs}
 
 
 @app.get("/api/v1/stats", summary="Аггрегированная статистика")
 def get_stats(_: str = Depends(_require_api_key)):
-    """Статистика для Dashboard: total, today, errors, approved, rework, escalated."""
     return db_get_stats()
 
 
