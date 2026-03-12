@@ -56,6 +56,10 @@ def process_tz_emails():
             with JobTimer("tz"):
                 result = agent.invoke({"input": chat_input})
 
+            # Структура ответов инструментов:
+            #   generate_email_to_dzo   -> {emailHtml, decision, subject}
+            #   generate_corrected_tz   -> {html, title}       <-- ключ 'html', не 'correctedHtml'!
+            #   generate_json_report    -> {timestamp, overall_status, ...}
             email_html = corrected_tz_html = ""
             decision = "Требует доработки"
             reply_subject = ""
@@ -67,6 +71,7 @@ def process_tz_emails():
                         email_html = obs["emailHtml"]
                         decision = obs.get("decision", decision)
                         reply_subject = obs.get("subject", "")
+                    # generate_corrected_tz возвращает поле 'html' (не 'correctedHtml')
                     if obs.get("html"):
                         corrected_tz_html = obs["html"]
                 except Exception:
