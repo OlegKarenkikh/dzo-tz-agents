@@ -124,7 +124,7 @@ class TestJobs:
         assert resp.status_code == 200
         data = resp.json()
         assert data["total"] == 0
-        assert data["jobs"] == []
+        assert data["items"] == []
 
     def test_list_jobs_after_create(self, client):
         client.post("/api/v1/process/dzo", json={"text": "Тест"}, headers=HEADERS)
@@ -182,10 +182,9 @@ class TestStatus:
 
 
 class TestDeduplicate:
-    """Тесты дедупликации: GET /api/v1/check-duplicate и force-переобработка."""
+    """Tests for deduplication: GET /api/v1/check-duplicate and force-reprocessing."""
 
     def test_check_duplicate_no_dup(self, client):
-        """Без предыдущих заданий — duplicate: false."""
         resp = client.get(
             "/api/v1/check-duplicate",
             params={"agent": "dzo", "sender": "a@b.com", "subject": "Тест"},
@@ -204,19 +203,16 @@ class TestDeduplicate:
         assert resp.status_code == 401
 
     def test_process_returns_duplicate_on_second_call(self, client):
-        """Второй вызов с теми же sender+subject → duplicate: true, новое задание не создаётся."""
         from shared.database import update_job
 
         payload = {"text": "Заявка", "sender_email": "x@y.com", "subject": "Закупка"}
 
-        # Первый вызов — создаём задание и сразу помечаем done
         r1 = client.post("/api/v1/process/dzo", json=payload, headers=HEADERS)
         assert r1.status_code == 200
         job_id = r1.json()["job"]["job_id"]
         update_job(job_id, status="done", decision="Заявка полная",
                    result={"decision": "Заявка полная", "email_html": ""})
 
-        # Второй вызов — должен вернуть дубликат
         r2 = client.post("/api/v1/process/dzo", json=payload, headers=HEADERS)
         assert r2.status_code == 200
         data = r2.json()
@@ -224,12 +220,10 @@ class TestDeduplicate:
         assert data["existing_job_id"] == job_id
         assert data["job"]["job_id"] == job_id
 
-        # В хранилище по-прежнему одно задание
         jobs_resp = client.get("/api/v1/jobs", headers=HEADERS)
         assert jobs_resp.json()["total"] == 1
 
     def test_check_duplicate_reflects_done_job(self, client):
-        """check-duplicate возвращает done-задание по ключу agent+sender+subject."""
         from shared.database import update_job
 
         payload = {"text": "ТЗ", "sender_email": "tz@co.ru", "subject": "Поставка серверов"}
@@ -249,7 +243,6 @@ class TestDeduplicate:
         assert data["existing_job_id"] == job_id
 
     def test_force_creates_new_job_despite_duplicate(self, client):
-        """force=true игнорирует дубликат и создаёт новое задание."""
         from shared.database import update_job
 
         payload = {"text": "Заявка", "sender_email": "f@g.com", "subject": "Форс-тест"}
@@ -259,7 +252,6 @@ class TestDeduplicate:
         update_job(job_id_1, status="done", decision="Заявка полная",
                    result={"decision": "Заявка полная", "email_html": ""})
 
-        # force=true — новое задание должно быть создано
         r2 = client.post(
             "/api/v1/process/dzo",
             json={**payload, "force": True},
@@ -271,23 +263,19 @@ class TestDeduplicate:
         job_id_2 = data["job"]["job_id"]
         assert job_id_2 != job_id_1
 
-        # В хранилище теперь два задания
         jobs_resp = client.get("/api/v1/jobs", headers=HEADERS)
         assert jobs_resp.json()["total"] == 2
 
     def test_dedup_isolated_by_agent_type(self, client):
-        """Дубликат ищется только внутри одного типа агента."""
         from shared.database import update_job
 
         payload = {"text": "Документ", "sender_email": "iso@test.ru", "subject": "Общая тема"}
 
-        # Создаём done-задание для dzo
         r_dzo = client.post("/api/v1/process/dzo", json=payload, headers=HEADERS)
         job_id_dzo = r_dzo.json()["job"]["job_id"]
         update_job(job_id_dzo, status="done", decision="Заявка полная",
                    result={"decision": "Заявка полная", "email_html": ""})
 
-        # Запрос для tz с теми же sender+subject — НЕ должен быть дубликатом
         r_tz = client.post("/api/v1/process/tz", json=payload, headers=HEADERS)
         assert r_tz.status_code == 200
         data = r_tz.json()
