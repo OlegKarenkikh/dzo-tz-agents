@@ -7,7 +7,7 @@ import json
 import logging
 import os
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from uuid import uuid4
 
 logger = logging.getLogger("database")
@@ -79,7 +79,7 @@ def init_db():
 
 
 def _now_utc() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def create_job(agent: str, sender: str = "", subject: str = "") -> str:
@@ -244,7 +244,7 @@ def get_stats() -> dict[str, int]:
             logger.error(f"get_stats ошибка: {e}")
             return {}
     rows = list(_memory_store.values())
-    today = datetime.now(timezone.utc).date().isoformat()
+    today = datetime.now(UTC).date().isoformat()
     return {
         "total":     len(rows),
         "today":     sum(1 for r in rows if r.get("created_at", "")[:10] == today),

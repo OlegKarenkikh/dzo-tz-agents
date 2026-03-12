@@ -15,6 +15,12 @@ def clear_memory_store():
 @pytest.fixture(autouse=False)
 def no_postgres(monkeypatch):
     monkeypatch.setattr(db, "DATABASE_URL", "")
+    # Сбрасываем кешированный пул — иначе _get_pool() вернёт старый объект
+    # и _pg_available() == False не предотвратит обращение к реальному PG
+    original_pool = db._pool
+    db._pool = None
+    yield
+    db._pool = original_pool
 
 
 class TestInMemoryStorage:
@@ -74,6 +80,15 @@ class TestInMemoryStorage:
         rows = db.get_history(decision="Требуется доработка")
         assert len(rows) == 1
         assert rows[0]["decision"] == "Требуется доработка"
+
+    def test_get_history_filter_status(self, no_postgres):
+        j1 = db.create_job("dzo")
+        j2 = db.create_job("dzo")
+        db.update_job(j1, status="done", decision="Заявка полная")
+        db.update_job(j2, status="error", error="timeout")
+        rows = db.get_history(status="error")
+        assert len(rows) == 1
+        assert rows[0]["status"] == "error"
 
     def test_get_history_limit(self, no_postgres):
         for _ in range(10):
