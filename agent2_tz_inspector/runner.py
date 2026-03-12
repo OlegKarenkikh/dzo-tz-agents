@@ -22,13 +22,7 @@ FORCE_REPROCESS = os.getenv("FORCE_REPROCESS", "false").lower() == "true"
 
 
 def process_tz_emails():
-    logger.info(
-        "\u041f\u0440\u043e\u0432\u0435\u0440\u044f\u044e "
-        "\u0432\u0445\u043e\u0434\u044f\u0449\u0438\u0435 "
-        "\u043f\u0438\u0441\u044c\u043c\u0430 "
-        "(\u0418\u043d\u0441\u043f\u0435\u043a\u0442\u043e\u0440 "
-        "\u0422\u0417)..."
-    )
+    logger.info("Проверяю входящие письма (Инспектор ТЗ)...")
     POLL_CYCLES.labels(agent="tz").inc()
 
     emails = fetch_unseen_emails(
@@ -40,26 +34,24 @@ def process_tz_emails():
     )
 
     if not emails:
-        logger.info("\u041d\u043e\u0432\u044b\u0445 \u043f\u0438\u0441\u0435\u043c \u043d\u0435\u0442.")
+        logger.info("Новых писем нет.")
         return
 
     for mail in emails:
-        # fix #2: agent created inside loop - each email gets its own
-        # isolated ConversationBufferWindowMemory instance.
+        # fix #2: агент создаётся внутри цикла, чтобы каждое письмо
+        # получало собственный изолированный ConversationBufferWindowMemory.
         agent = create_tz_agent()
 
         sender  = mail["from"]
         subject = mail["subject"]
-        logger.info("Processing: '%s' from %s", subject, sender)
+        logger.info(f"Обрабатываю: '{subject}' от {sender}")
 
         if not FORCE_REPROCESS:
             dup = db.find_duplicate_job("tz", sender, subject)
             if dup:
                 logger.info(
-                    "[dedup] Skipping duplicate: '%s' from %s "
-                    "(processed %s, decision: %s)",
-                    subject, sender,
-                    dup["created_at"][:10], dup.get("decision", "?"),
+                    f"[dedup] Пропускаем дубль: '{subject}' от {sender} "
+                    f"(ранее обработано {dup['created_at'][:10]}, решение: {dup.get('decision', '?')})"
                 )
                 continue
 
@@ -68,15 +60,15 @@ def process_tz_emails():
             attachment_texts = []
             for att in mail["attachments"]:
                 text = extract_text_from_attachment(att)
-                attachment_texts.append(f"---- File: {att['filename']} ----\n{text}")
+                attachment_texts.append(f"──── Файл: {att['filename']} ────\n{text}")
 
             chat_input = (
-                "INCOMING TECHNICAL SPECIFICATION\n"
-                "===========================================\n"
-                f"From: {sender}\nSubject: {subject}\n"
-                f"Date: {mail['date']}\nTime: {datetime.now(UTC).isoformat()}\n\n"
-                f"-- EMAIL BODY --\n{mail['body']}\n\n"
-                f"-- TZ TEXT ({len(mail['attachments'])} attachments) --\n"
+                f"📝 ВХОДЯЩЕЕ ТЕХНИЧЕСКОЕ ЗАДАНИЕ\n"
+                f"═══════════════════════════════════════════\n"
+                f"От: {sender}\nТема: {subject}\n"
+                f"Дата: {mail['date']}\nВремя: {datetime.now(UTC).isoformat()}\n\n"
+                f"── ТЕЛО ПИСЬМА ──\n{mail['body']}\n\n"
+                f"── ТЕКСТ ТЗ ({len(mail['attachments'])} вложений) ──\n"
                 + "\n\n".join(attachment_texts)
             )
 
@@ -84,10 +76,7 @@ def process_tz_emails():
                 result = agent.invoke({"input": chat_input})
 
             email_html = corrected_tz_html = ""
-            # Keep Cyrillic decision value so test assertion
-            # 'sootvetstvuet' / '\u0441\u043e\u043e\u0442\u0432\u0435\u0442\u0441\u0442\u0432\u0443\u0435\u0442'
-            # works against decision.lower()
-            decision = "\u0422\u0440\u0435\u0431\u0443\u0435\u0442 \u0434\u043e\u0440\u0430\u0431\u043e\u0442\u043a\u0438"
+            decision = "Требует доработки"
             reply_subject = ""
             json_report: dict = {}
 
@@ -108,25 +97,24 @@ def process_tz_emails():
             if not email_html:
                 email_html = f"<div style='font-family:Arial'>{result['output'].replace(chr(10), '<br>')}</div>"
 
-            # decision from agent contains '\u0441\u043e\u043e\u0442\u0432\u0435\u0442\u0441\u0442\u0432\u0443\u0435\u0442'
-            if "\u0441\u043e\u043e\u0442\u0432\u0435\u0442\u0441\u0442\u0432\u0443\u0435\u0442" in decision.lower():
+            if "соответствует" in decision.lower():
                 send_email(
                     to=sender,
-                    subject=reply_subject or f"\u0422\u0417 \u043f\u0440\u0438\u043d\u044f\u0442\u043e: {subject}",
+                    subject=reply_subject or f"ТЗ принято: {subject}",
                     html_body=email_html,
                     from_addr=config.TZ_SMTP_FROM,
                 )
-                notify(f"\u2705 \u0422\u0417 \u043f\u0440\u0438\u043d\u044f\u0442\u043e \u043e\u0442 {sender}", level="success")
+                notify(f"✅ ТЗ принято от {sender}", level="success")
             else:
                 send_email(
                     to=sender,
-                    subject=reply_subject or f"\u0417\u0430\u043c\u0435\u0447\u0430\u043d\u0438\u044f \u043f\u043e \u0422\u0417: {subject}",
+                    subject=reply_subject or f"Замечания по ТЗ: {subject}",
                     html_body=email_html,
                     from_addr=config.TZ_SMTP_FROM,
                     attachment_bytes=corrected_tz_html.encode("utf-8") if corrected_tz_html else None,
-                    attachment_name="\u0422\u0417_\u0441_\u0437\u0430\u043c\u0435\u0447\u0430\u043d\u0438\u044f\u043c\u0438.html" if corrected_tz_html else None,
+                    attachment_name="ТЗ_с_замечаниями.html" if corrected_tz_html else None,
                 )
-                notify(f"\u2139\ufe0f \u0422\u0417 \u043d\u0430 \u0434\u043e\u0440\u0430\u0431\u043e\u0442\u043a\u0443 {sender}", level="info")
+                notify(f"ℹ️ ТЗ на доработку {sender}", level="info")
 
             db.update_job(
                 job_id, status="done", decision=decision,
@@ -137,13 +125,13 @@ def process_tz_emails():
                 },
             )
             EMAILS_PROCESSED.labels(agent="tz").inc()
-            logger.info("Processed. Decision: %s", decision)
+            logger.info(f"Обработано. Решение: {decision}")
 
         except Exception as e:
             EMAILS_ERRORS.labels(agent="tz", error_type=type(e).__name__).inc()
             db.update_job(job_id, status="error", error=str(e))
-            logger.error("Critical error: %s", e)
-            notify(f"Agent-TZ error\nFrom: {sender}\n{e}", level="error")
+            logger.error(f"Критическая ошибка: {e}")
+            notify(f"🔴 Ошибка Агент-ТЗ\nОт: {sender}\n{e}", level="error")
 
 
 if __name__ == "__main__":
