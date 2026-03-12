@@ -22,7 +22,7 @@ FORCE_REPROCESS = os.getenv("FORCE_REPROCESS", "false").lower() == "true"
 
 
 def process_tz_emails():
-    logger.info("Проверяю входящие письма (Инспектор ТЗ)...")
+    logger.info("Proverjayu vhodyaschie pisma (Inspektor TZ)...")
     POLL_CYCLES.labels(agent="tz").inc()
 
     emails = fetch_unseen_emails(
@@ -34,22 +34,25 @@ def process_tz_emails():
     )
 
     if not emails:
-        logger.info("Новых писем нет.")
+        logger.info("Novyh pisem net.")
         return
 
-    agent = create_tz_agent()
-
     for mail in emails:
+        # fix #2: agent is created inside the loop so each email gets
+        # its own isolated ConversationBufferWindowMemory instance.
+        # Creating it outside caused history to leak between emails.
+        agent = create_tz_agent()
+
         sender  = mail["from"]
         subject = mail["subject"]
-        logger.info(f"Обрабатываю: '{subject}' от {sender}")
+        logger.info(f"Obrabatyvayu: '{subject}' ot {sender}")
 
         if not FORCE_REPROCESS:
             dup = db.find_duplicate_job("tz", sender, subject)
             if dup:
                 logger.info(
-                    f"[dedup] Пропускаем дубль: '{subject}' от {sender} "
-                    f"(ранее обработано {dup['created_at'][:10]}, решение: {dup.get('decision', '?')})"
+                    f"[dedup] Propuskaem dubl: '{subject}' ot {sender} "
+                    f"(ranee obrabotano {dup['created_at'][:10]}, reshenie: {dup.get('decision', '?')})"
                 )
                 continue
 
@@ -58,15 +61,15 @@ def process_tz_emails():
             attachment_texts = []
             for att in mail["attachments"]:
                 text = extract_text_from_attachment(att)
-                attachment_texts.append(f"──── Файл: {att['filename']} ────\n{text}")
+                attachment_texts.append(f"---- Fajl: {att['filename']} ----\n{text}")
 
             chat_input = (
-                f"📝 ВХОДЯЩЕЕ ТЕХНИЧЕСКОЕ ЗАДАНИЕ\n"
-                f"═══════════════════════════════════════════\n"
-                f"От: {sender}\nТема: {subject}\n"
-                f"Дата: {mail['date']}\nВремя: {datetime.now(UTC).isoformat()}\n\n"
-                f"── ТЕЛО ПИСЬМА ──\n{mail['body']}\n\n"
-                f"── ТЕКСТ ТЗ ({len(mail['attachments'])} вложений) ──\n"
+                f"VHODYASCHEE TEHNICHESKOE ZADANIE\n"
+                f"===========================================\n"
+                f"Ot: {sender}\nTema: {subject}\n"
+                f"Data: {mail['date']}\nVremya: {datetime.now(UTC).isoformat()}\n\n"
+                f"-- TELO PISMA --\n{mail['body']}\n\n"
+                f"-- TEKST TZ ({len(mail['attachments'])} vlozhenij) --\n"
                 + "\n\n".join(attachment_texts)
             )
 
@@ -74,7 +77,7 @@ def process_tz_emails():
                 result = agent.invoke({"input": chat_input})
 
             email_html = corrected_tz_html = ""
-            decision = "Требует доработки"
+            decision = "Trebuet dorabotki"
             reply_subject = ""
             json_report: dict = {}
 
@@ -95,24 +98,24 @@ def process_tz_emails():
             if not email_html:
                 email_html = f"<div style='font-family:Arial'>{result['output'].replace(chr(10), '<br>')}</div>"
 
-            if "соответствует" in decision.lower():
+            if "sootvetstvuet" in decision.lower():
                 send_email(
                     to=sender,
-                    subject=reply_subject or f"ТЗ принято: {subject}",
+                    subject=reply_subject or f"TZ prinyato: {subject}",
                     html_body=email_html,
                     from_addr=config.TZ_SMTP_FROM,
                 )
-                notify(f"✅ ТЗ принято от {sender}", level="success")
+                notify(f"TZ prinyato ot {sender}", level="success")
             else:
                 send_email(
                     to=sender,
-                    subject=reply_subject or f"Замечания по ТЗ: {subject}",
+                    subject=reply_subject or f"Zamechaniya po TZ: {subject}",
                     html_body=email_html,
                     from_addr=config.TZ_SMTP_FROM,
                     attachment_bytes=corrected_tz_html.encode("utf-8") if corrected_tz_html else None,
-                    attachment_name="ТЗ_с_замечаниями.html" if corrected_tz_html else None,
+                    attachment_name="TZ_s_zamechaniyami.html" if corrected_tz_html else None,
                 )
-                notify(f"ℹ️ ТЗ отправлено на доработку {sender}", level="info")
+                notify(f"TZ otpravleno na dorabotku {sender}", level="info")
 
             db.update_job(
                 job_id, status="done", decision=decision,
@@ -123,13 +126,13 @@ def process_tz_emails():
                 },
             )
             EMAILS_PROCESSED.labels(agent="tz").inc()
-            logger.info(f"Обработано. Решение: {decision}")
+            logger.info(f"Obrabotano. Reshenie: {decision}")
 
         except Exception as e:
             EMAILS_ERRORS.labels(agent="tz", error_type=type(e).__name__).inc()
             db.update_job(job_id, status="error", error=str(e))
-            logger.error(f"Критическая ошибка: {e}")
-            notify(f"🔴 Ошибка Агент-ТЗ\nОт: {sender}\n{e}", level="error")
+            logger.error(f"Kriticheskaya oshibka: {e}")
+            notify(f"Oshibka Agent-TZ\nOt: {sender}\n{e}", level="error")
 
 
 if __name__ == "__main__":
