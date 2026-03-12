@@ -91,6 +91,19 @@ def _api_post(path: str, payload: dict) -> dict | None:
     return None
 
 
+def _api_delete(path: str) -> bool:
+    """ДЕЛЕТЕ-запрос к REST API."""
+    try:
+        resp = httpx.delete(f"{API_URL}{path}", headers=AUTH_HEADERS, timeout=10)
+        resp.raise_for_status()
+        return True
+    except httpx.HTTPStatusError as e:
+        st.error(f"Ошибка API ({e.response.status_code}): {e.response.text}")
+    except Exception as e:
+        st.error(f"Ошибка соединения с API: {e}")
+    return False
+
+
 def _decision_badge(decision: str) -> str:
     """Возвращает HTML-бейдж с цветовой кодировкой решения."""
     d = (decision or "").lower()
@@ -213,6 +226,13 @@ if page == "📊 Дашборд":
 elif page == "🧪 Тестирование":
     st.header("🧪 Тестирование агентов")
 
+    if "test_result" not in st.session_state:
+        st.session_state.test_result = None
+    if "test_duplicate" not in st.session_state:
+        st.session_state.test_duplicate = None
+    if "test_payload" not in st.session_state:
+        st.session_state.test_payload = None
+
     agent_choice = st.selectbox("Выберите агента", ["ДЗО — Инспектор заявок", "ТЗ — Инспектор техзаданий"])
     agent_key = "dzo" if "ДЗО" in agent_choice else "tz"
 
@@ -233,9 +253,47 @@ elif page == "🧪 Тестирование":
             type=["pdf", "docx", "xlsx", "xls", "png", "jpg", "jpeg"],
         )
 
+    def _poll_job(job_id):
+        with st.spinner("Ожидаем результат..."):
+            for _ in range(30):
+                time.sleep(2)
+                res = _api_get(f"/api/v1/jobs/{job_id}")
+                if res and res["status"] in ("done", "error"):
+                    return res
+        return None
+
+    def _show_job_result(result):
+        if not result:
+            return
+        if result["status"] == "done":
+            r = result.get("result") or {}
+            decision = r.get("decision", "")
+            st.markdown(
+                f"**Решение:** {_decision_badge(decision)}",
+                unsafe_allow_html=True,
+            )
+            with st.expander("📄 JSON-отчёт", expanded=False):
+                st.json(r)
+
+            email_html = r.get("email_html", "")
+            if email_html:
+                with st.expander("📧 HTML-письмо", expanded=True):
+                    components.html(email_html, height=400, scrolling=True)
+                st.download_button(
+                    "💾 Скачать HTML",
+                    data=email_html.encode("utf-8"),
+                    file_name="result.html",
+                    mime="text/html",
+                )
+        else:
+            st.error(f"Ошибка: {result.get('error', 'неизвестная ошибка')}")
+
     with col_right:
         st.subheader("Результат")
         if st.button("🔍 Проверить", type="primary", use_container_width=True):
+            st.session_state.test_result = None
+            st.session_state.test_duplicate = None
+
             attachments = []
             for f in (uploaded_files or []):
                 raw = f.read()
@@ -252,45 +310,50 @@ elif page == "🧪 Тестирование":
                 "subject": subject_input,
                 "attachments": attachments,
             }
+            st.session_state.test_payload = payload
 
-            with st.spinner("Отправляем запрос к агенту..."):
-                job = _api_post(f"/api/v1/process/{agent_key}", payload)
+            # Проверка дубликата
+            dup = _api_get("/api/v1/check-duplicate", {
+                "agent": agent_key,
+                "sender": sender_email,
+                "subject": subject_input
+            })
 
-            if job:
-                job_id = job["job_id"]
-                st.info(f"Задание создано: `{job_id}`")
+            if dup and dup.get("duplicate"):
+                st.session_state.test_duplicate = dup["job"]
+            else:
+                with st.spinner("Отправляем запрос к агенту..."):
+                    job = _api_post(f"/api/v1/process/{agent_key}", payload)
+                if job and "job" in job:
+                    st.session_state.test_result = _poll_job(job["job"]["job_id"])
 
-                with st.spinner("Ожидаем результат..."):
-                    result = None
-                    for _ in range(30):
-                        time.sleep(2)
-                        result = _api_get(f"/api/v1/jobs/{job_id}")
-                        if result and result["status"] in ("done", "error"):
-                            break
+        if st.session_state.test_duplicate:
+            dup = st.session_state.test_duplicate
+            st.warning("⚠️ Найдена предыдущая обработка этого письма")
 
-                if result:
-                    if result["status"] == "done":
-                        r = result.get("result") or {}
-                        decision = r.get("decision", "")
-                        st.markdown(
-                            f"**Решение:** {_decision_badge(decision)}",
-                            unsafe_allow_html=True,
-                        )
-                        with st.expander("📄 JSON-отчёт", expanded=False):
-                            st.json(r)
+            c1, c2, c3 = st.columns([2, 2, 1])
+            c1.caption(f"**Дата:** {dup['created_at'][:19].replace('T', ' ')}")
+            decision = dup.get("decision") or (dup.get("result") or {}).get("decision")
+            c2.markdown(f"**Решение:** {_decision_badge(decision)}", unsafe_allow_html=True)
+            c3.caption(f"ID: `{dup['job_id'][:8]}`")
 
-                        email_html = r.get("email_html", "")
-                        if email_html:
-                            with st.expander("📧 HTML-письмо", expanded=True):
-                                components.html(email_html, height=400, scrolling=True)
-                            st.download_button(
-                                "💾 Скачать HTML",
-                                data=email_html.encode("utf-8"),
-                                file_name="result.html",
-                                mime="text/html",
-                            )
-                    else:
-                        st.error(f"Ошибка: {result.get('error', 'неизвестная ошибка')}")
+            b1, b2 = st.columns(2)
+            if b1.button("Использовать старый результат", use_container_width=True):
+                st.session_state.test_result = dup
+                st.session_state.test_duplicate = None
+                st.rerun()
+            if b2.button("Переобработать", use_container_width=True):
+                payload = st.session_state.test_payload
+                payload["force"] = True
+                with st.spinner("Повторная отправка..."):
+                    job = _api_post(f"/api/v1/process/{agent_key}", payload)
+                if job and "job" in job:
+                    st.session_state.test_result = _poll_job(job["job"]["job_id"])
+                st.session_state.test_duplicate = None
+                st.rerun()
+
+        if st.session_state.test_result:
+            _show_job_result(st.session_state.test_result)
 
 # ---------------------------------------------------------------------------
 # ⚙️ НАСТРОЙКИ
@@ -413,6 +476,14 @@ elif page == "⚙️ Настройки":
 elif page == "📋 История":
     st.header("📋 История обработок")
 
+    if "selected_jobs" not in st.session_state:
+        st.session_state.selected_jobs = set()
+    if "pending_delete" not in st.session_state:
+        st.session_state.pending_delete = False
+    # Флаг предыдущего состояния «Выбрать всё» для корректного снятия выделения
+    if "select_all_prev" not in st.session_state:
+        st.session_state.select_all_prev = False
+
     col_f1, col_f2, col_f3 = st.columns(3)
     with col_f1:
         filter_agent = st.selectbox("Агент", ["Все", "ДЗО", "ТЗ"])
@@ -433,26 +504,136 @@ elif page == "📋 История":
     st.caption(f"Найдено записей: {data.get('total', 0)}")
 
     if items:
+        all_job_ids = [i["job_id"] for i in items]
+
+        # ── Чекбокс «Выбрать всё» — стабильная логика через session_state ──
+        col_all, _ = st.columns([1, 4])
+        select_all = col_all.checkbox(
+            "Выбрать всё",
+            value=st.session_state.select_all_prev,
+            key="select_all_cb",
+        )
+        if select_all and not st.session_state.select_all_prev:
+            # Переход False → True: добавляем все ID текущей страницы
+            st.session_state.selected_jobs.update(all_job_ids)
+        elif not select_all and st.session_state.select_all_prev:
+            # Переход True → False: снимаем только ID текущей страницы
+            st.session_state.selected_jobs.difference_update(all_job_ids)
+        st.session_state.select_all_prev = select_all
+
+        # Массовые действия
+        if st.session_state.selected_jobs:
+            st.write(f"Выбрано: **{len(st.session_state.selected_jobs)}**")
+            act_col1, act_col2, _ = st.columns([2, 2, 4])
+
+            if act_col1.button("🔁 Переобработать выбранные", use_container_width=True):
+                new_jobs = []
+                for jid in st.session_state.selected_jobs:
+                    j_info = _api_get(f"/api/v1/jobs/{jid}")
+                    if j_info:
+                        res = _api_post(f"/api/v1/process/{j_info['agent']}", {
+                            "sender_email": j_info.get("sender", ""),
+                            "subject": j_info.get("subject", ""),
+                            "force": True,
+                        })
+                        if res and "job" in res:
+                            new_jobs.append(res["job"]["job_id"])
+                st.success(f"Запущено {len(new_jobs)} новых заданий.")
+                st.session_state.selected_jobs.clear()
+                st.session_state.select_all_prev = False
+                time.sleep(1)
+                st.rerun()
+
+            if not st.session_state.pending_delete:
+                if act_col2.button("🗑 Удалить выбранные", use_container_width=True):
+                    st.session_state.pending_delete = True
+                    st.rerun()
+            else:
+                st.warning("Вы уверены, что хотите удалить выбранные записи?")
+                del_c1, del_c2 = st.columns(2)
+                if del_c1.button("✅ Подтвердить удаление", type="primary", use_container_width=True):
+                    deleted_count = 0
+                    for jid in list(st.session_state.selected_jobs):
+                        if _api_delete(f"/api/v1/jobs/{jid}"):
+                            deleted_count += 1
+                    st.success(f"Удалено {deleted_count} записей.")
+                    st.session_state.selected_jobs.clear()
+                    st.session_state.pending_delete = False
+                    st.session_state.select_all_prev = False
+                    time.sleep(1)
+                    st.rerun()
+                if del_c2.button("❌ Отмена", use_container_width=True):
+                    st.session_state.pending_delete = False
+                    st.rerun()
+
         rows = []
         for item in items:
             r = item.get("result") or {}
             rows.append({
+                "Выбор": item["job_id"] in st.session_state.selected_jobs,
                 "Время": item["created_at"][:19].replace("T", " "),
                 "Агент": item["agent"].upper(),
+                "Отправитель": item.get("sender") or "—",
+                "Тема": item.get("subject") or "—",
                 "Решение": r.get("decision", "—"),
                 "Статус": f"{_status_icon(item['status'])} {item['status']}",
-                "Ошибка": item.get("error") or "",
                 "job_id": item["job_id"],
             })
 
-        df_display = [{k: v for k, v in row.items() if k != "job_id"} for row in rows]
-        st.dataframe(df_display, use_container_width=True, hide_index=True)
+        # Используем data_editor для чекбоксов
+        edited_df = st.data_editor(
+            rows,
+            column_config={
+                "Выбор": st.column_config.CheckboxColumn("Выбор", default=False),
+                "job_id": None,  # Скрываем ID
+            },
+            disabled=["Время", "Агент", "Отправитель", "Тема", "Решение", "Статус"],
+            use_container_width=True,
+            hide_index=True,
+            key="history_editor",
+        )
 
+        # Синхронизация стейта после редактирования чекбоксов в таблице
+        current_selected = {r["job_id"] for r in edited_df if r["Выбор"]}
+        current_page_ids = {r["job_id"] for r in rows}
+        st.session_state.selected_jobs = (st.session_state.selected_jobs - current_page_ids) | current_selected
+        # Синхронизируем флаг select_all с реальным состоянием
+        if current_page_ids and current_selected == current_page_ids:
+            st.session_state.select_all_prev = True
+        elif not current_selected:
+            st.session_state.select_all_prev = False
+
+        # Построчные действия через экспандер
+        st.write("---")
+        st.subheader("Детальный просмотр и действия")
+        for item in items:
+            with st.expander(f"{item['created_at'][:19].replace('T', ' ')} | {item['agent'].upper()} | {item.get('subject') or '(без темы)'}"):
+                c1, c2, c3 = st.columns([4, 1, 1])
+                c1.write(f"**ID:** `{item['job_id']}` | **Отправитель:** {item.get('sender') or '—'}")
+                if c2.button("🔁 Переобработать", key=f"reproc_{item['job_id']}", use_container_width=True):
+                    res = _api_post(f"/api/v1/process/{item['agent']}", {
+                        "sender_email": item.get("sender", ""),
+                        "subject": item.get("subject", ""),
+                        "force": True,
+                    })
+                    if res and "job" in res:
+                        st.success(f"Создано новое задание: `{res['job']['job_id']}`")
+                        time.sleep(0.5)
+                        st.rerun()  # fix: обновить таблицу после строчной переобработки
+                if c3.button("🗑 Удалить", key=f"del_{item['job_id']}", use_container_width=True):
+                    if _api_delete(f"/api/v1/jobs/{item['job_id']}"):
+                        st.success("Удалено")
+                        time.sleep(0.5)
+                        st.rerun()
+
+        # Экспорт CSV (без служебных колонок «Выбор» и «job_id»)
         buf = io.StringIO()
         if rows:
-            writer = csv.DictWriter(buf, fieldnames=rows[0].keys())
+            export_keys = [k for k in rows[0].keys() if k not in ("Выбор", "job_id")]
+            export_rows = [{k: r[k] for k in export_keys} for r in rows]
+            writer = csv.DictWriter(buf, fieldnames=export_keys)
             writer.writeheader()
-            writer.writerows(rows)
+            writer.writerows(export_rows)
         st.download_button(
             "📥 Экспорт CSV",
             data=buf.getvalue().encode("utf-8-sig"),
@@ -556,9 +737,17 @@ X-API-Key: <ваш ключ>
 | POST | `/api/v1/process/dzo` | Обработать заявку ДЗО |
 | POST | `/api/v1/process/tz` | Обработать ТЗ |
 | POST | `/api/v1/process/auto` | Автоопределение типа |
+| GET | `/api/v1/check-duplicate` | Проверить дубликат |
 | GET | `/api/v1/jobs` | Список заданий |
 | GET | `/api/v1/jobs/{{job_id}}` | Статус задания |
+| DELETE | `/api/v1/jobs/{{job_id}}` | Удалить задание |
 | GET | `/api/v1/history` | История обработок |
+
+### Дедупликация
+Система автоматически ищет дубликаты по комбинации `(агент, отправитель, тема)`.
+Если найдено успешное задание с такими же параметрами, API вернёт `duplicate: true`.
+
+Чтобы форсировать повторную обработку, передайте параметр `"force": true` в теле POST-запроса.
 
 ### Пример запроса
 ```bash
