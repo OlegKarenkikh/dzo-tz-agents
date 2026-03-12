@@ -68,7 +68,7 @@ jobs:
       contents: read
       security-events: write
       packages: write
-      actions: read  # required for CodeQL upload-sarif
+      actions: read
     steps:
       - uses: actions/checkout@v4
 
@@ -92,7 +92,7 @@ jobs:
           format: sarif
           output: trivy-results.sarif
           severity: CRITICAL,HIGH
-          exit-code: "0"  # report only, do not fail CI on found CVEs
+          exit-code: "0"
           ignore-unfixed: true
 
       - name: Upload Trivy SARIF
