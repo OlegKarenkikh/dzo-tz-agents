@@ -16,15 +16,21 @@ IMAGE_EXTS = {"jpg", "jpeg", "png", "tiff", "tif", "bmp", "gif", "webp"}
 # Ленивая инициализация клиента — не создаём при импорте модуля.
 # Использует OPENAI_API_BASE, чтобы OCR работал с Ollama/vLLM/DeepSeek.
 _client: OpenAI | None = None
+_client_key: str = ""  # последний использованный API-ключ
 
 
 def _get_client() -> OpenAI:
-    global _client
-    if _client is None:
+    """Returns a cached OpenAI client, re-creating it if API key or base URL changed."""
+    global _client, _client_key
+    current_key = os.getenv("OPENAI_API_KEY", "ollama")
+    current_base = os.getenv("OPENAI_API_BASE", "")
+    cache_key = f"{current_key}|{current_base}"
+    if _client is None or _client_key != cache_key:
         _client = OpenAI(
-            api_key=os.getenv("OPENAI_API_KEY") or "ollama",
-            base_url=os.getenv("OPENAI_API_BASE") or None,
+            api_key=current_key,
+            base_url=current_base or None,
         )
+        _client_key = cache_key
     return _client
 
 
