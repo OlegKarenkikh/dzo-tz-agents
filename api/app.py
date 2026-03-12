@@ -89,8 +89,7 @@ _run_log: deque[dict] = deque(maxlen=500)
 _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 # ---------------------------------------------------------------------------
-# Реестр агентов. Добавляйте сюда новые агенты.
-# Ключ: agent_id (строка, latinka) — используется в URL /api/v1/process/{agent_id}
+# Реестр агентов.
 # ---------------------------------------------------------------------------
 AGENT_REGISTRY: dict[str, dict] = {
     "dzo": {
@@ -113,9 +112,7 @@ def _get_api_key() -> str:
 @app.on_event("startup")
 def on_startup():
     if not _get_api_key():
-        logger.warning(
-            "⚠️  API_KEY не задан — защищённые эндпоинты доступны без аутентификации!"
-        )
+        logger.warning("АПИ-ключ не задан!")
     init_db()
 
 
@@ -201,23 +198,23 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                         "filename": att.filename, "ext": ext,
                         "data": raw, "b64": att.content_base64, "mime": att.mime_type,
                     })
-                    attachment_texts.append(f"──── Файл: {att.filename} ────\n{text}")
+                    attachment_texts.append("---- " + att.filename + " ----\n" + text)
                 except Exception as e:
                     logger.warning("[%s] Ошибка извлечения %s: %s", job_id, att.filename, e)
 
             parts: list[str] = []
             if request.sender_email:
-                parts.append(f"От: {request.sender_email}")
+                parts.append("От: " + request.sender_email)
             if request.subject:
-                parts.append(f"Тема: {request.subject}")
+                parts.append("Тема: " + request.subject)
             if request.text:
-                parts.append(f"\n── ТЕКСТ ──\n{request.text}")
+                parts.append("\n-- ТЕКСТ --\n" + request.text)
             if attachment_texts:
-                parts.append("\n── ВЛОЖЕНИЯ ──\n" + "\n\n".join(attachment_texts))
+                parts.append("\n-- ВЛОЖЕНИЯ --\n" + "\n\n".join(attachment_texts))
             chat_input = "\n".join(parts) if parts else "(пустой запрос)"
 
             if agent_type not in AGENT_REGISTRY:
-                raise ValueError(f"Неизвестный агент: {agent_type}")
+                raise ValueError("Неизвестный агент: " + agent_type)
 
             if agent_type == "dzo":
                 from agent1_dzo_inspector.agent import create_dzo_agent
@@ -226,9 +223,8 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                 from agent2_tz_inspector.agent import create_tz_agent
                 agent = create_tz_agent()
             else:
-                # Новые агенты: подгружаем динамически из пакета agent{N}_{agent_type}
                 import importlib
-                mod = importlib.import_module(f"agent_{agent_type}.agent")
+                mod = importlib.import_module("agent_" + agent_type + ".agent")
                 agent = mod.create_agent()
 
             result = agent.invoke({"input": chat_input})
@@ -276,14 +272,13 @@ def _check_and_process(
     request: ProcessRequest,
     background_tasks: BackgroundTasks,
 ) -> dict:
-    """Общая логика для всех эндпоинтов обработки: проверка дубля → запуск."""
     if agent_type not in AGENT_REGISTRY:
-        raise HTTPException(status_code=400, detail=f"Неизвестный агент: {agent_type!r}")
+        raise HTTPException(status_code=400, detail="Неизвестный агент: " + repr(agent_type))
     if not request.force:
         dup = find_duplicate_job(agent_type, request.sender_email, request.subject)
         if dup:
             logger.info(
-                "[dedup] Дубликат для %s/%r/%r → существующее задание %s",
+                "[dedup] Дубликат для %s/%r/%r -> задание %s",
                 agent_type, request.sender_email, request.subject, dup["job_id"],
             )
             return {
@@ -291,8 +286,9 @@ def _check_and_process(
                 "existing_job_id": dup["job_id"],
                 "job": dup,
                 "message": (
-                    f"Письмо уже было обработано ({dup['created_at'][:10]}). "
-                    "Добавьте force=true чтобы переобработать."
+                    "Письмо уже было обработано ("
+                    + dup["created_at"][:10]
+                    + "). Добавьте force=true чтобы переобработать."
                 ),
             }
     job_id = create_job(agent_type, sender=request.sender_email, subject=request.subject)
@@ -364,14 +360,13 @@ def check_duplicate(
     subject: str = Query(default=""),
     _: str = Depends(_require_api_key),
 ):
-    """Проверяет наличие уже обработанного задания без запуска агента."""
     dup = find_duplicate_job(agent, sender, subject)
     if dup:
         return DuplicateResponse(
             duplicate=True,
             existing_job_id=dup["job_id"],
             job=dup,
-            message=f"Обработано {dup['created_at'][:10]}, решение: {dup.get('decision', '—')}",
+            message="Обработано " + dup["created_at"][:10] + ", решение: " + str(dup.get("decision", "--")),
         )
     return DuplicateResponse(duplicate=False, message="Дубликатов не найдено")
 
@@ -408,16 +403,14 @@ def process_auto(
 def list_jobs(
     agent: str | None = Query(default=None),
     status: str | None = Query(default=None),
-    page: int = Query(default=1, ge=1, description="Номер страницы (1-базовый)"),
-    per_page: int = Query(default=100, ge=1, le=500, description="Записей на странице"),
+    page: int = Query(default=1, ge=1),
+    per_page: int = Query(default=100, ge=1, le=500),
     _: str = Depends(_require_api_key),
 ):
     offset = (page - 1) * per_page
-    # Получаем +1 чтобы определить has_next без COUNT(*)
     items = db_get_history(agent=agent, status=status, limit=per_page + 1, offset=offset)
     has_next = len(items) > per_page
     items = items[:per_page]
-    # Общее кол-во через отдельный запрос
     total_items = db_get_history(agent=agent, status=status, limit=100_000, offset=0)
     total = len(total_items)
     pages = math.ceil(total / per_page) if per_page else 1
@@ -431,26 +424,26 @@ def list_jobs(
 def get_job(job_id: str, _: str = Depends(_require_api_key)):
     job = db_get_job(job_id)
     if not job:
-        raise HTTPException(status_code=404, detail=f"Задание {job_id!r} не найдено")
+        raise HTTPException(status_code=404, detail="Задание " + repr(job_id) + " не найдено")
     return JobResponse(**job)
 
 
 @app.delete("/api/v1/jobs/{job_id}", summary="Удалить задание")
 def delete_job(job_id: str, _: str = Depends(_require_api_key)):
     if not db_delete_job(job_id):
-        raise HTTPException(status_code=404, detail=f"Задание {job_id!r} не найдено")
-    return {"message": f"Задание {job_id!r} удалено"}
+        raise HTTPException(status_code=404, detail="Задание " + repr(job_id) + " не найдено")
+    return {"message": "Задание " + repr(job_id) + " удалено"}
 
 
 @app.get("/api/v1/history", summary="История")
 def history(
     agent: str | None = Query(default=None),
     status: str | None = Query(default=None),
-    decision: str | None = Query(default=None, description="Фильтр по решению"),
-    date_from: str | None = Query(default=None, description="Начало периода ISO-8601"),
-    date_to: str | None = Query(default=None, description="Конец периода ISO-8601"),
-    page: int = Query(default=1, ge=1, description="Номер страницы (1-базовый)"),
-    per_page: int = Query(default=50, ge=1, le=500, description="Записей на странице"),
+    decision: str | None = Query(default=None),
+    date_from: str | None = Query(default=None),
+    date_to: str | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    per_page: int = Query(default=50, ge=1, le=500),
     _: str = Depends(_require_api_key),
 ):
     offset = (page - 1) * per_page
