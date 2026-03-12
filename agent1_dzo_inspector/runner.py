@@ -18,7 +18,6 @@ from shared.telegram_notify import notify  # noqa: E402
 
 logger = setup_logger("agent_dzo")
 
-# Если FORCE_REPROCESS=true — игнорировать дубликаты и обрабатывать всегда заново
 FORCE_REPROCESS = os.getenv("FORCE_REPROCESS", "false").lower() == "true"
 
 
@@ -38,14 +37,15 @@ def process_dzo_emails():
         logger.info("Новых писем нет.")
         return
 
-    agent = create_dzo_agent()
-
     for mail in emails:
+        # fix #2: agent создаётся внутри цикла, чтобы каждое письмо
+        # получало собственный изолированный ConversationBufferWindowMemory.
+        agent = create_dzo_agent()
+
         sender  = mail["from"]
         subject = mail["subject"]
         logger.info(f"Обрабатываю: '{subject}' от {sender}")
 
-        # Дедупликация: daemon не интерактивен, поэтому дубликаты пропускаем автоматически
         if not FORCE_REPROCESS:
             dup = db.find_duplicate_job("dzo", sender, subject)
             if dup:
@@ -89,8 +89,8 @@ def process_dzo_emails():
                 f"── ТЕЛО ПИСЬМА ──\n{mail['body']}\n\n"
                 f"── ПРЕДВАРИТЕЛЬНАЯ ПРОВЕРКА ──\n"
                 f"Всего вложений: {len(mail['attachments'])}\n"
-                f"Файл ТЗ: {'DA' if has_tz else 'НЕТ'}\n"
-                f"Спецификация: {'DA' if has_spec else 'НЕТ'}\n\n"
+                f"Файл ТЗ: {'ДА' if has_tz else 'НЕТ'}\n"
+                f"Спецификация: {'ДА' if has_spec else 'НЕТ'}\n\n"
                 + "\n\n".join(attachment_texts)
             )
 
