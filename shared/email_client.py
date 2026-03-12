@@ -30,8 +30,10 @@ def fetch_unseen_emails(
     """
     Подключается к IMAP, забирает UNSEEN письма с вложениями.
     Помечает письма как прочитанные после обработки.
+    Соединение гарантированно закрывается через finally.
     """
     emails = []
+    M: imaplib.IMAP4_SSL | None = None
     try:
         M = imaplib.IMAP4_SSL(imap_host, imap_port)
         M.login(imap_user, imap_password)
@@ -75,7 +77,7 @@ def fetch_unseen_emails(
                                 "b64": base64.b64encode(payload).decode(),
                             })
 
-                M.store(uid, "+FLAGS", "\\Seen")
+                M.store(uid, "+FLAGS", "\\\\Seen")
                 emails.append({
                     "uid": uid.decode(),
                     "from": from_,
@@ -87,8 +89,13 @@ def fetch_unseen_emails(
             except Exception as e:
                 logger.error(f"Ошибка обработки письма uid={uid}: {e}")
 
-        M.logout()
     except Exception as e:
         logger.error(f"IMAP подключение не удалось ({imap_host}): {e}")
+    finally:
+        if M is not None:
+            try:
+                M.logout()
+            except Exception:
+                pass
 
     return emails
