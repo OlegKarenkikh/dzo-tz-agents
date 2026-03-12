@@ -10,15 +10,16 @@ FastAPI REST API для обработки документов агентами
   POST /api/v1/process/tz              — обработать ТЗ
   POST /api/v1/process/auto            — автоопределение типа
   GET  /api/v1/check-duplicate         — проверить дубликат без обработки
-  GET  /api/v1/jobs                    — список всех заданий
+  GET  /api/v1/jobs                    — список всех заданий (с пагинацией)
   GET  /api/v1/jobs/{job_id}           — статус конкретного задания
   DELETE /api/v1/jobs/{job_id}         — удалить задание
-  GET  /api/v1/history                 — история обработок
+  GET  /api/v1/history                 — история обработок (с пагинацией)
   GET  /api/v1/stats                   — аггрегированная статистика
 """
 import base64
 import json
 import logging
+import math
 import os
 import time
 from collections import deque
@@ -66,7 +67,7 @@ CORS_ORIGINS = [
 app = FastAPI(
     title="DZO/TZ Agents API",
     description="REST API для обработки заявок ДЗО и ТЗ",
-    version="1.1.0",
+    version="1.2.0",
     docs_url="/docs",
     redoc_url="/redoc",
     openapi_url="/openapi.json" if os.getenv("ENABLE_DOCS", "true") == "true" else None,
@@ -87,6 +88,22 @@ _run_log: deque[dict] = deque(maxlen=500)
 
 _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
+# ---------------------------------------------------------------------------
+# Реестр агентов.
+# ---------------------------------------------------------------------------
+AGENT_REGISTRY: dict[str, dict] = {
+    "dzo": {
+        "name": "Инспектор ДЗО",
+        "description": "Проверяет заявки ДЗО на полноту и соответствие требованиям",
+        "decisions": ["Заявка полная", "Требуется доработка", "Требуется эскалация"],
+    },
+    "tz": {
+        "name": "Инспектор ТЗ",
+        "description": "Анализирует технические задания на соответствие ГОСТ и внутренним стандартам",
+        "decisions": ["Соответствует", "Требует доработки", "Не соответствует"],
+    },
+}
+
 
 def _get_api_key() -> str:
     return os.getenv("API_KEY", "")
@@ -95,9 +112,7 @@ def _get_api_key() -> str:
 @app.on_event("startup")
 def on_startup():
     if not _get_api_key():
-        logger.warning(
-            "⚠️  API_KEY не задан — защищённые эндпоинты доступны без аутентификации!"
-        )
+        logger.warning("АПИ-ключ не задан!")
     init_db()
 
 
@@ -148,6 +163,15 @@ class DuplicateResponse(BaseModel):
     message: str = ""
 
 
+class PaginatedResponse(BaseModel):
+    total: int
+    page: int
+    per_page: int
+    pages: int
+    has_next: bool
+    items: list[dict]
+
+
 # ---------------------------------------------------------------------------
 # Фоновая обработка
 # ---------------------------------------------------------------------------
@@ -159,7 +183,7 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
 
     update_job(job_id, status="running")
     ts = datetime.now(UTC).isoformat()
-    logger.info(f"[{job_id}] Запуск агента {agent_type.upper()}")
+    logger.info("[%s] Запуск агента %s", job_id, agent_type.upper())
 
     with JobTimer(agent_type):
         try:
@@ -174,27 +198,34 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                         "filename": att.filename, "ext": ext,
                         "data": raw, "b64": att.content_base64, "mime": att.mime_type,
                     })
-                    attachment_texts.append(f"──── Файл: {att.filename} ────\n{text}")
+                    attachment_texts.append("---- " + att.filename + " ----\n" + text)
                 except Exception as e:
-                    logger.warning(f"[{job_id}] Ошибка извлечения {att.filename}: {e}")
+                    logger.warning("[%s] Ошибка извлечения %s: %s", job_id, att.filename, e)
 
             parts: list[str] = []
             if request.sender_email:
-                parts.append(f"От: {request.sender_email}")
+                parts.append("От: " + request.sender_email)
             if request.subject:
-                parts.append(f"Тема: {request.subject}")
+                parts.append("Тема: " + request.subject)
             if request.text:
-                parts.append(f"\n── ТЕКСТ ──\n{request.text}")
+                parts.append("\n-- ТЕКСТ --\n" + request.text)
             if attachment_texts:
-                parts.append("\n── ВЛОЖЕНИЯ ──\n" + "\n\n".join(attachment_texts))
+                parts.append("\n-- ВЛОЖЕНИЯ --\n" + "\n\n".join(attachment_texts))
             chat_input = "\n".join(parts) if parts else "(пустой запрос)"
+
+            if agent_type not in AGENT_REGISTRY:
+                raise ValueError("Неизвестный агент: " + agent_type)
 
             if agent_type == "dzo":
                 from agent1_dzo_inspector.agent import create_dzo_agent
                 agent = create_dzo_agent()
-            else:
+            elif agent_type == "tz":
                 from agent2_tz_inspector.agent import create_tz_agent
                 agent = create_tz_agent()
+            else:
+                import importlib
+                mod = importlib.import_module("agent_" + agent_type + ".agent")
+                agent = mod.create_agent()
 
             result = agent.invoke({"input": chat_input})
 
@@ -218,13 +249,13 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                 result={"output": result.get("output", ""), "decision": decision, "email_html": email_html},
             )
             _run_log.append({"agent": agent_type, "ts": ts, "status": "ok", "job_id": job_id})
-            logger.info(f"[{job_id}] Завершено. Решение: {decision or 'нет'}")
+            logger.info("[%s] Завершено. Решение: %s", job_id, decision or "нет")
 
         except Exception as e:
             update_job(job_id, status="error", error=str(e))
             _run_log.append({"agent": agent_type, "ts": ts, "status": "error",
                              "job_id": job_id, "error": str(e)})
-            logger.error(f"[{job_id}] Ошибка: {e}")
+            logger.error("[%s] Ошибка: %s", job_id, e)
             raise
 
 
@@ -241,21 +272,23 @@ def _check_and_process(
     request: ProcessRequest,
     background_tasks: BackgroundTasks,
 ) -> dict:
-    """Общая логика для всех эндпоинтов обработки: проверка дубля → запуск."""
+    if agent_type not in AGENT_REGISTRY:
+        raise HTTPException(status_code=400, detail="Неизвестный агент: " + repr(agent_type))
     if not request.force:
         dup = find_duplicate_job(agent_type, request.sender_email, request.subject)
         if dup:
             logger.info(
-                f"[dedup] Дубликат для {agent_type}/{request.sender_email!r}/{request.subject!r} "
-                f"→ существующее задание {dup['job_id']}"
+                "[dedup] Дубликат для %s/%r/%r -> задание %s",
+                agent_type, request.sender_email, request.subject, dup["job_id"],
             )
             return {
                 "duplicate": True,
                 "existing_job_id": dup["job_id"],
                 "job": dup,
                 "message": (
-                    f"Письмо уже было обработано ({dup['created_at'][:10]}). "
-                    "Добавьте force=true чтобы переобработать."
+                    "Письмо уже было обработано ("
+                    + dup["created_at"][:10]
+                    + "). Добавьте force=true чтобы переобработать."
                 ),
             }
     job_id = create_job(agent_type, sender=request.sender_email, subject=request.subject)
@@ -280,7 +313,7 @@ async def _log_and_measure(request: Request, call_next):
             method=request.method, endpoint=path,
             status_code=str(response.status_code),
         ).inc()
-    logger.info(f"{request.method} {path} [{response.status_code}] {duration:.3f}s")
+    logger.info("%s %s [%s] %.3fs", request.method, path, response.status_code, duration)
     return response
 
 
@@ -293,7 +326,7 @@ def health():
     return {
         "status": "ok",
         "uptime_sec": int((datetime.now(UTC) - _start_time).total_seconds()),
-        "version": "1.1.0",
+        "version": "1.2.0",
         "agent_mode": os.getenv("AGENT_MODE", "both"),
         "model": os.getenv("MODEL_NAME", "gpt-4o"),
         "timestamp": datetime.now(UTC).isoformat(),
@@ -308,12 +341,12 @@ def status(limit: int = Query(default=10, ge=1, le=100)):
 
 @app.get("/agents", summary="Список агентов")
 def list_agents():
-    return {"agents": [
-        {"id": "dzo", "name": "Инспектор ДЗО",
-         "decisions": ["Заявка полная", "Требуется доработка", "Требуется эскалация"]},
-        {"id": "tz",  "name": "Инспектор ТЗ",
-         "decisions": ["Соответствует", "Требует доработки", "Не соответствует"]},
-    ]}
+    return {
+        "agents": [
+            {"id": aid, **info}
+            for aid, info in AGENT_REGISTRY.items()
+        ]
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -327,14 +360,13 @@ def check_duplicate(
     subject: str = Query(default=""),
     _: str = Depends(_require_api_key),
 ):
-    """Проверяет наличие уже обработанного задания без запуска агента. Идеально для UI."""
     dup = find_duplicate_job(agent, sender, subject)
     if dup:
         return DuplicateResponse(
             duplicate=True,
             existing_job_id=dup["job_id"],
             job=dup,
-            message=f"Обработано {dup['created_at'][:10]}, решение: {dup.get('decision', '—')}",
+            message="Обработано " + dup["created_at"][:10] + ", решение: " + str(dup.get("decision", "--")),
         )
     return DuplicateResponse(duplicate=False, message="Дубликатов не найдено")
 
@@ -371,36 +403,68 @@ def process_auto(
 def list_jobs(
     agent: str | None = Query(default=None),
     status: str | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    per_page: int = Query(default=100, ge=1, le=500),
     _: str = Depends(_require_api_key),
 ):
-    jobs = db_get_history(agent=agent, status=status)
-    return {"total": len(jobs), "jobs": jobs}
+    offset = (page - 1) * per_page
+    items = db_get_history(agent=agent, status=status, limit=per_page + 1, offset=offset)
+    has_next = len(items) > per_page
+    items = items[:per_page]
+    total_items = db_get_history(agent=agent, status=status, limit=100_000, offset=0)
+    total = len(total_items)
+    pages = math.ceil(total / per_page) if per_page else 1
+    return PaginatedResponse(
+        total=total, page=page, per_page=per_page,
+        pages=pages, has_next=has_next, items=items,
+    )
 
 
 @app.get("/api/v1/jobs/{job_id}", response_model=JobResponse, summary="Статус задания")
 def get_job(job_id: str, _: str = Depends(_require_api_key)):
     job = db_get_job(job_id)
     if not job:
-        raise HTTPException(status_code=404, detail=f"Задание {job_id!r} не найдено")
+        raise HTTPException(status_code=404, detail="Задание " + repr(job_id) + " не найдено")
     return JobResponse(**job)
 
 
 @app.delete("/api/v1/jobs/{job_id}", summary="Удалить задание")
 def delete_job(job_id: str, _: str = Depends(_require_api_key)):
     if not db_delete_job(job_id):
-        raise HTTPException(status_code=404, detail=f"Задание {job_id!r} не найдено")
-    return {"message": f"Задание {job_id!r} удалено"}
+        raise HTTPException(status_code=404, detail="Задание " + repr(job_id) + " не найдено")
+    return {"message": "Задание " + repr(job_id) + " удалено"}
 
 
 @app.get("/api/v1/history", summary="История")
 def history(
     agent: str | None = Query(default=None),
     status: str | None = Query(default=None),
-    limit: int = Query(default=50, ge=1, le=500),
+    decision: str | None = Query(default=None),
+    date_from: str | None = Query(default=None),
+    date_to: str | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    per_page: int = Query(default=50, ge=1, le=500),
     _: str = Depends(_require_api_key),
 ):
-    jobs = db_get_history(agent=agent, status=status, limit=limit)
-    return {"total": len(jobs), "items": jobs}
+    offset = (page - 1) * per_page
+    items = db_get_history(
+        agent=agent, status=status, decision=decision,
+        date_from=date_from, date_to=date_to,
+        limit=per_page + 1, offset=offset,
+    )
+    has_next = len(items) > per_page
+    items = items[:per_page]
+    total_items = db_get_history(
+        agent=agent, status=status, decision=decision,
+        date_from=date_from, date_to=date_to,
+        limit=100_000, offset=0,
+    )
+    total = len(total_items)
+    pages = math.ceil(total / per_page) if per_page else 1
+    return PaginatedResponse(
+        total=total, page=page, per_page=per_page,
+        pages=pages, has_next=has_next, items=items,
+    )
 
 
 @app.get("/api/v1/stats", summary="Аггрегированная статистика")
@@ -410,5 +474,5 @@ def get_stats(_: str = Depends(_require_api_key)):
 
 @app.exception_handler(Exception)
 async def _generic_exception_handler(request: Request, exc: Exception):
-    logger.error(f"Необработанная ошибка: {exc}")
+    logger.error("Необработанная ошибка: %s", exc)
     return JSONResponse(status_code=500, content={"detail": "Внутренняя ошибка"})
