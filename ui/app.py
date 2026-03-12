@@ -480,6 +480,9 @@ elif page == "📋 История":
         st.session_state.selected_jobs = set()
     if "pending_delete" not in st.session_state:
         st.session_state.pending_delete = False
+    # Флаг предыдущего состояния «Выбрать всё» для корректного снятия выделения
+    if "select_all_prev" not in st.session_state:
+        st.session_state.select_all_prev = False
 
     col_f1, col_f2, col_f3 = st.columns(3)
     with col_f1:
@@ -501,14 +504,22 @@ elif page == "📋 История":
     st.caption(f"Найдено записей: {data.get('total', 0)}")
 
     if items:
-        # Управление чекбоксами (Select All)
-        col_all, _ = st.columns([1, 4])
         all_job_ids = [i["job_id"] for i in items]
-        select_all = col_all.checkbox("Выбрать всё", value=len(st.session_state.selected_jobs) >= len(all_job_ids) and len(all_job_ids) > 0)
-        if select_all:
+
+        # ── Чекбокс «Выбрать всё» — стабильная логика через session_state ──
+        col_all, _ = st.columns([1, 4])
+        select_all = col_all.checkbox(
+            "Выбрать всё",
+            value=st.session_state.select_all_prev,
+            key="select_all_cb",
+        )
+        if select_all and not st.session_state.select_all_prev:
+            # Переход False → True: добавляем все ID текущей страницы
             st.session_state.selected_jobs.update(all_job_ids)
-        elif not select_all and len(st.session_state.selected_jobs) == len(all_job_ids):
-            st.session_state.selected_jobs.clear()
+        elif not select_all and st.session_state.select_all_prev:
+            # Переход True → False: снимаем только ID текущей страницы
+            st.session_state.selected_jobs.difference_update(all_job_ids)
+        st.session_state.select_all_prev = select_all
 
         # Массовые действия
         if st.session_state.selected_jobs:
@@ -523,12 +534,13 @@ elif page == "📋 История":
                         res = _api_post(f"/api/v1/process/{j_info['agent']}", {
                             "sender_email": j_info.get("sender", ""),
                             "subject": j_info.get("subject", ""),
-                            "force": True
+                            "force": True,
                         })
                         if res and "job" in res:
                             new_jobs.append(res["job"]["job_id"])
                 st.success(f"Запущено {len(new_jobs)} новых заданий.")
                 st.session_state.selected_jobs.clear()
+                st.session_state.select_all_prev = False
                 time.sleep(1)
                 st.rerun()
 
@@ -541,12 +553,13 @@ elif page == "📋 История":
                 del_c1, del_c2 = st.columns(2)
                 if del_c1.button("✅ Подтвердить удаление", type="primary", use_container_width=True):
                     deleted_count = 0
-                    for jid in st.session_state.selected_jobs:
+                    for jid in list(st.session_state.selected_jobs):
                         if _api_delete(f"/api/v1/jobs/{jid}"):
                             deleted_count += 1
                     st.success(f"Удалено {deleted_count} записей.")
                     st.session_state.selected_jobs.clear()
                     st.session_state.pending_delete = False
+                    st.session_state.select_all_prev = False
                     time.sleep(1)
                     st.rerun()
                 if del_c2.button("❌ Отмена", use_container_width=True):
@@ -572,21 +585,25 @@ elif page == "📋 История":
             rows,
             column_config={
                 "Выбор": st.column_config.CheckboxColumn("Выбор", default=False),
-                "job_id": None, # Скрываем ID
+                "job_id": None,  # Скрываем ID
             },
             disabled=["Время", "Агент", "Отправитель", "Тема", "Решение", "Статус"],
             use_container_width=True,
             hide_index=True,
-            key="history_editor"
+            key="history_editor",
         )
 
-        # Синхронизация стейта после редактирования
+        # Синхронизация стейта после редактирования чекбоксов в таблице
         current_selected = {r["job_id"] for r in edited_df if r["Выбор"]}
-        # Обновляем selected_jobs только для тех, что отображены на текущей странице
         current_page_ids = {r["job_id"] for r in rows}
         st.session_state.selected_jobs = (st.session_state.selected_jobs - current_page_ids) | current_selected
+        # Синхронизируем флаг select_all с реальным состоянием
+        if current_page_ids and current_selected == current_page_ids:
+            st.session_state.select_all_prev = True
+        elif not current_selected:
+            st.session_state.select_all_prev = False
 
-        # Построчная переобработка через экспандер или кнопки ниже
+        # Построчные действия через экспандер
         st.write("---")
         st.subheader("Детальный просмотр и действия")
         for item in items:
@@ -597,20 +614,24 @@ elif page == "📋 История":
                     res = _api_post(f"/api/v1/process/{item['agent']}", {
                         "sender_email": item.get("sender", ""),
                         "subject": item.get("subject", ""),
-                        "force": True
+                        "force": True,
                     })
                     if res and "job" in res:
                         st.success(f"Создано новое задание: `{res['job']['job_id']}`")
+                        time.sleep(0.5)
+                        st.rerun()  # fix: обновить таблицу после строчной переобработки
                 if c3.button("🗑 Удалить", key=f"del_{item['job_id']}", use_container_width=True):
                     if _api_delete(f"/api/v1/jobs/{item['job_id']}"):
                         st.success("Удалено")
                         time.sleep(0.5)
                         st.rerun()
 
+        # Экспорт CSV (без служебных колонок «Выбор» и «job_id»)
         buf = io.StringIO()
         if rows:
-            export_rows = [{k: v for k, v in r.items() if k != "Выбор"} for r in rows]
-            writer = csv.DictWriter(buf, fieldnames=export_rows[0].keys())
+            export_keys = [k for k in rows[0].keys() if k not in ("Выбор", "job_id")]
+            export_rows = [{k: r[k] for k in export_keys} for r in rows]
+            writer = csv.DictWriter(buf, fieldnames=export_keys)
             writer.writeheader()
             writer.writerows(export_rows)
         st.download_button(
