@@ -1,11 +1,12 @@
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 
 from dotenv import load_dotenv
 
 load_dotenv()
 
 import config  # noqa: E402
+import shared.database as db  # noqa: E402
 from agent2_tz_inspector.agent import create_tz_agent  # noqa: E402
 from api.metrics import EMAILS_ERRORS, EMAILS_PROCESSED, JobTimer, POLL_CYCLES  # noqa: E402
 from shared.email_client import fetch_unseen_emails  # noqa: E402
@@ -37,6 +38,7 @@ def process_tz_emails():
 
     for mail in emails:
         logger.info(f"Обрабатываю: '{mail['subject']}' от {mail['from']}")
+        job_id = db.create_job("tz", sender=mail["from"], subject=mail["subject"])
         try:
             attachment_texts = []
             for att in mail["attachments"]:
@@ -47,7 +49,7 @@ def process_tz_emails():
                 f"📝 ВХОДЯЩЕЕ ТЕХНИЧЕСКОЕ ЗАДАНИЕ\n"
                 f"═══════════════════════════════════════════\n"
                 f"От: {mail['from']}\nТема: {mail['subject']}\n"
-                f"Дата: {mail['date']}\nВремя: {datetime.now().isoformat()}\n\n"
+                f"Дата: {mail['date']}\nВремя: {datetime.now(UTC).isoformat()}\n\n"
                 f"── ТЕЛО ПИСЬМА ──\n{mail['body']}\n\n"
                 f"── ТЕКСТ ТЗ ({len(mail['attachments'])} вложений) ──\n"
                 + "\n\n".join(attachment_texts)
@@ -63,6 +65,7 @@ def process_tz_emails():
             email_html = corrected_tz_html = ""
             decision = "Требует доработки"
             reply_subject = ""
+            json_report: dict = {}
 
             for step in result.get("intermediate_steps", []):
                 try:
@@ -74,6 +77,8 @@ def process_tz_emails():
                     # generate_corrected_tz возвращает поле 'html' (не 'correctedHtml')
                     if obs.get("html"):
                         corrected_tz_html = obs["html"]
+                    if obs.get("overall_status"):
+                        json_report = obs
                 except Exception:
                     pass
 
@@ -99,11 +104,22 @@ def process_tz_emails():
                 )
                 notify(f"ℹ️ ТЗ отправлено на доработку {mail['from']}", level="info")
 
+            db.update_job(
+                job_id,
+                status="done",
+                decision=decision,
+                result={
+                    "attachments": len(mail["attachments"]),
+                    "overall_status": json_report.get("overall_status", ""),
+                    "sections_found": json_report.get("sections_found", []),
+                },
+            )
             EMAILS_PROCESSED.labels(agent="tz").inc()
             logger.info(f"Обработано. Решение: {decision}")
 
         except Exception as e:
             EMAILS_ERRORS.labels(agent="tz", error_type=type(e).__name__).inc()
+            db.update_job(job_id, status="error", error=str(e))
             logger.error(f"Критическая ошибка: {e}")
             notify(f"🔴 Ошибка Агент-ТЗ\nОт: {mail['from']}\n{e}", level="error")
 

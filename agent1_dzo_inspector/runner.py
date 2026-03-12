@@ -1,11 +1,12 @@
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 
 from dotenv import load_dotenv
 
 load_dotenv()
 
 import config  # noqa: E402
+import shared.database as db  # noqa: E402
 from agent1_dzo_inspector.agent import create_dzo_agent  # noqa: E402
 from api.metrics import EMAILS_ERRORS, EMAILS_PROCESSED, JobTimer, POLL_CYCLES  # noqa: E402
 from shared.email_client import fetch_unseen_emails  # noqa: E402
@@ -37,6 +38,7 @@ def process_dzo_emails():
 
     for mail in emails:
         logger.info(f"Обрабатываю: '{mail['subject']}' от {mail['from']}")
+        job_id = db.create_job("dzo", sender=mail["from"], subject=mail["subject"])
         try:
             if not mail["attachments"]:
                 send_email(
@@ -45,6 +47,8 @@ def process_dzo_emails():
                     html_body="<p>В вашем письме не обнаружено вложений. Пожалуйста, приложите заявку.</p>",
                     from_addr=config.DZO_SMTP_FROM,
                 )
+                db.update_job(job_id, status="done", decision="Требуется доработка",
+                              result={"reason": "no_attachments"})
                 EMAILS_PROCESSED.labels(agent="dzo").inc()
                 continue
 
@@ -64,7 +68,7 @@ def process_dzo_emails():
                 f"📧 ВХОДЯЩАЯ ЗАЯВКА ОТ ДЗО\n"
                 f"═══════════════════════════════════════════\n"
                 f"От: {mail['from']}\nТема: {mail['subject']}\n"
-                f"Дата: {mail['date']}\nВремя: {datetime.now().isoformat()}\n\n"
+                f"Дата: {mail['date']}\nВремя: {datetime.now(UTC).isoformat()}\n\n"
                 f"── ТЕЛО ПИСЬМА ──\n{mail['body']}\n\n"
                 f"── ПРЕДВАРИТЕЛЬНАЯ ПРОВЕРКА ──\n"
                 f"Всего вложений: {len(mail['attachments'])}\n"
@@ -129,11 +133,18 @@ def process_dzo_emails():
                 )
                 notify(f"ℹ️ Запрошены данные от {mail['from']}", level="info")
 
+            db.update_job(
+                job_id,
+                status="done",
+                decision=decision,
+                result={"has_tz": has_tz, "has_spec": has_spec, "attachments": len(mail["attachments"])},
+            )
             EMAILS_PROCESSED.labels(agent="dzo").inc()
             logger.info(f"Обработано. Решение: {decision}")
 
         except Exception as e:
             EMAILS_ERRORS.labels(agent="dzo", error_type=type(e).__name__).inc()
+            db.update_job(job_id, status="error", error=str(e))
             logger.error(f"Критическая ошибка: {e}")
             notify(f"🔴 Ошибка Агент-ДЗО\nОт: {mail['from']}\n{e}", level="error")
 
