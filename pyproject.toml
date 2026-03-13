@@ -92,7 +92,8 @@ ignore = ["E501", "B008", "B904"]
 # api: I001 — load_dotenv() block position, app.py multi-group imports
 "api/app.py" = ["I001"]
 # shared: UP006/UP035 — typing generics kept where needed
-"shared/*.py" = ["UP006", "UP035"]
+#         I001 — TYPE_CHECKING block must remain after stdlib imports
+"shared/*.py" = ["UP006", "UP035", "I001"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["shared", "agent1_dzo_inspector", "agent2_tz_inspector", "api", "ui"]
