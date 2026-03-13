@@ -7,6 +7,15 @@ load_dotenv()
 OPENAI_API_KEY  = os.getenv("OPENAI_API_KEY")
 OPENAI_API_BASE = os.getenv("OPENAI_API_BASE")  # None → дефолт langchain (api.openai.com/v1)
 
+# LLM backend: openai | ollama | deepseek | vllm | lmstudio | github_models
+_VALID_BACKENDS = {"openai", "ollama", "deepseek", "vllm", "lmstudio", "github_models"}
+LLM_BACKEND = os.getenv("LLM_BACKEND", "openai").lower()
+if LLM_BACKEND not in _VALID_BACKENDS:
+    raise ValueError(
+        f"LLM_BACKEND='{LLM_BACKEND}' — недопустимое значение. "
+        f"Допустимые: {sorted(_VALID_BACKENDS)}"
+    )
+
 # IMAP — Агент ДЗО
 DZO_IMAP_HOST     = os.getenv("DZO_IMAP_HOST", os.getenv("IMAP_HOST", "imap.company.ru"))
 DZO_IMAP_PORT     = int(os.getenv("DZO_IMAP_PORT", 993))

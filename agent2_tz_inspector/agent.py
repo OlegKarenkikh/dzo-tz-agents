@@ -3,13 +3,13 @@ import os
 from langchain.agents import AgentExecutor, create_openai_tools_agent, create_react_agent
 from langchain.memory import ConversationBufferWindowMemory
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder, PromptTemplate
-from langchain_openai import ChatOpenAI
 
 from agent2_tz_inspector.tools import (
     generate_corrected_tz,
     generate_email_to_dzo,
     generate_json_report,
 )
+from shared.llm import build_llm
 
 SYSTEM_PROMPT = """Ты — ИИ-инспектор «Контролер ТЗ». Проверяешь технические задания от ДЗО на соответствие корпоративному шаблону.
 
@@ -67,23 +67,13 @@ _REACT_TEMPLATE = (
 REACT_TEMPLATE = _REACT_TEMPLATE.format(system_prompt=SYSTEM_PROMPT)
 
 
-def _build_llm() -> ChatOpenAI:
-    return ChatOpenAI(
-        model=os.getenv("MODEL_NAME", "gpt-4o"),
-        temperature=0.2,
-        max_tokens=8192,
-        api_key=os.getenv("OPENAI_API_KEY") or "ollama",
-        base_url=os.getenv("OPENAI_API_BASE") or None,
-    )
-
-
 def create_tz_agent() -> AgentExecutor:
     """AGENT_TYPE=openai_tools (default) | react.
 
     - openai_tools: native function-calling (GPT-4o, DeepSeek-V3+)
     - react: ReAct prompting, работает с любой LLM (Ollama, Mistral и т.д.)
     """
-    llm = _build_llm()
+    llm = build_llm(temperature=0.2)
     tools = [generate_json_report, generate_corrected_tz, generate_email_to_dzo]
     memory = ConversationBufferWindowMemory(k=20, return_messages=True, memory_key="chat_history")
 
