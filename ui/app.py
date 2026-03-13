@@ -866,6 +866,26 @@ elif page == "📖 Документация":
         )
 
     with tab3:
+        # Таблицы с символом | внутри ячеек вынесены в отдельные переменные
+        # чтобы избежать W605 (invalid escape sequence) в f-строках.
+        _history_params_table = (
+            "| Параметр | Тип | Описание |\n"
+            "|---|---|---|\n"
+            "| `agent` | str | `dzo` или `tz` |\n"
+            "| `status` | str | `pending`, `running`, `done`, `error` |\n"
+            "| `decision` | str | Фильтр по тексту решения |\n"
+            "| `date_from` | str | ISO 8601, начало периода |\n"
+            "| `date_to` | str | ISO 8601, конец периода |\n"
+            "| `page` | int | Номер страницы (default: 1) |\n"
+            "| `per_page` | int | Записей на странице (1–500, default: 50) |"
+        )
+        _dup_params_table = (
+            "| Параметр | Тип | Описание |\n"
+            "|---|---|---|\n"
+            "| `agent` | str | `dzo` или `tz` |\n"
+            "| `sender` | str | Email отправителя |\n"
+            "| `subject` | str | Тема письма |"
+        )
         st.markdown(
             f"""
 ## 🔌 REST API
@@ -918,23 +938,11 @@ X-API-Key: <ваш ключ>
 
 ### GET /api/v1/check-duplicate — параметры
 
-| Параметр | Тип | Описание |
-|---|---|---|
-| `agent` | str | `dzo` или `tz` |
-| `sender` | str | Email отправителя |
-| `subject` | str | Тема письма |
+{_dup_params_table}
 
 ### GET /api/v1/history — параметры
 
-| Параметр | Тип | Описание |
-|---|---|---|
-| `agent` | str | `dzo` \| `tz` |
-| `status` | str | `pending` \| `running` \| `done` \| `error` |
-| `decision` | str | Фильтр по тексту решения |
-| `date_from` | str | ISO 8601, начало периода |
-| `date_to` | str | ISO 8601, конец периода |
-| `page` | int | Номер страницы (default: 1) |
-| `per_page` | int | Записей на странице (1–500, default: 50) |
+{_history_params_table}
 
 ### Пример запроса
 ```bash
