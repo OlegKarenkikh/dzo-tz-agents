@@ -66,21 +66,35 @@ def log_agent_steps(job_id: str, agent: str, steps: list) -> list[dict]:
             obs = {"raw": str(observation)[:500]}
         latency_ms = round((time.perf_counter() - t0) * 1000, 1)
 
+        # Приводим к JSON-сериализуемым типам: str/dict/list/int/float/bool/None.
+        # getattr на MagicMock возвращает MagicMock — без этого json.dumps упадёт.
+        raw_tool = getattr(action, "tool", None)
+        tool_name = raw_tool if isinstance(raw_tool, str) else str(raw_tool)
+
+        raw_input = getattr(action, "tool_input", {})
+        if isinstance(raw_input, (dict, str)):
+            tool_input: dict | str = _truncate(raw_input)
+        else:
+            tool_input = str(raw_input)[:300]
+
         step_record: dict = {
             "step": i,
-            "tool": getattr(action, "tool", str(action)),
-            "tool_input": _truncate(getattr(action, "tool_input", {})),
+            "tool": tool_name,
+            "tool_input": tool_input,
             "output_keys": list(obs.keys()) if isinstance(obs, dict) else [],
             "decision": obs.get("decision") if isinstance(obs, dict) else None,
             "latency_ms": latency_ms,
         }
         trace.append(step_record)
-        logger.info(
-            json.dumps(
-                {"job_id": job_id, "agent": agent, **step_record},
-                ensure_ascii=False,
+        try:
+            logger.info(
+                json.dumps(
+                    {"job_id": job_id, "agent": agent, **step_record},
+                    ensure_ascii=False,
+                )
             )
-        )
+        except (TypeError, ValueError):  # noqa: BLE001
+            logger.info("[trace] job=%s agent=%s step=%d tool=%s", job_id, agent, i, tool_name)
     return trace
 
 
