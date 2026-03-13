@@ -3,13 +3,13 @@ import os
 from langchain.agents import AgentExecutor, create_openai_tools_agent, create_react_agent
 from langchain.memory import ConversationBufferWindowMemory
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder, PromptTemplate
-from langchain_openai import ChatOpenAI
 
 from agent2_tz_inspector.tools import (
     generate_corrected_tz,
     generate_email_to_dzo,
     generate_json_report,
 )
+from shared.llm import build_llm
 
 SYSTEM_PROMPT = """Ты — ИИ-инспектор «Контролер ТЗ». Проверяешь технические задания от ДЗО на соответствие корпоративному шаблону.
 
@@ -44,6 +44,8 @@ SYSTEM_PROMPT = """Ты — ИИ-инспектор «Контролер ТЗ».
 
 ОГРАНИЧЕНИЯ: не оценивай правильность характеристик — только наличие и формальное соответствие. Нейтральный вежливый тон."""
 
+# {tools}/{tool_names} экранируем двойными скобками — LangChain подставит их позже через PromptTemplate,
+# а .format(system_prompt=...) обрабатывает только {system_prompt}.
 _REACT_TEMPLATE = (
     "Assistant is a helpful AI agent.\n\n"
     "Has access to the following tools:\n"
@@ -64,26 +66,6 @@ _REACT_TEMPLATE = (
 
 REACT_TEMPLATE = _REACT_TEMPLATE.format(system_prompt=SYSTEM_PROMPT)
 
-# GitHub Models endpoint (hardcoded, используется при LLM_BACKEND=github_models)
-_GITHUB_MODELS_BASE_URL = "https://models.inference.ai.azure.com"
-
-
-def _build_llm() -> ChatOpenAI:
-    llm_backend = os.getenv("LLM_BACKEND", "openai").lower()
-    if llm_backend == "github_models":
-        # GitHub Models: PAT-токен передаётся как api_key, endpoint фиксирован
-        base_url = _GITHUB_MODELS_BASE_URL
-    else:
-        base_url = os.getenv("OPENAI_API_BASE") or None
-
-    return ChatOpenAI(
-        model=os.getenv("MODEL_NAME", "gpt-4o"),
-        temperature=0.2,
-        max_tokens=8192,
-        api_key=os.getenv("OPENAI_API_KEY") or "ollama",
-        base_url=base_url,
-    )
-
 
 def create_tz_agent() -> AgentExecutor:
     """AGENT_TYPE=openai_tools (default) | react.
@@ -91,7 +73,7 @@ def create_tz_agent() -> AgentExecutor:
     - openai_tools: native function-calling (GPT-4o, DeepSeek-V3+)
     - react: ReAct prompting, работает с любой LLM (Ollama, Mistral и т.д.)
     """
-    llm = _build_llm()
+    llm = build_llm(temperature=0.2)
     tools = [generate_json_report, generate_corrected_tz, generate_email_to_dzo]
     memory = ConversationBufferWindowMemory(k=20, return_messages=True, memory_key="chat_history")
 

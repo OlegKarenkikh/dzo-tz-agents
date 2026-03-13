@@ -3,7 +3,6 @@ import os
 from langchain.agents import AgentExecutor, create_openai_tools_agent, create_react_agent
 from langchain.memory import ConversationBufferWindowMemory
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder, PromptTemplate
-from langchain_openai import ChatOpenAI
 
 from agent1_dzo_inspector.tools import (
     generate_corrected_application,
@@ -13,6 +12,7 @@ from agent1_dzo_inspector.tools import (
     generate_tezis_form,
     generate_validation_report,
 )
+from shared.llm import build_llm
 
 SYSTEM_PROMPT = """Ты — ИИ-инспектор «Контролер заявок ДЗО». Твоя задача — проверять входящие заявки от дочерних обществ (ДЗО), поступающие по электронной почте, на полноту и корректность перед регистрацией в системе ЭДО «Тезис».
 
@@ -63,6 +63,9 @@ SLA (ОБЯЗАТЕЛЬНЫЕ СРОКИ)
 
 ОГРАНИЧЕНИЯ: не оценивай качество ТЗ — только полноту заявки. Вежливый деловой тон."""
 
+# В ReAct-шаблоне {tools}/{tool_names} являются плейсхолдерами LangChain.
+# {system_prompt} подставляется через .format(), поэтому
+# {tools}/{tool_names} экранируем двойными скобками.
 _REACT_TEMPLATE = (
     "Assistant is a helpful AI agent.\n\n"
     "Has access to the following tools:\n"
@@ -83,26 +86,6 @@ _REACT_TEMPLATE = (
 
 REACT_TEMPLATE = _REACT_TEMPLATE.format(system_prompt=SYSTEM_PROMPT)
 
-# GitHub Models endpoint (hardcoded, используется при LLM_BACKEND=github_models)
-_GITHUB_MODELS_BASE_URL = "https://models.inference.ai.azure.com"
-
-
-def _build_llm() -> ChatOpenAI:
-    llm_backend = os.getenv("LLM_BACKEND", "openai").lower()
-    if llm_backend == "github_models":
-        # GitHub Models: PAT-токен передаётся как api_key, endpoint фиксирован
-        base_url = _GITHUB_MODELS_BASE_URL
-    else:
-        base_url = os.getenv("OPENAI_API_BASE") or None
-
-    return ChatOpenAI(
-        model=os.getenv("MODEL_NAME", "gpt-4o"),
-        temperature=0.2,
-        max_tokens=8192,
-        api_key=os.getenv("OPENAI_API_KEY") or "ollama",
-        base_url=base_url,
-    )
-
 
 def create_dzo_agent() -> AgentExecutor:
     """AGENT_TYPE=openai_tools (default) | react.
@@ -110,7 +93,7 @@ def create_dzo_agent() -> AgentExecutor:
     - openai_tools: native function-calling (GPT-4o, DeepSeek-V3+)
     - react: ReAct prompting, работает с любой LLM (Ollama, Mistral и т.д.)
     """
-    llm = _build_llm()
+    llm = build_llm(temperature=0.2)
     tools = [
         generate_validation_report,
         generate_tezis_form,
