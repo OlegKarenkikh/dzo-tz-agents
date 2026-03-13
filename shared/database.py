@@ -116,6 +116,7 @@ def find_duplicate_job(
         except Exception as e:
             logger.error(f"find_duplicate_job ошибка: {e}")
             return None
+    # In-memory fallback
     rows = [
         r for r in _memory_store.values()
         if r.get("agent") == agent
@@ -261,6 +262,7 @@ def get_history(
         except Exception as e:
             logger.error(f"get_history ошибка: {e}")
             return []
+    # In-memory fallback
     rows = list(_memory_store.values())
     if agent:
         rows = [r for r in rows if r.get("agent") == agent]
@@ -294,6 +296,7 @@ def get_stats() -> dict[str, int]:
         except Exception as e:
             logger.error(f"get_stats ошибка: {e}")
             return {}
+    # In-memory fallback
     rows = list(_memory_store.values())
     today = datetime.now(UTC).date().isoformat()
     return {
@@ -319,6 +322,7 @@ def delete_job(job_id: str) -> bool:
         except Exception as e:
             logger.error(f"delete_job ошибка: {e}")
             return False
+    # In-memory fallback
     if job_id in _memory_store:
         del _memory_store[job_id]
         return True

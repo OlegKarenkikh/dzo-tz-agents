@@ -76,16 +76,16 @@ def process_tz_emails():
                 + "\n\n".join(attachment_texts)
             )
 
-            # Получаем Langfuse-каллбэк (назначаем session_id = job_id для связки)
             lf_cb = get_langfuse_callback()
-            if lf_cb and hasattr(lf_cb, "session_id"):
-                lf_cb.session_id = job_id
-            callbacks = [lf_cb] if lf_cb else []
+            callbacks = [lf_cb] if lf_cb is not None else []
 
             with JobTimer("tz"):
                 result = agent.invoke(
                     {"input": chat_input},
-                    config={"callbacks": callbacks} if callbacks else {},
+                    config={
+                        "callbacks": callbacks,
+                        "metadata": {"session_id": job_id},
+                    } if callbacks else {},
                 )
 
             # Структурированный лог шагов + трейс для БД

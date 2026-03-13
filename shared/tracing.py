@@ -6,12 +6,13 @@
   LANGFUSE_HOST        — URL инстанции (default: https://cloud.langfuse.com)
                          для self-hosted: http://localhost:3000
 
-Esli LANGFUSE_PUBLIC_KEY не задан — трейсинг отключён, ошибок нет.
+Если LANGFUSE_PUBLIC_KEY не задан — трейсинг отключён, ошибок нет.
 """
 from __future__ import annotations
 
 import json
 import os
+import time
 from typing import TYPE_CHECKING
 
 from shared.logger import setup_logger
@@ -22,8 +23,8 @@ if TYPE_CHECKING:
 logger = setup_logger("agent_trace")
 
 
-def get_langfuse_callback() -> "BaseCallbackHandler | None":
-    """Вернуть Langfuse CallbackHandler если ключи настроены, иначе None."""
+def _init_langfuse() -> "BaseCallbackHandler | None":
+    """Инициализируется один раз при импорте модуля."""
     if not os.getenv("LANGFUSE_PUBLIC_KEY"):
         return None
     try:
@@ -36,6 +37,15 @@ def get_langfuse_callback() -> "BaseCallbackHandler | None":
         return None
 
 
+# Единственный экземпляр CallbackHandler на весь процесс
+_langfuse_cb: "BaseCallbackHandler | None" = _init_langfuse()
+
+
+def get_langfuse_callback() -> "BaseCallbackHandler | None":
+    """Вернуть кэшированный Langfuse CallbackHandler или None если трейсинг отключён."""
+    return _langfuse_cb
+
+
 def log_agent_steps(job_id: str, agent: str, steps: list) -> list[dict]:
     """Структурированно залогировать каждый шаг агента и вернуть trace-список для сохранения в БД.
 
@@ -45,13 +55,16 @@ def log_agent_steps(job_id: str, agent: str, steps: list) -> list[dict]:
         tool_input  — входные данные инструмента
         output_keys — ключи возвращаемого JSON (без больших HTML-блоков)
         decision    — решение если есть в observation
+        latency_ms  — время обработки шага в миллисекундах
     """
     trace: list[dict] = []
     for i, (action, observation) in enumerate(steps, 1):
+        t0 = time.perf_counter()
         try:
             obs = json.loads(observation) if isinstance(observation, str) else observation
         except Exception:
             obs = {"raw": str(observation)[:500]}
+        latency_ms = round((time.perf_counter() - t0) * 1000, 1)
 
         step_record: dict = {
             "step": i,
@@ -59,6 +72,7 @@ def log_agent_steps(job_id: str, agent: str, steps: list) -> list[dict]:
             "tool_input": _truncate(getattr(action, "tool_input", {})),
             "output_keys": list(obs.keys()) if isinstance(obs, dict) else [],
             "decision": obs.get("decision") if isinstance(obs, dict) else None,
+            "latency_ms": latency_ms,
         }
         trace.append(step_record)
         logger.info(
