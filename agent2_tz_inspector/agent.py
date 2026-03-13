@@ -44,8 +44,6 @@ SYSTEM_PROMPT = """Ты — ИИ-инспектор «Контролер ТЗ».
 
 ОГРАНИЧЕНИЯ: не оценивай правильность характеристик — только наличие и формальное соответствие. Нейтральный вежливый тон."""
 
-# {tools}/{tool_names} экранируем двойными скобками — LangChain подставит их позже через PromptTemplate,
-# а .format(system_prompt=...) обрабатывает только {system_prompt}.
 _REACT_TEMPLATE = (
     "Assistant is a helpful AI agent.\n\n"
     "Has access to the following tools:\n"
@@ -66,14 +64,24 @@ _REACT_TEMPLATE = (
 
 REACT_TEMPLATE = _REACT_TEMPLATE.format(system_prompt=SYSTEM_PROMPT)
 
+# GitHub Models endpoint (hardcoded, используется при LLM_BACKEND=github_models)
+_GITHUB_MODELS_BASE_URL = "https://models.inference.ai.azure.com"
+
 
 def _build_llm() -> ChatOpenAI:
+    llm_backend = os.getenv("LLM_BACKEND", "openai").lower()
+    if llm_backend == "github_models":
+        # GitHub Models: PAT-токен передаётся как api_key, endpoint фиксирован
+        base_url = _GITHUB_MODELS_BASE_URL
+    else:
+        base_url = os.getenv("OPENAI_API_BASE") or None
+
     return ChatOpenAI(
         model=os.getenv("MODEL_NAME", "gpt-4o"),
         temperature=0.2,
         max_tokens=8192,
         api_key=os.getenv("OPENAI_API_KEY") or "ollama",
-        base_url=os.getenv("OPENAI_API_BASE") or None,
+        base_url=base_url,
     )
 
 
