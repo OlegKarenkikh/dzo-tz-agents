@@ -15,6 +15,7 @@ from shared.email_sender import send_email  # noqa: E402
 from shared.file_extractor import extract_text_from_attachment  # noqa: E402
 from shared.logger import setup_logger  # noqa: E402
 from shared.telegram_notify import notify  # noqa: E402
+from shared.tracing import get_langfuse_callback, log_agent_steps  # noqa: E402
 
 logger = setup_logger("agent_tz")
 
@@ -75,15 +76,28 @@ def process_tz_emails():
                 + "\n\n".join(attachment_texts)
             )
 
+            lf_cb = get_langfuse_callback()
+            callbacks = [lf_cb] if lf_cb is not None else []
+
             with JobTimer("tz"):
-                result = agent.invoke({"input": chat_input})
+                result = agent.invoke(
+                    {"input": chat_input},
+                    config={
+                        "callbacks": callbacks,
+                        "metadata": {"session_id": job_id},
+                    } if callbacks else {},
+                )
+
+            # Структурированный лог шагов + трейс для БД
+            steps = result.get("intermediate_steps", [])
+            trace = log_agent_steps(job_id=job_id, agent="tz", steps=steps)
 
             email_html = corrected_tz_html = ""
             decision = "Требует доработки"
             reply_subject = ""
             json_report: dict = {}
 
-            for step in result.get("intermediate_steps", []):
+            for step in steps:
                 try:
                     obs = json.loads(step[1]) if isinstance(step[1], str) else step[1]
                     if obs.get("emailHtml"):
@@ -130,6 +144,7 @@ def process_tz_emails():
                     "overall_status": json_report.get("overall_status", ""),
                     "sections_found": json_report.get("sections_found", []),
                 },
+                trace=trace,
             )
             EMAILS_PROCESSED.labels(agent="tz").inc()
             logger.info("Обработано. Решение: %s", decision)

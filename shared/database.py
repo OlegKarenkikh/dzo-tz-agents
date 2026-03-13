@@ -42,7 +42,9 @@ def _get_conn():
 
 
 def init_db():
-    """Создаёт таблицу jobs если она не существует."""
+    """Создаёт таблицу jobs если она не существует.
+    Добавляет колонку trace если она ещё не существует (идемпотентная миграция).
+    """
     if not _pg_available():
         logger.info("ПостгреСЖЛ не настроен, используется in-memory хранилище.")
         return
@@ -58,6 +60,7 @@ def init_db():
                     sender      TEXT,
                     subject     TEXT,
                     result      JSONB,
+                    trace       JSONB,
                     error       TEXT,
                     created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                     updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -67,10 +70,12 @@ def init_db():
                 CREATE INDEX IF NOT EXISTS idx_jobs_created_at ON jobs(created_at DESC);
                 CREATE INDEX IF NOT EXISTS idx_jobs_decision   ON jobs(decision);
                 CREATE INDEX IF NOT EXISTS idx_jobs_sender     ON jobs(sender);
+                -- Идемпотентная миграция: добавить trace-колонку в существующую таблицу
+                ALTER TABLE jobs ADD COLUMN IF NOT EXISTS trace JSONB;
             """)
             conn.commit()
             cur.close()
-        logger.info("Таблица jobs готова.")
+        logger.info("Таблица jobs готова (включая trace-колонку).")
     except Exception as e:
         logger.error(f"init_db ошибка: {e}")
 
@@ -111,7 +116,7 @@ def find_duplicate_job(
         except Exception as e:
             logger.error(f"find_duplicate_job ошибка: {e}")
             return None
-    # In-memory
+    # In-memory fallback
     rows = [
         r for r in _memory_store.values()
         if r.get("agent") == agent
@@ -135,6 +140,7 @@ def create_job(agent: str, sender: str = "", subject: str = "") -> str:
         "sender":     sender,
         "subject":    subject,
         "result":     None,
+        "trace":      None,
         "error":      None,
         "created_at": now,
         "updated_at": now,
@@ -162,6 +168,7 @@ def update_job(
     decision: str | None = None,
     result: dict | None = None,
     error: str | None = None,
+    trace: list | None = None,
 ):
     if _pg_available():
         try:
@@ -169,9 +176,17 @@ def update_job(
                 cur = conn.cursor()
                 cur.execute("""
                     UPDATE jobs
-                    SET status = %s, decision = %s, result = %s, error = %s, updated_at = NOW()
+                    SET status = %s, decision = %s, result = %s, trace = %s,
+                        error = %s, updated_at = NOW()
                     WHERE job_id = %s
-                """, (status, decision, json.dumps(result) if result else None, error, job_id))
+                """, (
+                    status,
+                    decision,
+                    json.dumps(result) if result else None,
+                    json.dumps(trace) if trace else None,
+                    error,
+                    job_id,
+                ))
                 conn.commit()
                 cur.close()
         except Exception as e:
@@ -182,6 +197,7 @@ def update_job(
                 "status":     status,
                 "decision":   decision,
                 "result":     result,
+                "trace":      trace,
                 "error":      error,
                 "updated_at": _now_utc(),
             })
@@ -246,6 +262,7 @@ def get_history(
         except Exception as e:
             logger.error(f"get_history ошибка: {e}")
             return []
+    # In-memory fallback
     rows = list(_memory_store.values())
     if agent:
         rows = [r for r in rows if r.get("agent") == agent]
@@ -279,6 +296,7 @@ def get_stats() -> dict[str, int]:
         except Exception as e:
             logger.error(f"get_stats ошибка: {e}")
             return {}
+    # In-memory fallback
     rows = list(_memory_store.values())
     today = datetime.now(UTC).date().isoformat()
     return {
@@ -304,6 +322,7 @@ def delete_job(job_id: str) -> bool:
         except Exception as e:
             logger.error(f"delete_job ошибка: {e}")
             return False
+    # In-memory fallback
     if job_id in _memory_store:
         del _memory_store[job_id]
         return True
