@@ -4,6 +4,21 @@
 Формат соответствует [Keep a Changelog](https://keepachangelog.com/ru/1.0.0/).
 Проект использует [Semantic Versioning](https://semver.org/lang/ru/).
 
+## [1.3.0] — 2026-03-13
+
+### Added
+- `shared/tracing.py` — новый модуль трейсинга агентов:
+  - `get_langfuse_callback()` — кэшированный Langfuse `CallbackHandler` (один экземпляр на процесс); если `LANGFUSE_PUBLIC_KEY` не задан — трейсинг отключён без ошибок
+  - `log_agent_steps()` — структурированное логирование каждого шага агента (номер, tool, tool_input, output_keys, decision, latency_ms) в `logs/agent_trace.log`
+  - возвращает trace-список для сохранения в БД; безопасная сериализация (MagicMock/non-JSON объекты не приводят к ошибке)
+- `shared/database.py`: колонка `trace JSONB` в таблице `jobs`; идемпотентная миграция `ALTER TABLE jobs ADD COLUMN IF NOT EXISTS trace JSONB`
+- `agent1_dzo_inspector/runner.py`, `agent2_tz_inspector/runner.py`: интеграция с `shared.tracing`; `session_id` передаётся через `config={"metadata": {"session_id": job_id}}`; trace сохраняется в `db.update_job()`
+- `.env.example`: секция `# Langfuse` (`LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_HOST`)
+- `tests/test_tracing.py`: 14 unit-тестов для `get_langfuse_callback`, `log_agent_steps`, `_truncate`
+
+### Changed
+- `pyproject.toml`: в `per-file-ignores` добавлен `I001` для `shared/*.py` (блок `TYPE_CHECKING` после stdlib-импортов)
+
 ## [1.2.0] — 2026-03-13
 
 ### Added
@@ -24,7 +39,7 @@
 - агент `auto` в UI тестировании (автоопределение типа)
 
 ### Fixed
-- W605 ruff: невалидная escape-последовательность `\|` в f-строке markdown-таблицы (`ui/app.py` стр. 931–932) — таблицы параметров вынесены в отдельные переменные
+- W605 ruff: невалидная escape-последовательность `\|` в f-строке markdown-таблицы (`ui/app.py` стр. 931–932)
 
 ## [1.1.0] — 2026-03-12
 
