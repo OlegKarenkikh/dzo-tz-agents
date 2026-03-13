@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 logger = setup_logger("agent_trace")
 
 
-def _init_langfuse() -> "BaseCallbackHandler | None":
+def _init_langfuse() -> BaseCallbackHandler | None:
     """Инициализируется один раз при импорте модуля."""
     if not os.getenv("LANGFUSE_PUBLIC_KEY"):
         return None
@@ -38,10 +38,10 @@ def _init_langfuse() -> "BaseCallbackHandler | None":
 
 
 # Единственный экземпляр CallbackHandler на весь процесс
-_langfuse_cb: "BaseCallbackHandler | None" = _init_langfuse()
+_langfuse_cb: BaseCallbackHandler | None = _init_langfuse()
 
 
-def get_langfuse_callback() -> "BaseCallbackHandler | None":
+def get_langfuse_callback() -> BaseCallbackHandler | None:
     """Вернуть кэшированный Langfuse CallbackHandler или None если трейсинг отключён."""
     return _langfuse_cb
 
@@ -62,7 +62,7 @@ def log_agent_steps(job_id: str, agent: str, steps: list) -> list[dict]:
         t0 = time.perf_counter()
         try:
             obs = json.loads(observation) if isinstance(observation, str) else observation
-        except Exception:
+        except Exception:  # noqa: BLE001
             obs = {"raw": str(observation)[:500]}
         latency_ms = round((time.perf_counter() - t0) * 1000, 1)
 
