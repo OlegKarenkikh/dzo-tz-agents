@@ -1,0 +1,66 @@
+# Настройка UI — описание страницы «Настройки»
+
+## Блок 1 — Текущая конфигурация (read-only)
+
+Показывает фактические значения из `.env` при запуске сервиса:
+
+| Параметр | Переменная окружения | Описание |
+|---|---|---|
+| UI_API_URL | `UI_API_URL` | URL бэкенда FastAPI |
+| MODEL_NAME | `MODEL_NAME` | Модель LLM |
+| OPENAI_API_BASE | `OPENAI_API_BASE` | Эндпоинт LLM API |
+| AGENT_TYPE | `AGENT_TYPE` | `openai_tools` или `react` |
+| AGENT_MODE | `AGENT_MODE` | `both` / `dzo` / `tz` |
+| FORCE_REPROCESS | `FORCE_REPROCESS` | Обход дедупликации |
+
+## Блок 2 — Конструктор конфигурации
+
+Интерактивный генератор `.env`-сниппета без перезапуска сервиса.
+
+### Выбор бэкенда LLM
+
+| Бэкенд | OPENAI_API_BASE | Рекомендуемый AGENT_TYPE |
+|---|---|---|
+| OpenAI | пусто (по умолчанию `api.openai.com/v1`) | `openai_tools` |
+| Ollama | `http://localhost:11434/v1` | `react` |
+| DeepSeek | `https://api.deepseek.com/v1` | `openai_tools` |
+| vLLM | `http://localhost:8000/v1` | `openai_tools` (если поддерживает tools) |
+| LM Studio | `http://localhost:1234/v1` | `openai_tools` |
+| Произвольный | любой обратно-совместимый URL | `openai_tools` или `react` |
+
+### AGENT_TYPE
+
+- **`openai_tools`** — использует native OpenAI function-calling API. Требует поддержки tool-calls моделью. Быстрее и надёжнее.
+- **`react`** — использует ReAct prompting. Работает с любой LLM, включая Ollama и локальные модели без function-calling.
+
+### Генерация сниппета
+
+1. Выберите бэкенд LLM в selectbox
+2. Выберите модель (или введите вручную)
+3. Проверьте/измените `OPENAI_API_BASE`, `AGENT_TYPE`, `AGENT_MODE`
+4. Нажмите **«Сгенерировать .env сниппет»**
+5. Скопируйте или скачайте сгенерированный `.env.generated` в `.env`
+6. Перезапустите сервис
+
+## Блок 3 — Справочник моделей и эндпоинтов
+
+Четыре вкладки: **OpenAI**, **Ollama**, **DeepSeek**, **vLLM / LM Studio**.
+
+Каждая вкладка содержит таблицу `MODEL_NAME` с описанием и рекомендацию по `AGENT_TYPE`.
+
+## Блок 4 — Тест соединения
+
+Tri кнопки:
+- **«Проверить API (/health)»** — возвращает uptime, версию, модель, режим агента
+- **«Список агентов (/agents)»** — выводит ID, названия и описания зарегистрированных агентов
+- **«Статистика (/stats)»** — агрегированные показатели в JSON
+
+## Переменные окружения UI
+
+| Переменная | По умолчанию | Описание |
+|---|---|---|
+| `UI_API_URL` | `http://localhost:8000` | URL бэкенда |
+| `UI_API_KEY` | пусто | Ключ доступа к API |
+| `UI_AUTO_REFRESH_SEC` | `30` | Интервал авто-обновления дашборда |
+| `LLM_BACKEND` | `openai` | Бэкенд LLM для отображения в UI |
+| `FORCE_REPROCESS` | `false` | Обход дедупликации |
