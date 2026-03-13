@@ -4,6 +4,28 @@
 Формат соответствует [Keep a Changelog](https://keepachangelog.com/ru/1.0.0/).
 Проект использует [Semantic Versioning](https://semver.org/lang/ru/).
 
+## [1.2.0] — 2026-03-13
+
+### Added
+- UI (страница «⚙️ Настройки»): полностью переработана
+  - selectbox «Бэкенд LLM» (OpenAI / Ollama / DeepSeek / vLLM / LM Studio / Произвольный)
+  - автоподстановка `OPENAI_API_BASE` и списка моделей при выборе бэкенда
+  - radio `AGENT_TYPE` (`openai_tools` / `react`) с подсказкой о различиях
+  - кнопка «Сгенерировать .env сниппет» + скачивание `.env.generated`
+  - вкладки справочника моделей: OpenAI / Ollama / DeepSeek / vLLM+LM Studio
+  - блок «Тест соединения»: `/health`, `/agents`, `/stats`
+- `ui/config.py`: переменные `LLM_BACKEND`, `FORCE_REPROCESS`, `AUTO_REFRESH_SEC`
+- `.env.example`: полные секции OpenAI / Ollama / DeepSeek / vLLM / LM Studio / IMAP / SMTP / UI
+- `docs/ui-settings.md`: документация страницы «Настройки» (4 блока, таблица переменных)
+- `docs/api.md`: синхронизированы все эндпоинты; добавлены `/api/v1/check-duplicate`, `/api/v1/stats`, `DELETE /api/v1/jobs/{id}`, `force` в `ProcessRequest`, пагинация `/api/v1/history`
+- `tests/test_ui_config.py`: unit-тесты переменных окружения `ui/config.py`
+- UI (дашборд): метрики из `/api/v1/stats` (total / today / approved / rework / errors)
+- UI (история): параметр `per_page`/`page` вместо `limit`; прогресс-бар в `_poll_job`
+- агент `auto` в UI тестировании (автоопределение типа)
+
+### Fixed
+- W605 ruff: невалидная escape-последовательность `\|` в f-строке markdown-таблицы (`ui/app.py` стр. 931–932) — таблицы параметров вынесены в отдельные переменные
+
 ## [1.1.0] — 2026-03-12
 
 ### Added
