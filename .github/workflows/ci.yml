@@ -86,7 +86,7 @@ jobs:
           load: true
 
       - name: Trivy CVE scan
-        uses: aquasecurity/trivy-action@0.20.0
+        uses: aquasecurity/trivy-action@0.35.0
         with:
           image-ref: dzo-tz-agents:${{ github.sha }}
           format: sarif
