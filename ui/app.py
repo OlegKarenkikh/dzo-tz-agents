@@ -200,24 +200,24 @@ if page == "📊 Дашборд":
                 "Статус": f"{_status_icon(item['status'])} {item['status']}",
                 "ID": item["job_id"][:8] + "…",
             })
-        st.dataframe(rows, use_container_width=True, hide_index=True)
+        st.dataframe(rows, width='stretch', hide_index=True)
     else:
         st.info("Нет данных. Запустите обработку документа.")
 
     st.subheader("Ручной запуск")
     col_a, col_b, col_c = st.columns(3)
     with col_a:
-        if st.button("▶️ Запустить ДЗО", use_container_width=True):
+        if st.button("▶️ Запустить ДЗО", width='stretch'):
             result = _api_post("/api/v1/process/dzo", {"text": "(ручной запуск)", "subject": "Тестовый запуск"})
             if result and "job" in result:
                 st.success(f"Задание создано: `{result['job']['job_id']}`")
     with col_b:
-        if st.button("▶️ Запустить ТЗ", use_container_width=True):
+        if st.button("▶️ Запустить ТЗ", width='stretch'):
             result = _api_post("/api/v1/process/tz", {"text": "(ручной запуск)", "subject": "Тестовый запуск"})
             if result and "job" in result:
                 st.success(f"Задание создано: `{result['job']['job_id']}`")
     with col_c:
-        if st.button("▶️ Запустить оба", use_container_width=True):
+        if st.button("▶️ Запустить оба", width='stretch'):
             for agent_path in ["/api/v1/process/dzo", "/api/v1/process/tz"]:
                 result = _api_post(agent_path, {"text": "(ручной запуск)", "subject": "Тестовый запуск"})
                 if result and "job" in result:
@@ -305,7 +305,7 @@ elif page == "🧪 Тестирование":
 
     with col_right:
         st.subheader("Результат")
-        if st.button("🔍 Проверить", type="primary", use_container_width=True):
+        if st.button("🔍 Проверить", type="primary", width='stretch'):
             st.session_state.test_result = None
             st.session_state.test_duplicate = None
 
@@ -352,11 +352,11 @@ elif page == "🧪 Тестирование":
             c2.markdown(f"**Решение:** {_decision_badge(decision)}", unsafe_allow_html=True)
             c3.caption(f"ID: `{dup['job_id'][:8]}`")
             b1, b2 = st.columns(2)
-            if b1.button("Использовать старый результат", use_container_width=True):
+            if b1.button("Использовать старый результат", width='stretch'):
                 st.session_state.test_result = dup
                 st.session_state.test_duplicate = None
                 st.rerun()
-            if b2.button("Переобработать", use_container_width=True):
+            if b2.button("Переобработать", width='stretch'):
                 payload = st.session_state.test_payload
                 payload["force"] = True
                 with st.spinner("Повторная отправка..."):
@@ -590,7 +590,7 @@ elif page == "⚙️ Настройки":
     st.subheader("🔌 Тест соединения")
     col_t1, col_t2, col_t3 = st.columns(3)
     with col_t1:
-        if st.button("🔌 Проверить API (/health)", use_container_width=True):
+        if st.button("🔌 Проверить API (/health)", width='stretch'):
             h = _api_get("/health")
             if h:
                 st.success(
@@ -600,13 +600,13 @@ elif page == "⚙️ Настройки":
                     f"Режим: `{h.get('agent_mode', '?')}`"
                 )
     with col_t2:
-        if st.button("📋 Список агентов (/agents)", use_container_width=True):
+        if st.button("📋 Список агентов (/agents)", width='stretch'):
             agents = _api_get("/agents")
             if agents:
                 for a in agents.get("agents", []):
                     st.info(f"**{a['name']}** (`{a['id']}`): {a.get('description', '')}")
     with col_t3:
-        if st.button("📊 Статистика (/stats)", use_container_width=True):
+        if st.button("📊 Статистика (/stats)", width='stretch'):
             s = _api_get("/api/v1/stats")
             if s:
                 st.json(s)
@@ -667,7 +667,7 @@ elif page == "📋 История":
             st.write(f"Выбрано: **{len(st.session_state.selected_jobs)}**")
             act_col1, act_col2, _ = st.columns([2, 2, 4])
 
-            if act_col1.button("🔁 Переобработать выбранные", use_container_width=True):
+            if act_col1.button("🔁 Переобработать выбранные", width='stretch'):
                 new_jobs = []
                 for jid in st.session_state.selected_jobs:
                     j_info = _api_get(f"/api/v1/jobs/{jid}")
@@ -686,13 +686,13 @@ elif page == "📋 История":
                 st.rerun()
 
             if not st.session_state.pending_delete:
-                if act_col2.button("🗑 Удалить выбранные", use_container_width=True):
+                if act_col2.button("🗑 Удалить выбранные", width='stretch'):
                     st.session_state.pending_delete = True
                     st.rerun()
             else:
                 st.warning("Вы уверены, что хотите удалить выбранные записи?")
                 del_c1, del_c2 = st.columns(2)
-                if del_c1.button("✅ Подтвердить удаление", type="primary", use_container_width=True):
+                if del_c1.button("✅ Подтвердить удаление", type="primary", width='stretch'):
                     deleted_count = 0
                     for jid in list(st.session_state.selected_jobs):
                         if _api_delete(f"/api/v1/jobs/{jid}"):
@@ -703,7 +703,7 @@ elif page == "📋 История":
                     st.session_state.select_all_prev = False
                     time.sleep(1)
                     st.rerun()
-                if del_c2.button("❌ Отмена", use_container_width=True):
+                if del_c2.button("❌ Отмена", width='stretch'):
                     st.session_state.pending_delete = False
                     st.rerun()
 
@@ -728,7 +728,7 @@ elif page == "📋 История":
                 "job_id": None,
             },
             disabled=["Время", "Агент", "Отправитель", "Тема", "Решение", "Статус"],
-            use_container_width=True,
+            width='stretch',
             hide_index=True,
             key="history_editor",
         )
@@ -755,7 +755,7 @@ elif page == "📋 История":
                         f"**Решение:** {_decision_badge(r['decision'])}",
                         unsafe_allow_html=True,
                     )
-                if c2.button("🔁 Переобработать", key=f"reproc_{item['job_id']}", use_container_width=True):
+                if c2.button("🔁 Переобработать", key=f"reproc_{item['job_id']}", width='stretch'):
                     res = _api_post(f"/api/v1/process/{item['agent']}", {
                         "sender_email": item.get("sender", ""),
                         "subject": item.get("subject", ""),
@@ -765,7 +765,7 @@ elif page == "📋 История":
                         st.success(f"Создано новое задание: `{res['job']['job_id']}`")
                         time.sleep(0.5)
                         st.rerun()
-                if c3.button("🗑 Удалить", key=f"del_{item['job_id']}", use_container_width=True):
+                if c3.button("🗑 Удалить", key=f"del_{item['job_id']}", width='stretch'):
                     if _api_delete(f"/api/v1/jobs/{item['job_id']}"):
                         st.success("Удалено")
                         time.sleep(0.5)

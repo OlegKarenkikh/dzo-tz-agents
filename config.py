@@ -47,3 +47,11 @@ MANAGER_EMAIL     = os.getenv("MANAGER_EMAIL", "manager@company.ru")
 # LLM
 MODEL_NAME        = os.getenv("MODEL_NAME", "gpt-4o")
 POLL_INTERVAL_SEC = int(os.getenv("POLL_INTERVAL_SEC", 300))
+
+# Защита от зависаний и зацикливания
+# AGENT_JOB_TIMEOUT_SEC    — максимальное время выполнения одного job (сек), 0 = без ограничения
+# AGENT_MAX_RETRIES        — максимум попыток на одну модель перед переключением
+# AGENT_RATE_LIMIT_BACKOFF — пауза (сек) перед переключением на следующую модель при 429
+AGENT_JOB_TIMEOUT_SEC    = int(os.getenv("AGENT_JOB_TIMEOUT_SEC", "300"))
+AGENT_MAX_RETRIES        = int(os.getenv("AGENT_MAX_RETRIES", "1"))
+AGENT_RATE_LIMIT_BACKOFF = float(os.getenv("AGENT_RATE_LIMIT_BACKOFF", "3.0"))
