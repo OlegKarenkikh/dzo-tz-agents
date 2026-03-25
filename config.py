@@ -16,6 +16,11 @@ if LLM_BACKEND not in _VALID_BACKENDS:
         f"Допустимые: {sorted(_VALID_BACKENDS)}"
     )
 
+# GitHub Token — используется как API-ключ для LLM_BACKEND=github_models,
+# когда OPENAI_API_KEY не задан (GitHub Actions / Copilot Workspace / Codespaces
+# автоматически предоставляют этот токен через переменную окружения GITHUB_TOKEN).
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN")
+
 # IMAP — Агент ДЗО
 DZO_IMAP_HOST     = os.getenv("DZO_IMAP_HOST", os.getenv("IMAP_HOST", "imap.company.ru"))
 DZO_IMAP_PORT     = int(os.getenv("DZO_IMAP_PORT", 993))
