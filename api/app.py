@@ -17,6 +17,7 @@ FastAPI REST API для обработки документов агентами
   GET  /api/v1/stats                   — аггрегированная статистика
 """
 import base64
+import concurrent.futures
 import json
 import logging
 import math
@@ -38,6 +39,15 @@ from api.metrics import (
     DECISIONS_TOTAL,
     JobTimer,
     metrics_router,
+)
+from config import (
+    AGENT_JOB_TIMEOUT_SEC,
+    AGENT_MAX_RETRIES,
+    AGENT_RATE_LIMIT_BACKOFF,
+    LLM_BACKEND,
+    MODEL_NAME,
+    OPENAI_API_KEY,
+    GITHUB_TOKEN,
 )
 from shared.database import (
     create_job,
@@ -216,18 +226,99 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
             if agent_type not in AGENT_REGISTRY:
                 raise ValueError("Неизвестный агент: " + agent_type)
 
-            if agent_type == "dzo":
-                from agent1_dzo_inspector.agent import create_dzo_agent
-                agent = create_dzo_agent()
-            elif agent_type == "tz":
-                from agent2_tz_inspector.agent import create_tz_agent
-                agent = create_tz_agent()
+            # ── Построить цепочку fallback-моделей ──────────────────────────
+            if LLM_BACKEND == "github_models":
+                from shared.llm import build_github_fallback_chain
+                _api_key = OPENAI_API_KEY or GITHUB_TOKEN or ""
+                fallback_chain = build_github_fallback_chain(_api_key, MODEL_NAME)
             else:
-                import importlib
-                mod = importlib.import_module("agent_" + agent_type + ".agent")
-                agent = mod.create_agent()
+                fallback_chain = [MODEL_NAME]
 
-            result = agent.invoke({"input": chat_input})
+            logger.info(
+                "[%s] Fallback-цепочка моделей: %s",
+                job_id, " → ".join(fallback_chain),
+            )
+
+            # ── Перебор моделей при 429/413 ─────────────────────────────────
+            result: dict = {}
+            last_exc: BaseException | None = None
+
+            for model_idx, model_name in enumerate(fallback_chain):
+                attempt_log = f"модель {model_name} ({model_idx + 1}/{len(fallback_chain)})"
+                logger.info("[%s] Запуск с %s", job_id, attempt_log)
+
+                for retry in range(max(1, AGENT_MAX_RETRIES)):
+                    try:
+                        if agent_type == "dzo":
+                            from agent1_dzo_inspector.agent import create_dzo_agent
+                            agent = create_dzo_agent(model_name=model_name)
+                        elif agent_type == "tz":
+                            from agent2_tz_inspector.agent import create_tz_agent
+                            agent = create_tz_agent(model_name=model_name)
+                        else:
+                            import importlib
+                            mod = importlib.import_module("agent_" + agent_type + ".agent")
+                            agent = mod.create_agent(model_name=model_name)
+
+                        # Вызов с жёстким таймаутом через отдельный тред
+                        if AGENT_JOB_TIMEOUT_SEC > 0:
+                            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+                                future = ex.submit(agent.invoke, {"input": chat_input})
+                                try:
+                                    result = future.result(timeout=AGENT_JOB_TIMEOUT_SEC)
+                                except concurrent.futures.TimeoutError:
+                                    raise TimeoutError(
+                                        f"Агент не завершился за {AGENT_JOB_TIMEOUT_SEC}с — "
+                                        f"превышен AGENT_JOB_TIMEOUT_SEC"
+                                    )
+                        else:
+                            result = agent.invoke({"input": chat_input})
+
+                        last_exc = None
+                        break  # успех — выходим из retry-цикла
+
+                    except TimeoutError:
+                        raise  # таймаут не ретраим — сразу ошибка
+
+                    except Exception as exc:
+                        # Перехватываем только 429 (RateLimitError) и 413 (tokens_limit_reached);
+                        # для всех остальных исключений — немедленно пробрасываем.
+                        from openai import APIStatusError, RateLimitError as _RLE
+                        is_rate_limit = isinstance(exc, _RLE)
+                        is_token_limit = (
+                            isinstance(exc, APIStatusError)
+                            and getattr(exc, "status_code", 0) == 413
+                        )
+                        if not is_rate_limit and not is_token_limit:
+                            raise
+                        last_exc = exc
+                        reason = "429 RateLimit" if is_rate_limit else "413 TokenLimit"
+                        logger.warning(
+                            "[%s] %s на %s (попытка %d/%d)",
+                            job_id, reason, model_name, retry + 1, max(1, AGENT_MAX_RETRIES),
+                        )
+                        if retry + 1 < max(1, AGENT_MAX_RETRIES):
+                            time.sleep(AGENT_RATE_LIMIT_BACKOFF)
+                        # выходим из retry-цикла, перейдём к следующей модели
+
+                if last_exc is None:
+                    break  # успех — выходим из fallback-цикла
+
+                # 429/413 исчерпаны для этой модели — пробуем следующую
+                from openai import APIStatusError as _APIStatusError
+                from openai import RateLimitError as _RateLimitError
+                _switchable = isinstance(last_exc, (_RateLimitError, _APIStatusError))
+                if _switchable and model_idx + 1 < len(fallback_chain):
+                    next_model = fallback_chain[model_idx + 1]
+                    logger.warning(
+                        "[%s] Переключение модели: %s → %s",
+                        job_id, model_name, next_model,
+                    )
+                    time.sleep(AGENT_RATE_LIMIT_BACKOFF)
+                    continue
+
+            if last_exc is not None:
+                raise last_exc
 
             decision = ""
             email_html = ""
