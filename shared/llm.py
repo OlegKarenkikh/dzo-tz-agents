@@ -33,7 +33,12 @@ def build_llm(temperature: float = 0.2) -> ChatOpenAI:
         # API-ключ: OPENAI_API_KEY → GITHUB_TOKEN → GH_TOKEN.
         # В GitHub Actions / Copilot Workspace / Codespaces GITHUB_TOKEN
         # предоставляется автоматически, поэтому отдельный PAT не нужен.
-        api_key = OPENAI_API_KEY or GITHUB_TOKEN or "github_token_missing"
+        api_key = OPENAI_API_KEY or GITHUB_TOKEN
+        if not api_key:
+            raise ValueError(
+                "Для LLM_BACKEND='github_models' необходимо задать OPENAI_API_KEY "
+                "или предоставить токен в переменной окружения GITHUB_TOKEN/GH_TOKEN."
+            )
         base_url = _GITHUB_MODELS_BASE_URL
     else:
         api_key = OPENAI_API_KEY or "ollama"

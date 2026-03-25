@@ -1,7 +1,6 @@
 """Unit-тесты для shared/llm.py — проверка фабрики LLM и приоритета API-ключей."""
 
 import importlib
-import os
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -18,20 +17,22 @@ class TestGithubModelsApiKeyPriority:
             else:
                 monkeypatch.setenv(k, v)
 
-        import config
-        import shared.llm as llm_module
+        # Мокируем load_dotenv, чтобы локальный .env не перезаписывал env-переменные
+        with patch("config.load_dotenv"):
+            import config
+            import shared.llm as llm_module
 
-        importlib.reload(config)
-        importlib.reload(llm_module)
+            importlib.reload(config)
+            importlib.reload(llm_module)
 
-        captured: dict = {}
+            captured: dict = {}
 
-        def fake_chat(**kwargs):
-            captured.update(kwargs)
-            return MagicMock()
+            def fake_chat(**kwargs):
+                captured.update(kwargs)
+                return MagicMock()
 
-        with patch.object(llm_module, "ChatOpenAI", side_effect=fake_chat):
-            llm_module.build_llm()
+            with patch.object(llm_module, "ChatOpenAI", side_effect=fake_chat):
+                llm_module.build_llm()
 
         return captured
 
@@ -67,6 +68,29 @@ class TestGithubModelsApiKeyPriority:
         })
         assert kwargs.get("api_key") == "ghs_gh_token"
 
+    def test_no_token_raises_value_error(self, monkeypatch):
+        """Если ни один токен не задан — выбрасывается ValueError с понятным сообщением."""
+        for k, v in {
+            "LLM_BACKEND": "github_models",
+            "OPENAI_API_KEY": None,
+            "GITHUB_TOKEN": None,
+            "GH_TOKEN": None,
+        }.items():
+            if v is None:
+                monkeypatch.delenv(k, raising=False)
+            else:
+                monkeypatch.setenv(k, v)
+
+        with patch("config.load_dotenv"):
+            import config
+            import shared.llm as llm_module
+
+            importlib.reload(config)
+            importlib.reload(llm_module)
+
+            with pytest.raises(ValueError, match="GITHUB_TOKEN"):
+                llm_module.build_llm()
+
     def test_endpoint_always_github_models(self, monkeypatch):
         """При github_models endpoint всегда https://models.inference.ai.azure.com,
         даже если задан OPENAI_API_BASE."""
@@ -98,23 +122,26 @@ class TestGithubTokenInConfig:
     def test_github_token_read(self, monkeypatch):
         monkeypatch.setenv("GITHUB_TOKEN", "ghs_config_test")
         monkeypatch.delenv("GH_TOKEN", raising=False)
-        import config
+        with patch("config.load_dotenv"):
+            import config
 
-        importlib.reload(config)
+            importlib.reload(config)
         assert config.GITHUB_TOKEN == "ghs_config_test"
 
     def test_gh_token_fallback(self, monkeypatch):
         monkeypatch.delenv("GITHUB_TOKEN", raising=False)
         monkeypatch.setenv("GH_TOKEN", "ghs_gh_fallback")
-        import config
+        with patch("config.load_dotenv"):
+            import config
 
-        importlib.reload(config)
+            importlib.reload(config)
         assert config.GITHUB_TOKEN == "ghs_gh_fallback"
 
     def test_github_token_none_when_absent(self, monkeypatch):
         monkeypatch.delenv("GITHUB_TOKEN", raising=False)
         monkeypatch.delenv("GH_TOKEN", raising=False)
-        import config
+        with patch("config.load_dotenv"):
+            import config
 
-        importlib.reload(config)
+            importlib.reload(config)
         assert config.GITHUB_TOKEN is None
