@@ -161,7 +161,7 @@ class JobResponse(BaseModel):
     job_id: str
     status: str
     agent: str
-    created_at: str
+    created_at: datetime
     result: dict | None = None
     error: str | None = None
 
@@ -378,7 +378,7 @@ def _check_and_process(
                 "job": dup,
                 "message": (
                     "Письмо уже было обработано ("
-                    + dup["created_at"][:10]
+                    + str(dup["created_at"])[:10]
                     + "). Добавьте force=true чтобы переобработать."
                 ),
             }
@@ -457,7 +457,7 @@ def check_duplicate(
             duplicate=True,
             existing_job_id=dup["job_id"],
             job=dup,
-            message="Обработано " + dup["created_at"][:10] + ", решение: " + str(dup.get("decision", "--")),
+            message="Обработано " + str(dup["created_at"])[:10] + ", решение: " + str(dup.get("decision", "--")),
         )
     return DuplicateResponse(duplicate=False, message="Дубликатов не найдено")
 
