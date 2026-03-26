@@ -1,7 +1,10 @@
 import json
+import logging
 from datetime import datetime
 
 from langchain.tools import tool
+
+logger = logging.getLogger("agent_dzo")
 
 
 @tool
@@ -12,6 +15,7 @@ def generate_validation_report(query: str) -> str:
     checklist_additional, missing_fields.
     """
     try:
+        logger.debug("🔧 generate_validation_report вызван")
         d = json.loads(query)
         report = {
             "timestamp": datetime.now().isoformat(),
@@ -26,8 +30,10 @@ def generate_validation_report(query: str) -> str:
                 "additional_ok":  sum(1 for c in d.get("checklist_additional", []) if c.get("status") in ("Да", "ОК")),
             },
         }
+        logger.info("✅ generate_validation_report: отчёт готов (decision=%s)", d.get("decision"))
         return json.dumps(report, ensure_ascii=False)
     except Exception as e:
+        logger.error("❌ generate_validation_report: ошибка %s", e)
         return json.dumps({"error": str(e), "raw": query})
 
 
@@ -40,6 +46,7 @@ def generate_tezis_form(query: str) -> str:
     recommended_suppliers (array {inn, name}), additional_info, tz_filename.
     """
     try:
+        logger.debug("🔧 generate_tezis_form вызван")
         d = json.loads(query)
         fields = [
             ("Предмет закупки",         d.get("procurement_subject")),
@@ -58,19 +65,23 @@ def generate_tezis_form(query: str) -> str:
             f"{val or '[Требуется заполнить]'}</td></tr>"
             for label, val in fields
         )
-        html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"><style>
-body{{font-family:Arial,sans-serif;font-size:14px;margin:40px}}
-table{{border-collapse:collapse;width:100%}}
-td,th{{border:1px solid #999;padding:10px}}
-th{{background:#e8e8e8;width:40%}}
-.filled{{background:#D7FFD7;font-weight:bold}}
-.empty{{background:#FFFF00;color:#CC0000;font-style:italic}}
-</style></head><body>
-<h1 style="text-align:center">ЗАЯВКА НА ЗАКУПКУ — ФОРМА ДЛЯ ЭДО «ТЕЗИС»</h1>
-<p><em>Сформировано: {datetime.now().strftime('%d.%m.%Y')}</em></p>
-<table>{rows}</table></body></html>"""
+        html = (
+            "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><style>"
+            "body{font-family:Arial,sans-serif;font-size:14px;margin:40px}"
+            "table{border-collapse:collapse;width:100%}"
+            "td,th{border:1px solid #999;padding:10px}"
+            "th{background:#e8e8e8;width:40%}"
+            ".filled{background:#D7FFD7;font-weight:bold}"
+            ".empty{background:#FFFF00;color:#CC0000;font-style:italic}"
+            "</style></head><body>"
+            "<h1 style=\"text-align:center\">ЗАЯВКА НА ЗАКУПКУ — ФОРМА ДЛЯ ЭДО «ТЕЗИС»</h1>"
+            f"<p><em>Сформировано: {datetime.now().strftime('%d.%m.%Y')}</em></p>"
+            f"<table>{rows}</table></body></html>"
+        )
+        logger.info("✅ generate_tezis_form: HTML-форма готова")
         return json.dumps({"tezisFormHtml": html})
     except Exception as e:
+        logger.error("❌ generate_tezis_form: ошибка %s", e)
         return json.dumps({"error": str(e)})
 
 
@@ -82,28 +93,33 @@ def generate_info_request(query: str) -> str:
     missing_fields (array {field, description}), has_corrected_form.
     """
     try:
+        logger.debug("🔧 generate_info_request вызван")
         d = json.loads(query)
         rows = "".join(
             f"<tr><td style='border:1px solid #999;padding:8px;font-weight:bold'>{f['field']}</td>"
             f"<td style='border:1px solid #999;padding:8px'>{f['description']}</td></tr>"
             for f in d.get("missing_fields", [])
         )
-        html = f"""<div style="font-family:Arial;font-size:14px;line-height:1.8">
-<p>Уважаем(ый/ая) {d.get('dzo_name', 'коллега')}!</p>
-<p>Благодарим за направленную заявку по теме: <strong>«{d.get('subject', '')}»</strong>.</p>
-<p>Для корректного оформления в ЭДО «Тезис» просим предоставить следующую информацию:</p>
-<table style="border-collapse:collapse;width:100%">
-<tr><th style="border:1px solid #999;padding:8px;background:#e8e8e8">Поле</th>
-<th style="border:1px solid #999;padding:8px;background:#e8e8e8">Что необходимо указать</th></tr>
-{rows}</table>
-<p>Просим направить ответным письмом.</p>
-<p>С уважением,<br>Служба централизованных закупок</p></div>"""
+        html = (
+            "<div style=\"font-family:Arial;font-size:14px;line-height:1.8\">"
+            f"<p>Уважаем(ый/ая) {d.get('dzo_name', 'коллега')}!</p>"
+            f"<p>Благодарим за направленную заявку по теме: <strong>«{d.get('subject', '')}»</strong>.</p>"
+            "<p>Для корректного оформления в ЭДО «Тезис» просим предоставить следующую информацию:</p>"
+            "<table style=\"border-collapse:collapse;width:100%\">"
+            "<tr><th style=\"border:1px solid #999;padding:8px;background:#e8e8e8\">Поле</th>"
+            "<th style=\"border:1px solid #999;padding:8px;background:#e8e8e8\">Что необходимо указать</th></tr>"
+            f"{rows}</table>"
+            "<p>Просим направить ответным письмом.</p>"
+            "<p>С уважением,<br>Служба централизованных закупок</p></div>"
+        )
+        logger.info("✅ generate_info_request: письмо с запросом готово (тема: %s)", d.get('subject'))
         return json.dumps({
             "emailHtml": html,
             "decision":  "Требуется доработка",
             "subject":   f"Запрос информации по заявке: {d.get('subject', '')}",
         })
     except Exception as e:
+        logger.error("❌ generate_info_request: ошибка %s", e)
         return json.dumps({"error": str(e)})
 
 
@@ -114,19 +130,24 @@ def generate_escalation(query: str) -> str:
     Вход: JSON с полями: subject, reason, details.
     """
     try:
+        logger.debug("🔧 generate_escalation вызван")
         d = json.loads(query)
-        html = f"""<div style="font-family:Arial;font-size:14px">
-<p><strong>⚠️ ТРЕБУЕТСЯ ЭСКАЛАЦИЯ</strong></p>
-<p>Тема заявки: {d.get('subject', '')}</p>
-<p>Причина: {d.get('reason', '')}</p>
-<p>Детали: {d.get('details', '')}</p>
-</div>"""
+        html = (
+            "<div style=\"font-family:Arial;font-size:14px\">"
+            "<p><strong>⚠️ ТРЕБУЕТСЯ ЭСКАЛАЦИЯ</strong></p>"
+            f"<p>Тема заявки: {d.get('subject', '')}</p>"
+            f"<p>Причина: {d.get('reason', '')}</p>"
+            f"<p>Детали: {d.get('details', '')}</p>"
+            "</div>"
+        )
+        logger.warning("⚠️  generate_escalation: письмо эскалации готово (причина: %s)", d.get('reason'))
         return json.dumps({
             "escalationHtml": html,
             "decision": "Требуется эскалация",
             "subject":  f"⚠️ Эскалация заявки ДЗО: {d.get('subject', '')}",
         })
     except Exception as e:
+        logger.error("❌ generate_escalation: ошибка %s", e)
         return json.dumps({"error": str(e)})
 
 
@@ -137,15 +158,20 @@ def generate_response_email(query: str) -> str:
     Вход: JSON с полями: decision, subject, agent_summary.
     """
     try:
+        logger.debug("🔧 generate_response_email вызван")
         d = json.loads(query)
-        html = f"""<div style="font-family:Arial;font-size:14px;line-height:1.8">
-<p>Уважаемый коллега!</p>
-<p>Ваша заявка по теме <strong>«{d.get('subject', '')}»</strong> была обработана ИИ-инспектором.</p>
-<p><strong>Решение: {d.get('decision', '')}</strong></p>
-<p>{d.get('agent_summary', '')}</p>
-<p>С уважением,<br>Служба централизованных закупок</p></div>"""
+        html = (
+            "<div style=\"font-family:Arial;font-size:14px;line-height:1.8\">"
+            "<p>Уважаемый коллега!</p>"
+            f"<p>Ваша заявка по теме <strong>«{d.get('subject', '')}»</strong> была обработана ИИ-инспектором.</p>"
+            f"<p><strong>Решение: {d.get('decision', '')}</strong></p>"
+            f"<p>{d.get('agent_summary', '')}</p>"
+            "<p>С уважением,<br>Служба централизованных закупок</p></div>"
+        )
+        logger.info("✅ generate_response_email: ответное письмо готово (решение: %s)", d.get('decision'))
         return json.dumps({"emailHtml": html})
     except Exception as e:
+        logger.error("❌ generate_response_email: ошибка %s", e)
         return json.dumps({"error": str(e)})
 
 
@@ -157,6 +183,7 @@ def generate_corrected_application(query: str) -> str:
     status: 'added' | 'changed' | 'ok'
     """
     try:
+        logger.debug("🔧 generate_corrected_application вызван")
         d = json.loads(query)
         rows = ""
         for f in d.get("fields", []):
@@ -175,9 +202,13 @@ def generate_corrected_application(query: str) -> str:
                 )
             else:
                 rows += f"<tr><th>{f['name']}</th><td>{new or old}</td></tr>"
-        html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>
-<h1>ПРОЕКТ ИСПРАВЛЕННОЙ ЗАЯВКИ</h1>
-<table style="border-collapse:collapse;width:100%">{rows}</table></body></html>"""
+        html = (
+            "<!DOCTYPE html><html><head><meta charset=\"utf-8\"></head><body>"
+            "<h1>ПРОЕКТ ИСПРАВЛЕННОЙ ЗАЯВКИ</h1>"
+            f"<table style=\"border-collapse:collapse;width:100%\">{rows}</table></body></html>"
+        )
+        logger.info("✅ generate_corrected_application: исправленная заявка готова (%d полей)", len(d.get("fields", [])))
         return json.dumps({"correctedHtml": html})
     except Exception as e:
+        logger.error("❌ generate_corrected_application: ошибка %s", e)
         return json.dumps({"error": str(e)})

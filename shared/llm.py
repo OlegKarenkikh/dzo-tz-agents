@@ -125,7 +125,13 @@ def build_llm(temperature: float = 0.2, model_name_override: str | None = None) 
         # Оставляем запас для истории инструментов — просим не более 4096 токенов вывода.
         max_tokens_out = 4096
     else:
-        api_key = OPENAI_API_KEY or "ollama"
+        if LLM_BACKEND == "openai" and not OPENAI_API_KEY:
+            raise ValueError(
+                "Для LLM_BACKEND='openai' необходимо задать OPENAI_API_KEY. "
+                "Для CodeSpaces рекомендуется использовать LLM_BACKEND=github_models "
+                "(автоматически использует GITHUB_TOKEN)."
+            )
+        api_key = OPENAI_API_KEY  # for ollama, deepseek, etc., api_key may be ignored or set differently
         base_url = OPENAI_API_BASE or None
         max_retries = 2  # стандартный ретрай для остальных бэкендов
         max_tokens_out = 8192

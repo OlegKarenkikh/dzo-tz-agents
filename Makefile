@@ -1,4 +1,5 @@
 .PHONY: help install test lint fmt build up down logs clean api ui api-ui monitoring monitoring-down
+.PHONY: help install test lint fmt build up down logs clean api ui api-ui dzo-only tz-only test-agent-dzo test-agent-tz monitoring monitoring-down
 
 help: ## Показать доступные команды
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -46,6 +47,12 @@ dzo-only: ## Запустить только Агент ДЗО
 
 tz-only: ## Запустить только Агент ТЗ
 	AGENT_MODE=tz python main.py
+
+test-agent-dzo: ## Тестировать агент ДЗО локально (с отладкой)
+	AGENT_DEBUG=1 python test_agent_local.py dzo "От: ДЗО@company.ru\nТема: Запрос на закупку\n\nПрошу одобрить закупку 10 шт. серверов Dell PowerEdge R750 с доставкой в офис по адресу ул. Примера 1."
+
+test-agent-tz: ## Тестировать агент ТЗ локально (с отладкой)
+	AGENT_DEBUG=1 python test_agent_local.py tz "ТЕХНИЧЕСКОЕ ЗАДАНИЕ\n\n1. Цель: Закупка серверов для ЦОД\n2. Требования: Dell PowerEdge R750, 2x Xeon 8380, 256GB RAM\n3. Количество: 10 шт.\n4. Сроки: до 01.05.2026\n5. Место: ЦОД корпуса 2\n6. Исполнитель: авторизованный партнер Dell\n7. Критерии: цена 50%, сроки 30%, поддержка 20%\n8. Приложения: спецификация, чертежи"
 
 monitoring: ## Запустить стек мониторинга
 	docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d

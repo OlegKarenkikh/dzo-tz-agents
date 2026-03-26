@@ -10,16 +10,37 @@ OPENAI_API_BASE = os.getenv("OPENAI_API_BASE")  # None → дефолт langchai
 # LLM backend: openai | ollama | deepseek | vllm | lmstudio | github_models
 _VALID_BACKENDS = {"openai", "ollama", "deepseek", "vllm", "lmstudio", "github_models"}
 LLM_BACKEND = os.getenv("LLM_BACKEND", "openai").lower()
+
+# GitHub Token — используется как API-ключ для LLM_BACKEND=github_models,
+# когда OPENAI_API_KEY не задан (GitHub Actions / Copilot Workspace / Codespaces
+# автоматически предоставляют этот токен через переменную окружения GITHUB_TOKEN).
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN")
+
+# Автопереключение: если явно задан openai, но OPENAI_API_KEY отсутствует
+# и доступен GITHUB_TOKEN (CodeSpaces/GitHub Actions), переключаемся на github_models
+_auto_switched = False
+if (
+    LLM_BACKEND == "openai"
+    and not OPENAI_API_KEY
+    and GITHUB_TOKEN
+    and not os.getenv("LLM_BACKEND")  # переключаем только если LLM_BACKEND не был явно задан
+):
+    LLM_BACKEND = "github_models"
+    _auto_switched = True
+
 if LLM_BACKEND not in _VALID_BACKENDS:
     raise ValueError(
         f"LLM_BACKEND='{LLM_BACKEND}' — недопустимое значение. "
         f"Допустимые: {sorted(_VALID_BACKENDS)}"
     )
 
-# GitHub Token — используется как API-ключ для LLM_BACKEND=github_models,
-# когда OPENAI_API_KEY не задан (GitHub Actions / Copilot Workspace / Codespaces
-# автоматически предоставляют этот токен через переменную окружения GITHUB_TOKEN).
-GITHUB_TOKEN = os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN")
+if _auto_switched:
+    import sys
+    print(
+        f"[config] Auto-switched to LLM_BACKEND=github_models "
+        f"(OPENAI_API_KEY не задан, но доступен GITHUB_TOKEN)",
+        file=sys.stderr,
+    )
 
 # IMAP — Агент ДЗО
 DZO_IMAP_HOST     = os.getenv("DZO_IMAP_HOST", os.getenv("IMAP_HOST", "imap.company.ru"))
