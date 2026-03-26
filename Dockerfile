@@ -6,7 +6,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    PYTHONPYCACHEPREFIX=/tmp/pycache
+    PYTHONPYCACHEPREFIX=/tmp/pycache \
+    VIRTUAL_ENV=/opt/venv \
+    PATH="/opt/venv/bin:$PATH"
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         poppler-utils \
@@ -17,30 +19,38 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# ─── Зависимости (кэшируются отдельно) ─────────────────────────────
+# Создаем папку логов заранее с полными правами (решает проблему доступа)
+RUN mkdir -p /app/logs && chmod 777 /app/logs
+
+# ─── Зависимости: сборка виртуального окружения ─────────────────────────────
 FROM base AS deps
 COPY requirements.txt .
-RUN pip install --upgrade pip \
+RUN python -m venv $VIRTUAL_ENV \
+    && pip install --upgrade pip \
     && pip install -r requirements.txt \
-    && find /usr/local/lib -name '*.pyc' -delete \
-    && find /usr/local/lib -name '__pycache__' -type d -exec rm -rf {} + 2>/dev/null; true
+    && find /opt/venv/lib -name '*.pyc' -delete \
+    && find /opt/venv/lib -name '__pycache__' -type d -exec rm -rf {} + 2>/dev/null; true
 
 # ─── Production образ ───────────────────────────────────────────
-FROM deps AS production
+FROM base AS production
 
 RUN groupadd -r -g 1001 appuser \
     && useradd -r -u 1001 -g appuser --no-create-home --shell /sbin/nologin appuser
 
+# Копируем готовое виртуальное окружение из стадии deps
+COPY --from=deps /opt/venv /opt/venv
+
 COPY --chown=appuser:appuser . .
 
-RUN mkdir -p /app/logs /tmp/pycache \
+RUN mkdir -p /tmp/pycache \
     && chown -R appuser:appuser /app/logs /tmp/pycache
 
 RUN find /app -perm /6000 -type f 2>/dev/null | xargs -r chmod a-s
 
 USER appuser
 
-RUN python -c "import shared, api, agent1_dzo_inspector, agent2_tz_inspector; print('Import check OK')"
+# Проверка импортов (venv активен через PATH)
+RUN python -c "import uvicorn; import shared, api, agent1_dzo_inspector, agent2_tz_inspector; print('Import check OK')"
 
 EXPOSE 8000 8501
 

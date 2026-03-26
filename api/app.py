@@ -161,7 +161,7 @@ class JobResponse(BaseModel):
     job_id: str
     status: str
     agent: str
-    created_at: str
+    created_at: datetime
     result: dict | None = None
     error: str | None = None
 

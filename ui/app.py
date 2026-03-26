@@ -20,7 +20,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 from dotenv import load_dotenv
 
-from ui.config import API_URL, AUTH_HEADERS, AUTO_REFRESH_SEC
+from config import API_URL, AUTH_HEADERS, AUTO_REFRESH_SEC
 
 load_dotenv()
 
