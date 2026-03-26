@@ -236,10 +236,49 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                 _api_key = OPENAI_API_KEY or GITHUB_TOKEN or ""
                 fallback_chain = build_github_fallback_chain(_api_key, MODEL_NAME)
 
-                # Оцениваем размер входа.
-                # TOOLS_OVERHEAD — резерв токенов на системный промпт + сериализацию
-                # инструментов агента в каждом запросе (~3000 токенов типично).
+                # Резерв токенов: системный промпт агента + сериализация всех
+                # инструментов + ReAct scratchpad ≈ 3000 токенов типично.
                 _TOOLS_OVERHEAD = 3000
+                _est_input = estimate_tokens(chat_input)
+
+                # Порог поблочного анализа: если документ явно большой
+                # (больше половины лучшего доступного контекста минус overhead),
+                # запускаем map-reduce чтобы агент получил структурированное резюме
+                # вместо сырого полотна текста.  Это лучше и для качества, и для токенов.
+                _best_model = max(
+                    fallback_chain,
+                    key=lambda m: probe_max_input_tokens(_api_key, m),
+                )
+                _best_ctx = probe_max_input_tokens(_api_key, _best_model)
+                _chunking_threshold_tok = max(1, (_best_ctx - _TOOLS_OVERHEAD) // 2)
+
+                if _est_input > _chunking_threshold_tok:
+                    # Документ большой → поблочный анализ (map-reduce)
+                    from shared.chunked_analysis import analyze_document_in_chunks
+                    logger.info(
+                        "[%s] Документ ~%d токенов > порог %d — запуск поблочного анализа "
+                        "(model=%s, context=%d)",
+                        job_id, _est_input, _chunking_threshold_tok,
+                        _best_model, _best_ctx,
+                    )
+                    try:
+                        _original_len = len(chat_input)
+                        _summary = analyze_document_in_chunks(
+                            chat_input, _api_key, _best_model, agent_type
+                        )
+                        if _summary:
+                            chat_input = _summary
+                            logger.info(
+                                "[%s] Поблочный анализ: %d → %d символов резюме (~%d токенов)",
+                                job_id, _original_len, len(chat_input), estimate_tokens(chat_input),
+                            )
+                        else:
+                            logger.warning("[%s] Поблочный анализ не дал результата — используем исходный текст", job_id)
+                    except Exception as _chunk_err:
+                        logger.warning("[%s] Поблочный анализ упал: %s — используем исходный текст", job_id, _chunk_err)
+
+                # После (возможной) замены chat_input на резюме — пересчитываем
+                # и строим итоговую fallback-цепочку
                 _est_input = estimate_tokens(chat_input)
                 _filtered = [
                     m for m in fallback_chain
@@ -256,24 +295,20 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                         )
                     fallback_chain = _filtered
                 else:
-                    # Ни одна модель не вмещает вход целиком — обрезаем текст.
-                    # Используем первую модель с максимальным контекстом.
+                    # Последний рубеж: поблочный анализ сам оказался велик —
+                    # обрезаем текст до максимума лучшей модели.
                     _best = max(
                         fallback_chain,
                         key=lambda m: probe_max_input_tokens(_api_key, m),
                     )
-                    _best_ctx = probe_max_input_tokens(_api_key, _best)
-                    _max_input_tok = max(1, _best_ctx - _TOOLS_OVERHEAD)
-                    _max_input_chars = _max_input_tok * 4  # ~4 символа на токен
+                    _best_ctx2 = probe_max_input_tokens(_api_key, _best)
+                    _max_input_chars = max(1, _best_ctx2 - _TOOLS_OVERHEAD) * 4
                     if len(chat_input) > _max_input_chars:
                         logger.warning(
-                            "[%s] Входной текст обрезан: %d → %d символов "
-                            "(лимит модели %s: %d токенов, overhead %d)",
-                            job_id, len(chat_input), _max_input_chars,
-                            _best, _best_ctx, _TOOLS_OVERHEAD,
+                            "[%s] Финальная обрезка: %d → %d символов (модель %s, ctx %d)",
+                            job_id, len(chat_input), _max_input_chars, _best, _best_ctx2,
                         )
                         chat_input = chat_input[:_max_input_chars]
-                    # Переупорядочиваем: лучшая модель вперёд
                     fallback_chain = [_best] + [m for m in fallback_chain if m != _best]
             else:
                 fallback_chain = [MODEL_NAME]
