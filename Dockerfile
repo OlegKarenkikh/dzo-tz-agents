@@ -19,8 +19,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Создаем папку логов заранее с полными правами (решает проблему доступа)
-RUN mkdir -p /app/logs && chmod 777 /app/logs
+# Создаем папку логов заранее с правами 755 (appuser получает chown в production-стадии)
+RUN mkdir -p /app/logs && chmod 755 /app/logs
 
 # ─── Зависимости: сборка виртуального окружения ─────────────────────────────
 FROM base AS deps
@@ -29,7 +29,7 @@ RUN python -m venv $VIRTUAL_ENV \
     && pip install --upgrade pip \
     && pip install -r requirements.txt \
     && find /opt/venv/lib -name '*.pyc' -delete \
-    && find /opt/venv/lib -name '__pycache__' -type d -exec rm -rf {} + 2>/dev/null; true
+    && find /opt/venv/lib -name '__pycache__' -type d -exec rm -rf {} + 2>/dev/null || true
 
 # ─── Production образ ───────────────────────────────────────────
 FROM base AS production

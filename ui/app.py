@@ -20,7 +20,12 @@ import streamlit as st
 import streamlit.components.v1 as components
 from dotenv import load_dotenv
 
-from config import API_URL, AUTH_HEADERS, AUTO_REFRESH_SEC
+try:
+    # Prefer the package-relative config when ui is available as a package
+    from ui.config import API_URL, AUTH_HEADERS, AUTO_REFRESH_SEC
+except ImportError:
+    # Fallback for running from inside the ui/ directory as a simple script
+    from config import API_URL, AUTH_HEADERS, AUTO_REFRESH_SEC
 
 load_dotenv()
 
