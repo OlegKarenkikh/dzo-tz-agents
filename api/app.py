@@ -281,16 +281,38 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                         raise  # таймаут не ретраим — сразу ошибка
 
                     except Exception as exc:
-                        # Перехватываем только 429 (RateLimitError) и 413 (tokens_limit_reached);
-                        # для всех остальных исключений — немедленно пробрасываем.
-                        from openai import APIStatusError, RateLimitError as _RLE
+                        # Проверяем тип ошибки
+                        from openai import APIStatusError, RateLimitError as _RLE, AuthenticationError
+                        
                         is_rate_limit = isinstance(exc, _RLE)
                         is_token_limit = (
                             isinstance(exc, APIStatusError)
                             and getattr(exc, "status_code", 0) == 413
                         )
+                        is_auth_error = isinstance(exc, AuthenticationError) or (
+                            isinstance(exc, APIStatusError)
+                            and getattr(exc, "status_code", 0) == 401
+                        )
+                        
+                        # 401 обрабатываем как фатальную ошибку конфигурации
+                        if is_auth_error:
+                            error_msg = str(exc)
+                            logger.error(
+                                "[%s] Ошибка аутентификации на модели %s: %s",
+                                job_id, model_name, error_msg,
+                            )
+                            # Проверяем, не использует ли мы placeholders
+                            if "ollama" in error_msg.lower() or "invalid_request_error" in error_msg.lower():
+                                logger.error(
+                                    "[%s] Похоже, API key не настроен правильно. "
+                                    "Убедитесь, что OPENAI_API_KEY или GITHUB_TOKEN установлены.",
+                                    job_id,
+                                )
+                            raise
+                        
                         if not is_rate_limit and not is_token_limit:
                             raise
+                        
                         last_exc = exc
                         reason = "429 RateLimit" if is_rate_limit else "413 TokenLimit"
                         logger.warning(
@@ -321,23 +343,64 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                 raise last_exc
 
             decision = ""
-            email_html = ""
+            artifacts: dict = {}
+
             for step in result.get("intermediate_steps", []):
                 try:
                     obs = json.loads(step[1]) if isinstance(step[1], str) else step[1]
+                    if not isinstance(obs, dict):
+                        continue
+
+                    # decision — из любого инструмента, который его возвращает
                     if obs.get("decision"):
                         decision = obs["decision"]
+
+                    # ── Общие ──────────────────────────────────────────────────
+                    # emailHtml: ответное письмо, запрос информации, письмо в ДЗО
                     if obs.get("emailHtml"):
-                        email_html = obs["emailHtml"]
+                        artifacts["email_html"] = obs["emailHtml"]
+
+                    # ── ДЗО-специфичные ────────────────────────────────────────
+                    # Форма ЭДО «Тезис»
+                    if obs.get("tezisFormHtml"):
+                        artifacts["tezis_form_html"] = obs["tezisFormHtml"]
+                    # Исправленная заявка
+                    if obs.get("correctedHtml"):
+                        artifacts["corrected_html"] = obs["correctedHtml"]
+                    # Письмо-эскалация
+                    if obs.get("escalationHtml"):
+                        artifacts["escalation_html"] = obs["escalationHtml"]
+                    # Отчёт валидации (содержит checklist_required / checklist_attachments)
+                    if "checklist_required" in obs or "checklist_attachments" in obs:
+                        artifacts["validation_report"] = obs
+
+                    # ── ТЗ-специфичные ─────────────────────────────────────────
+                    # JSON-отчёт проверки ТЗ (содержит sections)
+                    if "sections" in obs and isinstance(obs.get("sections"), list):
+                        artifacts["json_report"] = obs
+                    # HTML исправленного ТЗ (generate_corrected_tz → {"html": ..., "title": ...})
+                    if "html" in obs and "title" in obs:
+                        artifacts["corrected_tz_html"] = obs["html"]
+
                 except Exception:
                     pass
+
+            if artifacts:
+                logger.info(
+                    "[%s] Артефакты сохранены: %s",
+                    job_id, ", ".join(artifacts.keys()),
+                )
 
             if decision:
                 DECISIONS_TOTAL.labels(agent=agent_type, decision=decision).inc()
 
             update_job(
                 job_id, status="done", decision=decision,
-                result={"output": result.get("output", ""), "decision": decision, "email_html": email_html},
+                result={
+                    "output": result.get("output", ""),
+                    "decision": decision,
+                    **artifacts,
+                },
             )
             _run_log.append({"agent": agent_type, "ts": ts, "status": "ok", "job_id": job_id})
             logger.info("[%s] Завершено. Решение: %s", job_id, decision or "нет")

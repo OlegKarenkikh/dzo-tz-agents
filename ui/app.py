@@ -126,6 +126,77 @@ def _status_icon(status: str) -> str:
     return icons.get(status, "❓")
 
 
+def _show_artifacts(r: dict, expanded: bool = True, key_prefix: str = "") -> None:
+    """Показать все артефакты из поля result."""
+    _k = key_prefix or str(id(r))
+
+    # ── Письмо ─────────────────────────────────────────────────────────
+    if r.get("email_html"):
+        with st.expander("📧 Письмо (HTML)", expanded=expanded):
+            components.html(r["email_html"], height=400, scrolling=True)
+            st.download_button("💾 Скачать", data=r["email_html"].encode(),
+                               file_name="email.html", mime="text/html",
+                               key=f"dl_email_{_k}")
+
+    # ── Форма Тезис ────────────────────────────────────────────────────
+    if r.get("tezis_form_html"):
+        with st.expander("📋 Форма Тезис (HTML)", expanded=False):
+            components.html(r["tezis_form_html"], height=400, scrolling=True)
+            st.download_button("💾 Скачать", data=r["tezis_form_html"].encode(),
+                               file_name="tezis_form.html", mime="text/html",
+                               key=f"dl_tezis_{_k}")
+
+    # ── Исправленная заявка (ДЗО) ──────────────────────────────────────
+    if r.get("corrected_html"):
+        with st.expander("📝 Исправленная заявка (HTML)", expanded=False):
+            components.html(r["corrected_html"], height=400, scrolling=True)
+            st.download_button("💾 Скачать", data=r["corrected_html"].encode(),
+                               file_name="corrected_application.html", mime="text/html",
+                               key=f"dl_corrapp_{_k}")
+
+    # ── Эскалация ──────────────────────────────────────────────────────
+    if r.get("escalation_html"):
+        with st.expander("🔴 Письмо-эскалация (HTML)", expanded=False):
+            components.html(r["escalation_html"], height=400, scrolling=True)
+            st.download_button("💾 Скачать", data=r["escalation_html"].encode(),
+                               file_name="escalation.html", mime="text/html",
+                               key=f"dl_escal_{_k}")
+
+    # ── Исправленное ТЗ ────────────────────────────────────────────────
+    if r.get("corrected_tz_html"):
+        with st.expander("📝 Исправленное ТЗ (HTML)", expanded=False):
+            components.html(r["corrected_tz_html"], height=500, scrolling=True)
+            st.download_button("💾 Скачать", data=r["corrected_tz_html"].encode(),
+                               file_name="corrected_tz.html", mime="text/html",
+                               key=f"dl_corrtz_{_k}")
+
+    # ── JSON-отчёт ТЗ ──────────────────────────────────────────────────
+    if r.get("json_report"):
+        with st.expander("📊 JSON-отчёт проверки ТЗ", expanded=False):
+            jr = r["json_report"]
+            status_label = jr.get("overall_status", "")
+            if status_label:
+                st.write(f"**Общий статус:** {status_label}")
+            sections = jr.get("sections", [])
+            if sections:
+                rows_jr = [
+                    {"Раздел": s.get("name", ""), "Статус": s.get("status", ""), "Комментарий": s.get("comment", "")}
+                    for s in sections
+                ]
+                st.dataframe(rows_jr, hide_index=True)
+            st.json(jr)
+
+    # ── Отчёт валидации ДЗО ────────────────────────────────────────────
+    if r.get("validation_report"):
+        with st.expander("📊 Отчёт валидации ДЗО", expanded=False):
+            st.json(r["validation_report"])
+
+    # ── Сырой output агента ────────────────────────────────────────────
+    if r.get("output"):
+        with st.expander("💬 Ответ агента (текст)", expanded=False):
+            st.text(r["output"])
+
+
 # ---------------------------------------------------------------------------
 # Боковая панель навигации
 # ---------------------------------------------------------------------------
@@ -293,18 +364,7 @@ elif page == "🧪 Тестирование":
                 f"**Решение:** {_decision_badge(decision)}",
                 unsafe_allow_html=True,
             )
-            with st.expander("📄 JSON-отчёт", expanded=False):
-                st.json(r)
-            email_html = r.get("email_html", "")
-            if email_html:
-                with st.expander("📧 HTML-письмо", expanded=True):
-                    components.html(email_html, height=400, scrolling=True)
-                st.download_button(
-                    "💾 Скачать HTML",
-                    data=email_html.encode("utf-8"),
-                    file_name="result.html",
-                    mime="text/html",
-                )
+            _show_artifacts(r, expanded=True, key_prefix="test")
         else:
             st.error(f"Ошибка: {result.get('error', 'неизвестная ошибка')}")
 
@@ -775,6 +835,14 @@ elif page == "📋 История":
                         st.success("Удалено")
                         time.sleep(0.5)
                         st.rerun()
+
+                # ── Артефакты работы агента ────────────────────────────────
+                if any(r.get(k) for k in (
+                    "email_html", "tezis_form_html", "corrected_html", "escalation_html",
+                    "corrected_tz_html", "json_report", "validation_report", "output",
+                )):
+                    st.divider()
+                    _show_artifacts(r, expanded=False, key_prefix=item["job_id"])
 
         buf = io.StringIO()
         if rows:

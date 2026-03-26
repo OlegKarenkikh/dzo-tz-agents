@@ -1,4 +1,6 @@
+import json
 import os
+import logging
 from typing import Any
 
 from langchain.agents import create_agent
@@ -12,6 +14,9 @@ from agent1_dzo_inspector.tools import (
     generate_validation_report,
 )
 from shared.llm import build_llm
+from shared.logger import setup_logger
+
+logger = setup_logger("agent_dzo")
 
 SYSTEM_PROMPT = """Ты — ИИ-инспектор «Контролер заявок ДЗО». Твоя задача — проверять входящие заявки от дочерних обществ (ДЗО), поступающие по электронной почте, на полноту и корректность перед регистрацией в системе ЭДО «Тезис».
 
@@ -94,9 +99,13 @@ class AgentRunner:
 
     def invoke(self, payload: dict[str, Any]) -> dict[str, Any]:
         chat_input = payload.get("input", "")
+        logger.debug("Запуск агента ДЗО с input: %s", chat_input[:100] if chat_input else "(пусто)")
         result = self._agent.invoke({"messages": [{"role": "user", "content": chat_input}]})
 
         output = ""
+        messages: list = []
+        intermediate_steps: list = []
+
         if isinstance(result, dict):
             messages = result.get("messages") or []
             if messages:
@@ -105,7 +114,26 @@ class AgentRunner:
                 if isinstance(output, list):
                     output = "\n".join(str(x) for x in output)
 
-        return {"output": output, "intermediate_steps": []}
+        # Извлекаем результаты вызовов инструментов из ToolMessage-сообщений.
+        # LangGraph хранит их в history messages, а не в отдельном поле steps.
+        for msg in messages:
+            if hasattr(msg, "tool_call_id"):  # ToolMessage
+                name = getattr(msg, "name", None) or "tool"
+                content = getattr(msg, "content", "")
+                try:
+                    obs = json.loads(content) if isinstance(content, str) else content
+                except Exception:
+                    obs = {"raw": str(content)}
+                intermediate_steps.append((name, obs))
+
+        logger.info(
+            "Агент ДЗО завершён. Output: %d симв., инструментов вызвано: %d",
+            len(output), len(intermediate_steps),
+        )
+        for name, obs in intermediate_steps:
+            logger.info("  🔧 %s → %s", name, str(obs)[:200])
+
+        return {"output": output, "intermediate_steps": intermediate_steps}
 
 
 def create_dzo_agent(model_name: str | None = None) -> AgentRunner:
