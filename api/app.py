@@ -228,9 +228,38 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
 
             # ── Построить цепочку fallback-моделей ──────────────────────────
             if LLM_BACKEND == "github_models":
-                from shared.llm import build_github_fallback_chain
+                from shared.llm import (
+                    build_github_fallback_chain,
+                    probe_max_input_tokens,
+                    estimate_tokens,
+                )
                 _api_key = OPENAI_API_KEY or GITHUB_TOKEN or ""
                 fallback_chain = build_github_fallback_chain(_api_key, MODEL_NAME)
+
+                # Оцениваем размер входа и убираем модели, чей контекст заведомо мал.
+                # Оставляем запас ~1000 токенов для ответа агента.
+                _est_input = estimate_tokens(chat_input)
+                _filtered = [
+                    m for m in fallback_chain
+                    if probe_max_input_tokens(_api_key, m) > _est_input + 1000
+                ]
+                if _filtered:
+                    _skipped = [m for m in fallback_chain if m not in _filtered]
+                    if _skipped:
+                        logger.warning(
+                            "[%s] Пропущены модели с малым контекстом %s "
+                            "(вход ~%d токенов): %s",
+                            job_id, _skipped, _est_input, ", ".join(_skipped),
+                        )
+                    fallback_chain = _filtered
+                else:
+                    # Нет ни одной подходящей — берём хотя бы первую
+                    logger.warning(
+                        "[%s] Все модели имеют контекст < %d токенов, "
+                        "используем %s",
+                        job_id, _est_input + 1000, fallback_chain[0],
+                    )
+                    fallback_chain = fallback_chain[:1]
             else:
                 fallback_chain = [MODEL_NAME]
 
@@ -281,13 +310,18 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                         raise  # таймаут не ретраим — сразу ошибка
 
                     except Exception as exc:
-                        # Проверяем тип ошибки
+                        # Проверяем тип ошибки — используем и isinstance, и строковый
+                        # matching, т.к. LangChain может оборачивать openai-исключения.
                         from openai import APIStatusError, RateLimitError as _RLE, AuthenticationError
-                        
-                        is_rate_limit = isinstance(exc, _RLE)
+                        _exc_str = str(exc)
+
+                        is_rate_limit = isinstance(exc, _RLE) or (
+                            "429" in _exc_str and "rate" in _exc_str.lower()
+                        )
                         is_token_limit = (
-                            isinstance(exc, APIStatusError)
-                            and getattr(exc, "status_code", 0) == 413
+                            (isinstance(exc, APIStatusError) and getattr(exc, "status_code", 0) == 413)
+                            or "tokens_limit_reached" in _exc_str
+                            or ("413" in _exc_str and "too large" in _exc_str.lower())
                         )
                         is_auth_error = isinstance(exc, AuthenticationError) or (
                             isinstance(exc, APIStatusError)
@@ -319,6 +353,14 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                             "[%s] %s на %s (попытка %d/%d)",
                             job_id, reason, model_name, retry + 1, max(1, AGENT_MAX_RETRIES),
                         )
+                        # 413 — детерминированная ошибка: ретрай бессмыслен, сразу на следующую модель
+                        if is_token_limit:
+                            logger.warning(
+                                "[%s] 413 TokenLimit — пропускаем ретраи, "
+                                "переключаемся на следующую модель",
+                                job_id,
+                            )
+                            break
                         if retry + 1 < max(1, AGENT_MAX_RETRIES):
                             time.sleep(AGENT_RATE_LIMIT_BACKOFF)
                         # выходим из retry-цикла, перейдём к следующей модели
@@ -329,7 +371,13 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                 # 429/413 исчерпаны для этой модели — пробуем следующую
                 from openai import APIStatusError as _APIStatusError
                 from openai import RateLimitError as _RateLimitError
-                _switchable = isinstance(last_exc, (_RateLimitError, _APIStatusError))
+                _exc_str_sw = str(last_exc)
+                _switchable = (
+                    isinstance(last_exc, (_RateLimitError, _APIStatusError))
+                    or "tokens_limit_reached" in _exc_str_sw
+                    or "429" in _exc_str_sw
+                    or "413" in _exc_str_sw
+                )
                 if _switchable and model_idx + 1 < len(fallback_chain):
                     next_model = fallback_chain[model_idx + 1]
                     logger.warning(
