@@ -236,30 +236,45 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                 _api_key = OPENAI_API_KEY or GITHUB_TOKEN or ""
                 fallback_chain = build_github_fallback_chain(_api_key, MODEL_NAME)
 
-                # Оцениваем размер входа и убираем модели, чей контекст заведомо мал.
-                # Оставляем запас ~1000 токенов для ответа агента.
+                # Оцениваем размер входа.
+                # TOOLS_OVERHEAD — резерв токенов на системный промпт + сериализацию
+                # инструментов агента в каждом запросе (~3000 токенов типично).
+                _TOOLS_OVERHEAD = 3000
                 _est_input = estimate_tokens(chat_input)
                 _filtered = [
                     m for m in fallback_chain
-                    if probe_max_input_tokens(_api_key, m) > _est_input + 1000
+                    if probe_max_input_tokens(_api_key, m) > _est_input + _TOOLS_OVERHEAD
                 ]
                 if _filtered:
                     _skipped = [m for m in fallback_chain if m not in _filtered]
                     if _skipped:
                         logger.warning(
-                            "[%s] Пропущены модели с малым контекстом %s "
-                            "(вход ~%d токенов): %s",
-                            job_id, _skipped, _est_input, ", ".join(_skipped),
+                            "[%s] Пропущены модели с малым контекстом "
+                            "(вход ~%d + overhead %d = %d токенов): %s",
+                            job_id, _est_input, _TOOLS_OVERHEAD,
+                            _est_input + _TOOLS_OVERHEAD, ", ".join(_skipped),
                         )
                     fallback_chain = _filtered
                 else:
-                    # Нет ни одной подходящей — берём хотя бы первую
-                    logger.warning(
-                        "[%s] Все модели имеют контекст < %d токенов, "
-                        "используем %s",
-                        job_id, _est_input + 1000, fallback_chain[0],
+                    # Ни одна модель не вмещает вход целиком — обрезаем текст.
+                    # Используем первую модель с максимальным контекстом.
+                    _best = max(
+                        fallback_chain,
+                        key=lambda m: probe_max_input_tokens(_api_key, m),
                     )
-                    fallback_chain = fallback_chain[:1]
+                    _best_ctx = probe_max_input_tokens(_api_key, _best)
+                    _max_input_tok = max(1, _best_ctx - _TOOLS_OVERHEAD)
+                    _max_input_chars = _max_input_tok * 4  # ~4 символа на токен
+                    if len(chat_input) > _max_input_chars:
+                        logger.warning(
+                            "[%s] Входной текст обрезан: %d → %d символов "
+                            "(лимит модели %s: %d токенов, overhead %d)",
+                            job_id, len(chat_input), _max_input_chars,
+                            _best, _best_ctx, _TOOLS_OVERHEAD,
+                        )
+                        chat_input = chat_input[:_max_input_chars]
+                    # Переупорядочиваем: лучшая модель вперёд
+                    fallback_chain = [_best] + [m for m in fallback_chain if m != _best]
             else:
                 fallback_chain = [MODEL_NAME]
 
