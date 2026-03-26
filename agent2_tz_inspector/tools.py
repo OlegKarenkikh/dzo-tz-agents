@@ -27,7 +27,20 @@ def _parse_query(query: str, tool_name: str):
         return json.loads(q)
     except json.JSONDecodeError:
         pass
-    # Попытка 2: добавить { } вокруг — LLM иногда генерирует key: "value" без скобок
+    # Попытка 2: raw_decode извлекает первый валидный JSON, игнорируя хвостовой мусор.
+    # Это нужно когда LLM вызывает инструменты параллельно и в конец query
+    # попадает фрагмент следующего вызова, например: ...}},{'} или ...}}]}]}
+    try:
+        obj, _ = json.JSONDecoder().raw_decode(q)
+        if isinstance(obj, dict):
+            logger.debug(
+                "✅ %s: JSON извлечён через raw_decode (trailing-мусор обрезан)",
+                tool_name,
+            )
+            return obj
+    except json.JSONDecodeError:
+        pass
+    # Попытка 3: добавить { } вокруг — LLM иногда генерирует key: "value" без скобок
     try:
         # Цитируем незакавыченные ключи: word: → "word":
         fixed = re.sub(r'(?<!["\w])([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r'"\1":', q)
