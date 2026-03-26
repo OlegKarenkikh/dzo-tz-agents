@@ -11,10 +11,12 @@
                   GITHUB_TOKEN / GH_TOKEN (доступен в GitHub Actions,
                   Copilot Workspace и Codespaces без дополнительной настройки).
 
-Автопереключение моделей при 429 (только для github_models):
-  При получении RateLimitError агент автоматически переключается на следующую
-  модель из цепочки: gpt-4o-mini → Meta-Llama-3.1-405B-Instruct →
-  Meta-Llama-3.1-8B-Instruct → gpt-4o. Список актуализируется через API.
+Автопереключение моделей при 429/413 (только для github_models):
+  При RateLimitError (429) или превышении лимита токенов (413) агент
+  автоматически переключается на следующую модель из цепочки:
+    gpt-4o-mini → Meta-Llama-3.1-405B-Instruct → gpt-4o → Meta-Llama-3.1-8B-Instruct
+  Модели с недостаточным контекстом отфильтровываются до вызова агента.
+  Список моделей и их лимиты актуализируются через API при старте.
 """
 import logging
 import re
@@ -30,20 +32,88 @@ logger = logging.getLogger("llm")
 _GITHUB_MODELS_BASE_URL = "https://models.inference.ai.azure.com"
 
 # Приоритетный порядок fallback-моделей GitHub Models.
-# Llama-модели от Meta имеют более мягкие rate limits, поэтому стоят выше gpt-4o.
+# Llama-3.1-405B имеет мягкие rate limits; Llama-3.1-8B идёт последней — её суммарный
+# контекст составляет всего 8 000 токенов, что меньше большинства входящих документов.
 _GITHUB_MODELS_PRIORITY: list[str] = [
     "gpt-4o-mini",
     "Meta-Llama-3.1-405B-Instruct",
-    "Meta-Llama-3.1-8B-Instruct",
     "gpt-4o",
+    "Meta-Llama-3.1-8B-Instruct",  # последней: 8 000 токенов суммарного контекста
 ]
 
 # Кеш max_output_tokens, заполняется при первом запросе к каждой модели.
 # Хранится на весь срок жизни процесса — перезапрос не нужен.
 _MAX_OUTPUT_TOKENS_CACHE: dict[str, int] = {}
 
-# Сафный fallback, если зондирование не удалось
+# Fallback, если зондирование output-токенов не удалось
 _DEFAULT_MAX_OUTPUT_TOKENS = 4096
+
+# Кеш максимального доступного INPUT-контекста (input tokens)
+_MAX_INPUT_TOKENS_CACHE: dict[str, int] = {}
+
+# Fallback, если зондирование input-контекста не удалось
+_DEFAULT_MAX_INPUT_TOKENS = 128_000
+
+
+def estimate_tokens(text: str) -> int:
+    """Грубая оценка числа токенов в строке (1 токен ≈ 4 символа)."""
+    return max(1, len(text) // 4)
+
+
+def probe_max_input_tokens(api_key: str, model_name: str) -> int:
+    """Определить суммарный лимит входных токенов модели через 413-ответ API.
+
+    Отправляет намеренно большое сообщение (~100 000 символов), чтобы получить
+    ошибку 413 вида «Request body too large … Max size: N tokens». Результат
+    кешируется в ``_MAX_INPUT_TOKENS_CACHE``.
+
+    Args:
+        api_key:    Bearer-токен для GitHub Models API.
+        model_name: Имя модели.
+
+    Returns:
+        Максимально допустимое число входных токенов для данной модели.
+    """
+    if model_name in _MAX_INPUT_TOKENS_CACHE:
+        return _MAX_INPUT_TOKENS_CACHE[model_name]
+
+    try:
+        # ~100 000 символов ≈ 25 000 токенов — гарантированно превышает
+        # лимит Llama-3.1-8B (8 000) и других малоконтекстных моделей.
+        resp = httpx.post(
+            f"{_GITHUB_MODELS_BASE_URL}/chat/completions",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": model_name,
+                "messages": [{"role": "user", "content": "x" * 100_000}],
+                "max_tokens": 1,
+            },
+            timeout=15,
+        )
+        if resp.status_code == 413:
+            # «Request body too large for meta-llama-3.1-8b-instruct model. Max size: 8000 tokens.»
+            m = re.search(r"Max size[:\s]+(\d+)\s+tokens", resp.text, re.IGNORECASE)
+            if m:
+                limit = int(m.group(1))
+                _MAX_INPUT_TOKENS_CACHE[model_name] = limit
+                logger.info(
+                    "📐 Модель %s: max_input_tokens = %d (из 413 ответа API)",
+                    model_name, limit,
+                )
+                return limit
+        # 200 / другой код — модель приняла 100k, у неё большой контекст
+    except Exception as exc:
+        logger.warning(
+            "⚠️ Не удалось определить max_input_tokens для %s: %s. "
+            "Используется значение по умолчанию %d.",
+            model_name, exc, _DEFAULT_MAX_INPUT_TOKENS,
+        )
+
+    _MAX_INPUT_TOKENS_CACHE[model_name] = _DEFAULT_MAX_INPUT_TOKENS
+    return _DEFAULT_MAX_INPUT_TOKENS
 
 
 def probe_max_output_tokens(api_key: str, model_name: str) -> int:
