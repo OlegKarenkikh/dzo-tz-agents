@@ -89,7 +89,15 @@ def _download_document(url: str) -> tuple[bytes, str]:
     if not pathlib.Path(filename).suffix:
         if "pdf" in content_type:
             filename += ".pdf"
-        elif "docx" in content_type or "officedocument" in content_type:
+        elif "wordprocessingml" in content_type:
+            filename += ".docx"
+        elif "spreadsheetml" in content_type:
+            filename += ".xlsx"
+        elif "msword" in content_type:
+            filename += ".doc"
+        elif "ms-excel" in content_type:
+            filename += ".xls"
+        elif "officedocument" in content_type:
             filename += ".docx"
         else:
             filename += ".bin"
@@ -119,13 +127,12 @@ def _extract_text(file_data: bytes, filename: str) -> str:
 
 def _build_output_path(source_path: str, output_dir: str) -> pathlib.Path:
     """Формирует путь к выходному JSON-файлу."""
-    stem = pathlib.Path(source_path).stem
+    source = pathlib.Path(source_path)
     if output_dir:
         out = pathlib.Path(output_dir)
         out.mkdir(parents=True, exist_ok=True)
-        return out / f"{stem}.json"
+        return out / f"{source.stem}.json"
     # По умолчанию — рядом с исходным файлом
-    source = pathlib.Path(source_path)
     return source.parent / f"{source.stem}.json"
 
 
@@ -216,6 +223,22 @@ def process_single_document(
                 "source": source,
             }
 
+        _MAX_LOCAL_BYTES = 50 * 1024 * 1024  # 50 МБ
+        file_size = pathlib.Path(source).stat().st_size
+        if file_size > _MAX_LOCAL_BYTES:
+            logger.warning(
+                "Файл '%s' превышает максимально допустимый размер (%d МБ)",
+                filename, _MAX_LOCAL_BYTES // (1024 * 1024),
+            )
+            return {
+                "status": "error",
+                "error": (
+                    f"File '{filename}' exceeds the maximum allowed size "
+                    f"({_MAX_LOCAL_BYTES // (1024 * 1024)} MB)."
+                ),
+                "filename": filename,
+                "source": source,
+            }
         file_data = pathlib.Path(source).read_bytes()
 
     # ── Дедупликация ───────────────────────────────────────────────────────
