@@ -65,14 +65,17 @@ class AgentRunner:
     def __init__(self, graph_agent: Any):
         self._agent = graph_agent
 
-    def invoke(self, payload: dict[str, Any]) -> dict[str, Any]:
+    def invoke(self, payload: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
         chat_input = payload.get("input", "")
         logger.debug(
             "Запуск агента Тендер с input: %s",
             chat_input[:100] if chat_input else "(пусто)",
         )
 
-        result = self._agent.invoke({"messages": [{"role": "user", "content": chat_input}]})
+        result = self._agent.invoke(
+            {"messages": [{"role": "user", "content": chat_input}]},
+            **kwargs,
+        )
 
         logger.debug("Результат агента (тип: %s): %s", type(result).__name__, result)
 

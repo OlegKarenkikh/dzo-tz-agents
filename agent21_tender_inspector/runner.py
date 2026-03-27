@@ -85,15 +85,18 @@ def _download_document(url: str) -> tuple[bytes, str]:
 def _extract_text(file_data: bytes, filename: str) -> str:
     """Извлекает текст из файла."""
     import base64
+    import mimetypes
 
     ext = pathlib.Path(filename).suffix.lstrip(".").lower()
     b64 = base64.b64encode(file_data).decode()
+    # Используем mimetypes для корректного Content-Type; fallback — application/octet-stream
+    mime = mimetypes.guess_type(filename)[0] or "application/octet-stream"
     att = {
         "filename": filename,
         "ext": ext,
         "data": file_data,
         "b64": b64,
-        "mime": f"application/{ext}",
+        "mime": mime,
     }
     return extract_text_from_attachment(att)
 
