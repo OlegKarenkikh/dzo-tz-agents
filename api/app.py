@@ -112,6 +112,14 @@ AGENT_REGISTRY: dict[str, dict] = {
         "description": "Анализирует технические задания на соответствие ГОСТ и внутренним стандартам",
         "decisions": ["Соответствует", "Требует доработки", "Не соответствует"],
     },
+    "tender": {
+        "name": "Парсер тендерной документации",
+        "description": (
+            "Извлекает полный список документов, требуемых от участника закупки, "
+            "с указанием раздела документации и требований к содержанию"
+        ),
+        "decisions": ["Найдено документов: N"],
+    },
 }
 
 
@@ -334,6 +342,9 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                         elif agent_type == "tz":
                             from agent2_tz_inspector.agent import create_tz_agent
                             agent = create_tz_agent(model_name=model_name)
+                        elif agent_type == "tender":
+                            from agent21_tender_inspector.agent import create_tender_agent
+                            agent = create_tender_agent(model_name=model_name)
                         else:
                             import importlib
                             mod = importlib.import_module("agent_" + agent_type + ".agent")
@@ -479,6 +490,13 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                     # HTML исправленного ТЗ (generate_corrected_tz → {"html": ..., "title": ...})
                     if "html" in obs and "title" in obs:
                         artifacts["corrected_tz_html"] = obs["html"]
+
+                    # ── Тендер-специфичные ──────────────────────────────────────
+                    # Список документов участника (generate_document_list → {"documents": [...]})
+                    if "documents" in obs and isinstance(obs.get("documents"), list):
+                        artifacts["document_list"] = obs
+                        total = obs.get("summary", {}).get("total", len(obs["documents"]))
+                        decision = f"Найдено документов: {total}"
 
                 except Exception:
                     pass
@@ -639,6 +657,21 @@ def process_tz(
     _: str = Depends(_require_api_key),
 ):
     return _check_and_process("tz", request, background_tasks)
+
+
+@app.post("/api/v1/process/tender", summary="Парсинг тендерной документации")
+def process_tender(
+    request: ProcessRequest,
+    background_tasks: BackgroundTasks,
+    _: str = Depends(_require_api_key),
+):
+    """Извлекает список документов, требуемых от участника закупки.
+
+    Принимает текст/файл тендерной документации и возвращает структурированный
+    JSON с перечнем требуемых документов, ссылками на разделы документации
+    и требованиями к содержанию каждого документа.
+    """
+    return _check_and_process("tender", request, background_tasks)
 
 
 @app.post("/api/v1/process/auto", summary="Автоопределение типа")
