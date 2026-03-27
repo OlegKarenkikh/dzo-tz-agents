@@ -57,12 +57,27 @@ def _download_document(url: str) -> tuple[bytes, str]:
     """Скачивает документ по URL. Возвращает (bytes, filename)."""
     import httpx
 
+    _MAX_DOWNLOAD_BYTES = 50 * 1024 * 1024  # 50 МБ
+
     logger.info("⬇️ Загрузка документа: %s", url)
-    resp = httpx.get(url, follow_redirects=True, timeout=60)
-    resp.raise_for_status()
+    chunks: list[bytes] = []
+    total = 0
+    with httpx.stream("GET", url, follow_redirects=True, timeout=60) as resp:
+        resp.raise_for_status()
+        for chunk in resp.iter_bytes(chunk_size=65536):
+            total += len(chunk)
+            if total > _MAX_DOWNLOAD_BYTES:
+                raise ValueError(
+                    f"Документ превышает максимально допустимый размер "
+                    f"({_MAX_DOWNLOAD_BYTES // (1024 * 1024)} МБ): {url}"
+                )
+            chunks.append(chunk)
+        content_disp = resp.headers.get("content-disposition", "")
+        content_type = resp.headers.get("content-type", "")
+
+    raw = b"".join(chunks)
 
     # Определяем имя файла из заголовка или URL
-    content_disp = resp.headers.get("content-disposition", "")
     filename = ""
     if "filename=" in content_disp:
         filename = content_disp.split("filename=")[-1].strip().strip('"\'')
@@ -70,16 +85,15 @@ def _download_document(url: str) -> tuple[bytes, str]:
         filename = pathlib.Path(urllib.parse.urlparse(url).path).name or "document"
     # Добавляем расширение из Content-Type если нет
     if not pathlib.Path(filename).suffix:
-        ct = resp.headers.get("content-type", "")
-        if "pdf" in ct:
+        if "pdf" in content_type:
             filename += ".pdf"
-        elif "docx" in ct or "officedocument" in ct:
+        elif "docx" in content_type or "officedocument" in content_type:
             filename += ".docx"
         else:
             filename += ".bin"
 
-    logger.info("✅ Загружено: %s (%d байт)", filename, len(resp.content))
-    return resp.content, filename
+    logger.info("✅ Загружено: %s (%d байт)", filename, len(raw))
+    return raw, filename
 
 
 def _extract_text(file_data: bytes, filename: str) -> str:
@@ -167,6 +181,26 @@ def process_single_document(
         file_path = source
         filename = pathlib.Path(source).name
         file_data = pathlib.Path(source).read_bytes()
+
+    # ── Проверка поддерживаемого расширения ───────────────────────────────
+    suffix = pathlib.Path(filename).suffix.lower()
+    if suffix not in SUPPORTED_EXTS:
+        logger.warning(
+            "Неподдерживаемое расширение файла '%s' для документа '%s'. "
+            "Поддерживаемые расширения: %s",
+            suffix,
+            filename,
+            ", ".join(sorted(SUPPORTED_EXTS)),
+        )
+        return {
+            "status": "error",
+            "error": (
+                f"Unsupported file extension '{suffix}' for document '{filename}'. "
+                f"Supported extensions: {', '.join(sorted(SUPPORTED_EXTS))}"
+            ),
+            "filename": filename,
+            "source": source,
+        }
 
     # ── Дедупликация ───────────────────────────────────────────────────────
     if not FORCE_REPROCESS:
