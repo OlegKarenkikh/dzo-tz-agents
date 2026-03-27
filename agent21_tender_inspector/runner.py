@@ -177,30 +177,46 @@ def process_single_document(
             file_path = os.path.join(output_dir, filename)
         else:
             file_path = filename  # только имя — output будет в текущей директории
+
+        suffix = pathlib.Path(filename).suffix.lower()
+        if suffix not in SUPPORTED_EXTS:
+            logger.warning(
+                "Неподдерживаемое расширение файла '%s' для документа '%s'. "
+                "Поддерживаемые расширения: %s",
+                suffix, filename, ", ".join(sorted(SUPPORTED_EXTS)),
+            )
+            return {
+                "status": "error",
+                "error": (
+                    f"Unsupported file extension '{suffix}' for document '{filename}'. "
+                    f"Supported extensions: {', '.join(sorted(SUPPORTED_EXTS))}"
+                ),
+                "filename": filename,
+                "source": source,
+            }
     else:
         file_path = source
         filename = pathlib.Path(source).name
-        file_data = pathlib.Path(source).read_bytes()
 
-    # ── Проверка поддерживаемого расширения ───────────────────────────────
-    suffix = pathlib.Path(filename).suffix.lower()
-    if suffix not in SUPPORTED_EXTS:
-        logger.warning(
-            "Неподдерживаемое расширение файла '%s' для документа '%s'. "
-            "Поддерживаемые расширения: %s",
-            suffix,
-            filename,
-            ", ".join(sorted(SUPPORTED_EXTS)),
-        )
-        return {
-            "status": "error",
-            "error": (
-                f"Unsupported file extension '{suffix}' for document '{filename}'. "
-                f"Supported extensions: {', '.join(sorted(SUPPORTED_EXTS))}"
-            ),
-            "filename": filename,
-            "source": source,
-        }
+        # ── Проверка расширения до чтения файла ──────────────────────────
+        suffix = pathlib.Path(filename).suffix.lower()
+        if suffix not in SUPPORTED_EXTS:
+            logger.warning(
+                "Неподдерживаемое расширение файла '%s' для документа '%s'. "
+                "Поддерживаемые расширения: %s",
+                suffix, filename, ", ".join(sorted(SUPPORTED_EXTS)),
+            )
+            return {
+                "status": "error",
+                "error": (
+                    f"Unsupported file extension '{suffix}' for document '{filename}'. "
+                    f"Supported extensions: {', '.join(sorted(SUPPORTED_EXTS))}"
+                ),
+                "filename": filename,
+                "source": source,
+            }
+
+        file_data = pathlib.Path(source).read_bytes()
 
     # ── Дедупликация ───────────────────────────────────────────────────────
     if not FORCE_REPROCESS:
