@@ -60,9 +60,6 @@ _VALID_TYPES = {
     "договор", "протокол", "приказ", "устав", "иное",
 }
 
-# Допустимые значения обязательности
-_VALID_MANDATORY = {True, False}
-
 
 def _normalize_document(doc: dict, idx: int) -> dict:
     """Нормализует и дополняет запись о документе обязательными полями."""
@@ -125,9 +122,9 @@ def generate_document_list(query: str) -> str:
                 ensure_ascii=False,
             )
 
-        if d is None:
+        if d is None or not isinstance(d, dict):
             logger.warning(
-                "⚠️ generate_document_list: получен не-JSON, создаём скелет результата"
+                "⚠️ generate_document_list: получен не-JSON или не-dict, создаём скелет результата"
             )
             d = {
                 "procurement_subject": "Не определён",
@@ -138,7 +135,17 @@ def generate_document_list(query: str) -> str:
         if not isinstance(raw_docs, list):
             raw_docs = []
 
-        documents = [_normalize_document(doc, i) for i, doc in enumerate(raw_docs)]
+        # Оставляем только dict-элементы, чтобы _normalize_document не падал на doc.get(...)
+        valid_docs = [doc for doc in raw_docs if isinstance(doc, dict)]
+        skipped_count = len(raw_docs) - len(valid_docs)
+        if skipped_count > 0:
+            logger.warning(
+                "⚠️ generate_document_list: пропущено %d не-dict документов из %d",
+                skipped_count,
+                len(raw_docs),
+            )
+
+        documents = [_normalize_document(doc, i) for i, doc in enumerate(valid_docs)]
 
         mandatory_count = sum(1 for doc in documents if doc["mandatory"])
         conditional_count = len(documents) - mandatory_count
