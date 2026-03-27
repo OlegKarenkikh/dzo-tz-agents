@@ -28,7 +28,7 @@ def run():
         schedule.every(interval).seconds.do(process_tz_emails)
         logger.info("Агент ТЗ подключён.")
 
-    if mode in ("tender",):
+    if mode in ("tender", "both"):
         from agent21_tender_inspector.runner import process_tender_documents
         schedule.every(interval).seconds.do(process_tender_documents)
         logger.info("Агент Тендер подключён.")
