@@ -388,7 +388,7 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                             isinstance(exc, APIStatusError)
                             and getattr(exc, "status_code", 0) == 401
                         )
-                        
+
                         # 401 обрабатываем как фатальную ошибку конфигурации
                         if is_auth_error:
                             error_msg = str(exc)
@@ -404,10 +404,10 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                                     job_id,
                                 )
                             raise
-                        
+
                         if not is_rate_limit and not is_token_limit:
                             raise
-                        
+
                         last_exc = exc
                         reason = "429 RateLimit" if is_rate_limit else "413 TokenLimit"
                         logger.warning(
@@ -495,7 +495,10 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                     # Список документов участника (generate_document_list → {"documents": [...]})
                     if "documents" in obs and isinstance(obs.get("documents"), list):
                         artifacts["document_list"] = obs
-                        total = obs.get("summary", {}).get("total", len(obs["documents"]))
+                        summary = obs.get("summary") or {}
+                        if not isinstance(summary, dict):
+                            summary = {}
+                        total = summary.get("total", len(obs["documents"]))
                         decision = f"Найдено документов: {total}"
 
                 except Exception:

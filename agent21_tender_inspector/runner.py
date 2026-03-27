@@ -112,7 +112,10 @@ def _extract_text(file_data: bytes, filename: str) -> str:
     import mimetypes
 
     ext = pathlib.Path(filename).suffix.lstrip(".").lower()
-    b64 = base64.b64encode(file_data).decode()
+    # Кодируем в base64 только для типов, которым это нужно (DOCX-OCR и изображения).
+    # Для PDF, XLSX/XLS и DOC base64 всего файла не нужен — это экономит память и CPU.
+    _B64_EXTS = {"docx", "jpg", "jpeg", "png", "gif", "bmp", "tiff", "tif", "webp"}
+    b64 = base64.b64encode(file_data).decode() if ext in _B64_EXTS else ""
     # Используем mimetypes для корректного Content-Type; fallback — application/octet-stream
     mime = mimetypes.guess_type(filename)[0] or "application/octet-stream"
     att = {
@@ -146,14 +149,30 @@ def _save_json_result(result: dict, output_path: pathlib.Path) -> None:
 
 
 def _extract_document_list_from_steps(steps: list) -> dict:
-    """Извлекает результат generate_document_list из шагов агента."""
+    """Извлекает результат generate_document_list из шагов агента.
+
+    Ищет шаг по имени инструмента generate_document_list и возвращает его
+    payload, принимая как {"documents": [...]} так и {"error": ...}, чтобы не
+    терять диагностику при ошибках инструмента.
+    """
     for step in steps:
         try:
-            obs = json.loads(step[1]) if isinstance(step[1], str) else step[1]
-            if isinstance(obs, dict) and "documents" in obs:
+            if not isinstance(step, (list, tuple)) or len(step) < 2:
+                continue
+            tool_name, raw_obs = step[0], step[1]
+            if tool_name != "generate_document_list":
+                continue
+            obs = json.loads(raw_obs) if isinstance(raw_obs, str) else raw_obs
+            if not isinstance(obs, dict):
+                continue
+            if "documents" in obs or "error" in obs:
                 return obs
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning(
+                "Не удалось разобрать шаг generate_document_list: %r (%s)",
+                step,
+                exc,
+            )
     return {}
 
 
