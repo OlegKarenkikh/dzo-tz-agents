@@ -83,6 +83,8 @@ def _download_document(url: str) -> tuple[bytes, str]:
         filename = content_disp.split("filename=")[-1].strip().strip('"\'')
     if not filename:
         filename = pathlib.Path(urllib.parse.urlparse(url).path).name or "document"
+    # Санитизируем: берём только basename, чтобы предотвратить path traversal
+    filename = pathlib.PurePath(filename).name or "document"
     # Добавляем расширение из Content-Type если нет
     if not pathlib.Path(filename).suffix:
         if "pdf" in content_type:
@@ -172,11 +174,9 @@ def process_single_document(
     # ── Загрузка/чтение документа ─────────────────────────────────────────
     if _is_url(source):
         file_data, filename = _download_document(source)
-        # URL → сохраняем рядом с output_dir или во временной директории
-        if output_dir:
-            file_path = os.path.join(output_dir, filename)
-        else:
-            file_path = filename  # только имя — output будет в текущей директории
+        # URL → используем явную директорию: output_dir → TENDER_OUTPUT_DIR → cwd
+        eff_url_dir = output_dir or TENDER_OUTPUT_DIR or os.getcwd()
+        file_path = os.path.join(eff_url_dir, filename)
 
         suffix = pathlib.Path(filename).suffix.lower()
         if suffix not in SUPPORTED_EXTS:

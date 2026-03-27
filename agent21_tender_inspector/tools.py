@@ -114,13 +114,15 @@ def generate_document_list(query: str) -> str:
     """
     try:
         logger.debug("🔧 generate_document_list вызван (%d симв.)", len(query) if query else 0)
-        d = _parse_query(query, "generate_document_list")
 
-        if d is not None and not d:
+        # Если сам запрос пустой/пробелы — LLM не смогла выдать результат
+        if not query or not query.strip():
             return json.dumps(
                 {"error": "Пустой запрос инструмента (превышен лимит токенов LLM)"},
                 ensure_ascii=False,
             )
+
+        d = _parse_query(query, "generate_document_list")
 
         if d is None or not isinstance(d, dict):
             logger.warning(
