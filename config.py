@@ -37,8 +37,8 @@ if LLM_BACKEND not in _VALID_BACKENDS:
 if _auto_switched:
     import sys
     print(
-        f"[config] Auto-switched to LLM_BACKEND=github_models "
-        f"(OPENAI_API_KEY не задан, но доступен GITHUB_TOKEN)",
+        "[config] Auto-switched to LLM_BACKEND=github_models "
+        "(OPENAI_API_KEY не задан, но доступен GITHUB_TOKEN)",
         file=sys.stderr,
     )
 
