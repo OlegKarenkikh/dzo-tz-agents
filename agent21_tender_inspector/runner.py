@@ -11,6 +11,7 @@
   2. Обработка списка путей/URL — через аргумент или вызов process_tender_documents().
   3. Запуск через API — /api/v1/process/tender вызывает агент напрямую.
 """
+import hashlib
 import json
 import os
 import pathlib
@@ -51,7 +52,8 @@ _TOOLS_TOKEN_OVERHEAD = 3000
 
 # Кэш цепочки fallback-моделей — строится один раз за жизнь процесса,
 # чтобы не делать HTTP-запрос к /models при обработке каждого документа.
-_fallback_chain_cache: dict[tuple[str, str], list[str]] = {}
+# Ключ — (sha256[:16] API-ключа, MODEL_NAME); значение — (chain, model_ctx).
+_fallback_chain_cache: dict[tuple[str, str], tuple[list[str], int]] = {}
 
 
 # ---------------------------------------------------------------------------
@@ -312,12 +314,16 @@ def process_single_document(
         if LLM_BACKEND == "github_models":
             _api_key = OPENAI_API_KEY or GITHUB_TOKEN or ""
             _est = estimate_tokens(chat_input)
-            # Кэшируем цепочку fallback-моделей, чтобы не делать HTTP-запрос
-            # к /models при каждом вызове process_single_document.
-            _cache_key = (_api_key, MODEL_NAME or "")
+            # Кэшируем цепочку fallback-моделей и контекст MODEL_NAME, чтобы не
+            # делать HTTP-запросы к /models при каждом вызове process_single_document.
+            # API-ключ хэшируется (sha256[:16]) чтобы не хранить его целиком в ключах.
+            _key_hash = hashlib.sha256(_api_key.encode()).hexdigest()[:16]
+            _cache_key = (_key_hash, MODEL_NAME or "")
             if _cache_key not in _fallback_chain_cache:
-                _fallback_chain_cache[_cache_key] = build_github_fallback_chain(_api_key, MODEL_NAME)
-            _chain = _fallback_chain_cache[_cache_key]
+                _chain = build_github_fallback_chain(_api_key, MODEL_NAME)
+                _model_ctx = probe_max_input_tokens(_api_key, MODEL_NAME)
+                _fallback_chain_cache[_cache_key] = (_chain, _model_ctx)
+            _chain, _model_ctx = _fallback_chain_cache[_cache_key]
             _best_model = max(
                 _chain,
                 key=lambda m: probe_max_input_tokens(_api_key, m),
@@ -326,7 +332,6 @@ def process_single_document(
             # Порог считаем по минимальному контексту: best_model (для поблочного
             # анализа) и фактической runtime-модели агента (MODEL_NAME), чтобы
             # не превышать лимит при последующем вызове agent.invoke().
-            _model_ctx = probe_max_input_tokens(_api_key, MODEL_NAME)
             _threshold_ctx = min(_best_ctx, _model_ctx)
             _threshold = max(1, (_threshold_ctx - _TOOLS_TOKEN_OVERHEAD) // 2)
             if _est > _threshold:
