@@ -261,16 +261,25 @@ def process_single_document(
         file_data = pathlib.Path(source).read_bytes()
 
     # ── Дедупликация ───────────────────────────────────────────────────────
+    # Для URL используем полный URL как ключ; для локальных файлов — resolved path.
+    if _is_url(source):
+        dedup_subject = source
+    else:
+        try:
+            dedup_subject = str(pathlib.Path(source).resolve())
+        except Exception:
+            dedup_subject = filename
+
     if not FORCE_REPROCESS:
-        dup = db.find_duplicate_job("tender", "", filename)
+        dup = db.find_duplicate_job("tender", "", dedup_subject)
         if dup:
             logger.info(
                 "[dedup] Пропускаем дубль: '%s' (ранее обработано %s)",
-                filename, dup["created_at"][:10],
+                dedup_subject, dup["created_at"][:10],
             )
             return dup.get("result") or {}
 
-    job_id = db.create_job("tender", sender="", subject=filename)
+    job_id = db.create_job("tender", sender="", subject=dedup_subject)
 
     try:
         # ── Извлечение текста ─────────────────────────────────────────────
@@ -304,7 +313,7 @@ def process_single_document(
 
         # ── Извлечение результата ─────────────────────────────────────────
         steps = result.get("intermediate_steps", [])
-        log_agent_steps(job_id=job_id, agent="tender", steps=steps)
+        trace = log_agent_steps(job_id=job_id, agent="tender", steps=steps)
 
         document_list = _extract_document_list_from_steps(steps)
         if not document_list:
@@ -331,18 +340,32 @@ def process_single_document(
             output_path = _build_output_path(file_path, eff_output_dir)
             _save_json_result(document_list, output_path)
 
-        db.update_job(
-            job_id,
-            status="done",
-            decision=f"Найдено документов: {document_list.get('summary', {}).get('total', 0)}",
-            result=document_list,
-        )
-        EMAILS_PROCESSED.labels(agent="tender").inc()
-        logger.info(
-            "✅ Документ обработан: %s (всего документов: %d)",
-            filename,
-            document_list.get("summary", {}).get("total", 0),
-        )
+        # Если инструмент вернул ошибку — сохраняем как error, не инкрементируем счётчик
+        tool_error = document_list.get("error")
+        if tool_error:
+            db.update_job(
+                job_id,
+                status="error",
+                decision=f"Ошибка инструмента: {tool_error}",
+                result=document_list,
+                trace=trace,
+            )
+            EMAILS_ERRORS.labels(agent="tender", error_type="tool_error").inc()
+            logger.warning("⚠️ generate_document_list вернул ошибку: %s", tool_error)
+        else:
+            db.update_job(
+                job_id,
+                status="done",
+                decision=f"Найдено документов: {document_list.get('summary', {}).get('total', 0)}",
+                result=document_list,
+                trace=trace,
+            )
+            EMAILS_PROCESSED.labels(agent="tender").inc()
+            logger.info(
+                "✅ Документ обработан: %s (всего документов: %d)",
+                filename,
+                document_list.get("summary", {}).get("total", 0),
+            )
         return document_list
 
     except Exception as e:

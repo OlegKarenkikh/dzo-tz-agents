@@ -500,6 +500,10 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                             summary = {}
                         total = summary.get("total", len(obs["documents"]))
                         decision = f"Найдено документов: {total}"
+                    # Ошибка инструмента (generate_document_list → {"error": ...})
+                    elif "error" in obs and not artifacts.get("document_list"):
+                        artifacts["document_list_error"] = obs
+                        decision = f"Ошибка инструмента: {obs['error']}"
 
                 except Exception:
                     pass
