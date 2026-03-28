@@ -142,14 +142,27 @@ def _extract_text(file_data: bytes, filename: str) -> str:
 
 
 def _build_output_path(source_path: str, output_dir: str) -> pathlib.Path:
-    """Формирует путь к выходному JSON-файлу."""
+    """Формирует путь к выходному JSON-файлу.
+
+    Имя файла: stem[_ext]_<8-символьный SHA-256 от source_path>.json
+    Добавление расширения и хеша предотвращает коллизии, когда несколько
+    источников (или URL) имеют одинаковый basename (например, doc.pdf и doc.docx
+    или два URL с именем document.pdf).
+    """
     source = pathlib.Path(source_path)
+    ext = source.suffix.lstrip(".")
+    hash_suffix = hashlib.sha256(source_path.encode("utf-8")).hexdigest()[:8]
+    parts: list[str] = [source.stem]
+    if ext:
+        parts.append(ext)
+    parts.append(hash_suffix)
+    out_filename = "_".join(parts) + ".json"
     if output_dir:
         out = pathlib.Path(output_dir)
         out.mkdir(parents=True, exist_ok=True)
-        return out / f"{source.stem}.json"
+        return out / out_filename
     # По умолчанию — рядом с исходным файлом
-    return source.parent / f"{source.stem}.json"
+    return source.parent / out_filename
 
 
 def _save_json_result(result: dict, output_path: pathlib.Path) -> None:
