@@ -148,6 +148,59 @@ class TestLogAgentSteps:
             log_agent_steps("job-8", "dzo", steps)
         assert any("job-8" in r.message for r in caplog.records)
 
+    # ------------------------------------------------------------------
+    # Формат шагов AgentRunner: action — строка (имя инструмента)
+    # ------------------------------------------------------------------
+
+    def test_string_action_tool_name_used_directly(self):
+        """Когда action — строка, она должна стать tool_name без изменений."""
+        from shared.tracing import log_agent_steps
+        steps = [("generate_document_list", {"documents": [], "summary": {"total": 0}})]
+        trace = log_agent_steps("job-s1", "tender", steps)
+        assert len(trace) == 1
+        assert trace[0]["tool"] == "generate_document_list"
+
+    def test_string_action_tool_input_is_empty_dict(self):
+        """Для строкового action tool_input должен быть пустым словарём."""
+        from shared.tracing import log_agent_steps
+        steps = [("some_tool", json.dumps({"k": "v"}))]
+        trace = log_agent_steps("job-s2", "tender", steps)
+        assert trace[0]["tool_input"] == {}
+
+    def test_string_action_output_keys_populated(self):
+        """output_keys и decision корректно извлекаются при строковом action."""
+        from shared.tracing import log_agent_steps
+        obs = {"documents": [{"id": 1}], "summary": {"total": 1}, "decision": "documents_found"}
+        steps = [("generate_document_list", json.dumps(obs))]
+        trace = log_agent_steps("job-s3", "tender", steps)
+        assert "documents" in trace[0]["output_keys"]
+        assert "summary" in trace[0]["output_keys"]
+        assert trace[0]["decision"] == "documents_found"
+
+    def test_string_action_with_dict_observation(self):
+        """Строковый action с уже-словарным observation не должен вызывать ошибок."""
+        from shared.tracing import log_agent_steps
+        obs = {"error": "tool failed", "code": 500}
+        steps = [("generate_document_list", obs)]
+        trace = log_agent_steps("job-s4", "tender", steps)
+        assert trace[0]["tool"] == "generate_document_list"
+        assert "error" in trace[0]["output_keys"]
+
+    def test_string_action_result_json_serializable(self):
+        """Результат при строковом action должен быть JSON-сериализуемым."""
+        from shared.tracing import log_agent_steps
+        steps = [("my_tool", {"key": "value", "num": 42})]
+        trace = log_agent_steps("job-s5", "tender", steps)
+        json.dumps(trace)  # не должно бросать исключение
+
+    def test_string_action_invalid_json_observation(self):
+        """Невалидный JSON observation при строковом action обрабатывается как raw."""
+        from shared.tracing import log_agent_steps
+        steps = [("some_tool", "not valid json {{")]
+        trace = log_agent_steps("job-s6", "tender", steps)
+        assert trace[0]["output_keys"] == ["raw"]
+        assert trace[0]["decision"] is None
+
 
 # ---------------------------------------------------------------------------
 # _truncate
