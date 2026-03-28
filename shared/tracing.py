@@ -68,14 +68,19 @@ def log_agent_steps(job_id: str, agent: str, steps: list) -> list[dict]:
 
         # Приводим к JSON-сериализуемым типам: str/dict/list/int/float/bool/None.
         # getattr на MagicMock возвращает MagicMock — без этого json.dumps упадёт.
-        raw_tool = getattr(action, "tool", None)
-        tool_name = raw_tool if isinstance(raw_tool, str) else str(raw_tool)
-
-        raw_input = getattr(action, "tool_input", {})
-        if isinstance(raw_input, (dict, str)):
-            tool_input: dict | str = _truncate(raw_input)
+        # Если action — строка (формат (tool_name, obs) из AgentRunner), используем её напрямую.
+        if isinstance(action, str):
+            tool_name = action
+            tool_input: dict | str = {}
         else:
-            tool_input = str(raw_input)[:300]
+            raw_tool = getattr(action, "tool", None)
+            tool_name = raw_tool if isinstance(raw_tool, str) else str(raw_tool)
+
+            raw_input = getattr(action, "tool_input", {})
+            if isinstance(raw_input, (dict, str)):
+                tool_input = _truncate(raw_input)
+            else:
+                tool_input = str(raw_input)[:300]
 
         step_record: dict = {
             "step": i,

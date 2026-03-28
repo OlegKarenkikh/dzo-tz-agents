@@ -492,18 +492,25 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                         artifacts["corrected_tz_html"] = obs["html"]
 
                     # ── Тендер-специфичные ──────────────────────────────────────
-                    # Список документов участника (generate_document_list → {"documents": [...]})
-                    if "documents" in obs and isinstance(obs.get("documents"), list):
-                        artifacts["document_list"] = obs
-                        summary = obs.get("summary") or {}
-                        if not isinstance(summary, dict):
-                            summary = {}
-                        total = summary.get("total", len(obs["documents"]))
-                        decision = f"Найдено документов: {total}"
-                    # Ошибка инструмента (generate_document_list → {"error": ...})
-                    elif "error" in obs and not artifacts.get("document_list"):
-                        artifacts["document_list_error"] = obs
-                        decision = f"Ошибка инструмента: {obs['error']}"
+                    # Обрабатываем только ответы инструмента generate_document_list агента tender
+                    if (
+                        agent_type == "tender"
+                        and isinstance(step, (list, tuple))
+                        and len(step) >= 1
+                        and step[0] == "generate_document_list"
+                    ):
+                        # Список документов участника → {"documents": [...]}
+                        if "documents" in obs and isinstance(obs.get("documents"), list):
+                            summary = obs.get("summary") or {}
+                            if not isinstance(summary, dict):
+                                summary = {}
+                            total = summary.get("total", len(obs["documents"]))
+                            artifacts["document_list"] = {**obs, "total": total}
+                            decision = "documents_found"
+                        # Ошибка инструмента → {"error": ...}
+                        elif "error" in obs and not artifacts.get("document_list"):
+                            artifacts["document_list_error"] = obs
+                            decision = "tool_error"
 
                 except Exception:
                     pass
