@@ -42,7 +42,7 @@ TENDER_DOCS_DIR = os.getenv("TENDER_DOCS_DIR", "tender_docs")
 TENDER_OUTPUT_DIR = os.getenv("TENDER_OUTPUT_DIR", "")
 
 # Поддерживаемые расширения документов
-SUPPORTED_EXTS = {".pdf", ".docx", ".doc", ".xlsx", ".xls"}
+SUPPORTED_EXTS = {".pdf", ".docx", ".xlsx", ".xls"}
 
 FORCE_REPROCESS = os.getenv("FORCE_REPROCESS", "false").lower() == "true"
 
@@ -238,6 +238,16 @@ def process_single_document(
 
     # ── Загрузка/чтение документа ─────────────────────────────────────────
     if _is_url(source):
+        # Для URL сначала проверяем дедупликацию, чтобы не скачивать документ зря.
+        if not FORCE_REPROCESS:
+            dup = db.find_duplicate_job("tender", "", source)
+            if dup:
+                logger.info(
+                    "[dedup] Пропускаем дубль: '%s' (ранее обработано %s)",
+                    source, dup["created_at"][:10],
+                )
+                return dup.get("result") or {}
+
         file_data, filename = _download_document(source)
         # URL → используем явную директорию: output_dir → TENDER_OUTPUT_DIR → cwd
         eff_url_dir = output_dir or TENDER_OUTPUT_DIR or os.getcwd()
@@ -299,8 +309,8 @@ def process_single_document(
             }
         file_data = pathlib.Path(source).read_bytes()
 
-    # ── Дедупликация ───────────────────────────────────────────────────────
-    # Для URL используем полный URL как ключ; для локальных файлов — resolved path.
+    # ── Дедупликация локальных файлов ──────────────────────────────────────
+    # URL-источники уже проверены до скачивания; здесь обрабатываем только локальные.
     if _is_url(source):
         dedup_subject = source
     else:
@@ -309,14 +319,14 @@ def process_single_document(
         except Exception:
             dedup_subject = filename
 
-    if not FORCE_REPROCESS:
-        dup = db.find_duplicate_job("tender", "", dedup_subject)
-        if dup:
-            logger.info(
-                "[dedup] Пропускаем дубль: '%s' (ранее обработано %s)",
-                dedup_subject, dup["created_at"][:10],
-            )
-            return dup.get("result") or {}
+        if not FORCE_REPROCESS:
+            dup = db.find_duplicate_job("tender", "", dedup_subject)
+            if dup:
+                logger.info(
+                    "[dedup] Пропускаем дубль: '%s' (ранее обработано %s)",
+                    dedup_subject, dup["created_at"][:10],
+                )
+                return dup.get("result") or {}
 
     job_id = db.create_job("tender", sender="", subject=dedup_subject)
 
@@ -339,6 +349,10 @@ def process_single_document(
         # ── Поблочный анализ для больших документов ───────────────────────
         if LLM_BACKEND == "github_models":
             _api_key = OPENAI_API_KEY or GITHUB_TOKEN or ""
+            if not _api_key:
+                raise ValueError(
+                    "GitHub Models backend requires OPENAI_API_KEY or GITHUB_TOKEN to be set"
+                )
             _est = estimate_tokens(chat_input)
             # Кэшируем цепочку fallback-моделей и контекст MODEL_NAME, чтобы не
             # делать HTTP-запросы к /models при каждом вызове process_single_document.
