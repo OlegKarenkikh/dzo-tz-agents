@@ -141,17 +141,30 @@ def _extract_text(file_data: bytes, filename: str) -> str:
     return extract_text_from_attachment(att)
 
 
-def _build_output_path(source_path: str, output_dir: str) -> pathlib.Path:
+def _build_output_path(
+    source_path: str,
+    output_dir: str,
+    *,
+    hash_source: str | None = None,
+) -> pathlib.Path:
     """Формирует путь к выходному JSON-файлу.
 
-    Имя файла: stem[_ext]_<8-символьный SHA-256 от source_path>.json
+    Имя файла: stem[_ext]_<8-символьный SHA-256>.json
     Добавление расширения и хеша предотвращает коллизии, когда несколько
     источников (или URL) имеют одинаковый basename (например, doc.pdf и doc.docx
     или два URL с именем document.pdf).
+
+    Args:
+        source_path: Путь к локальному файлу (используется для stem/суффикса/директории).
+        output_dir:  Директория для сохранения результата.
+        hash_source: Если передан — используется для SHA-256 вместо source_path.
+                     Передавайте оригинальный URL, чтобы разные URL с одинаковым
+                     basename не давали одинаковый хеш.
     """
     source = pathlib.Path(source_path)
     ext = source.suffix.lstrip(".")
-    hash_suffix = hashlib.sha256(source_path.encode("utf-8")).hexdigest()[:8]
+    hash_input = hash_source if hash_source is not None else source_path
+    hash_suffix = hashlib.sha256(hash_input.encode("utf-8")).hexdigest()[:8]
     parts = [source.stem]
     if ext:
         parts.append(ext)
@@ -408,7 +421,14 @@ def process_single_document(
         # ── Сохранение результата ─────────────────────────────────────────
         if save_to_file:
             eff_output_dir = output_dir or TENDER_OUTPUT_DIR
-            output_path = _build_output_path(file_path, eff_output_dir)
+            # Для URL-источников передаём оригинальный URL как hash_source, чтобы
+            # разные URL с одинаковым basename (например, doc.pdf) давали разные
+            # выходные файлы и не перезаписывали друг друга.
+            output_path = _build_output_path(
+                file_path,
+                eff_output_dir,
+                hash_source=source if _is_url(source) else None,
+            )
             _save_json_result(document_list, output_path)
 
         # Если инструмент вернул ошибку — сохраняем как error, не инкрементируем счётчик
