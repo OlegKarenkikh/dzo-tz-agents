@@ -118,7 +118,7 @@ AGENT_REGISTRY: dict[str, dict] = {
             "Извлекает полный список документов, требуемых от участника закупки, "
             "с указанием раздела документации и требований к содержанию"
         ),
-        "decisions": ["Найдено документов: N"],
+        "decisions": ["documents_found", "tool_error"],
     },
 }
 
@@ -496,7 +496,7 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                     if (
                         agent_type == "tender"
                         and isinstance(step, (list, tuple))
-                        and len(step) >= 1
+                        and len(step) >= 2
                         and step[0] == "generate_document_list"
                     ):
                         # Список документов участника → {"documents": [...]}
