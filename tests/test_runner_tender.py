@@ -224,8 +224,8 @@ class TestProcessSingleDocumentSizeLimit:
             with patch("pathlib.Path.read_bytes", return_value=b"x" * 100):
                 result = process_single_document(str(ok_file), save_to_file=False)
 
-        # Не должен вернуть ошибку размера
-        assert result.get("status") != "error" or "50" not in result.get("error", "")
+        # Не должен вернуть ошибку (граничное значение 50 МБ должно обрабатываться)
+        assert result.get("status") != "error"
 
 
 # ---------------------------------------------------------------------------
@@ -257,7 +257,7 @@ class TestProcessSingleDocumentUrlUnsupportedExt:
 
 class TestProcessSingleDocumentDedup:
     def test_url_dedup_returns_cached_result(self, monkeypatch):
-        """Если тот же URL уже обработан, возвращается кэш из БД без вызова агента."""
+        """Если тот же URL уже обработан, возвращается кэш из БД без скачивания и без вызова агента."""
         from agent21_tender_inspector.runner import process_single_document
         import agent21_tender_inspector.runner as runner_mod
         import shared.database as db_mod
@@ -269,8 +269,9 @@ class TestProcessSingleDocumentDedup:
             lambda agent, sender, subject: {"result": cached, "created_at": "2024-01-01"},
         )
         monkeypatch.setattr(runner_mod, "FORCE_REPROCESS", False)
-        # В URL-ветке скачивание происходит ДО dedup-проверки, поэтому мокируем его:
-        monkeypatch.setattr(runner_mod, "_download_document", lambda url: (b"%PDF", "doc.pdf"))
+        # Дедупликация URL происходит ДО скачивания — _download_document вызываться не должна
+        mock_download = MagicMock(side_effect=AssertionError("_download_document must not be called on dedup hit"))
+        monkeypatch.setattr(runner_mod, "_download_document", mock_download)
         # create_tender_agent не должен вызываться при хите кэша
         mock_create_agent = MagicMock()
         monkeypatch.setattr(runner_mod, "create_tender_agent", mock_create_agent)
@@ -278,6 +279,7 @@ class TestProcessSingleDocumentDedup:
         result = process_single_document("https://example.com/doc.pdf", save_to_file=False)
         assert result == cached
         mock_create_agent.assert_not_called()
+        mock_download.assert_not_called()
 
     def test_local_dedup_uses_resolved_path(self, tmp_path, monkeypatch):
         """Для локального файла ключ дедупликации — resolved-путь."""
