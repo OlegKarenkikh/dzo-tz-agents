@@ -10,6 +10,9 @@ import json
 import logging
 import sys
 
+from agent1_dzo_inspector.agent import create_dzo_agent
+from agent2_tz_inspector.agent import create_tz_agent
+
 # Настройка логирования на уровень DEBUG
 logging.basicConfig(
     level=logging.DEBUG,
@@ -17,14 +20,10 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 
-# Импорты
-from agent1_dzo_inspector.agent import create_dzo_agent
-from agent2_tz_inspector.agent import create_tz_agent
-
 
 def test_agent(agent_type: str, input_text: str) -> None:
     """Тестировать агент с полным логированием.
-    
+
     Args:
         agent_type: "dzo" или "tz"
         input_text: текст для обработки
