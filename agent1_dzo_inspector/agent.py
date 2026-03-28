@@ -1,6 +1,5 @@
 import json
 import os
-import logging
 from typing import Any
 
 from langchain.agents import create_agent
