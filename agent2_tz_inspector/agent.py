@@ -92,19 +92,22 @@ class AgentRunner:
     def __init__(self, graph_agent: Any):
         self._agent = graph_agent
 
-    def invoke(self, payload: dict[str, Any]) -> dict[str, Any]:
+    def invoke(self, payload: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
         chat_input = payload.get("input", "")
         logger.debug("Запуск агента ТЗ с input: %s", chat_input[:100] if chat_input else "(пусто)")
-        
-        result = self._agent.invoke({"messages": [{"role": "user", "content": chat_input}]})
-        
+
+        result = self._agent.invoke(
+            {"messages": [{"role": "user", "content": chat_input}]},
+            **kwargs,
+        )
+
         # Логируем весь результат для отладки
         logger.debug("Результат агента (тип: %s): %s", type(result).__name__, result)
 
         output = ""
         messages: list = []
         intermediate_steps: list = []
-        
+
         if isinstance(result, dict):
             messages = result.get("messages") or []
             if messages:
@@ -131,7 +134,7 @@ class AgentRunner:
         )
         for name, obs in intermediate_steps:
             logger.info("  🔧 %s → %s", name, str(obs)[:200])
-        
+
         return {"output": output, "intermediate_steps": intermediate_steps}
 
 
@@ -146,7 +149,7 @@ def create_tz_agent(model_name: str | None = None) -> AgentRunner:
     # Debug режим: по умолчанию включен, если явно не отключен
     debug_mode = os.getenv("AGENT_DEBUG", "1") not in {"0", "false", "False"}
     logger.info("Создание агента ТЗ (debug=%s, модель=%s)", debug_mode, llm.model_name)
-    
+
     graph_agent = create_agent(
         model=llm,
         tools=tools,

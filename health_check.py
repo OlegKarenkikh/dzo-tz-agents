@@ -1,15 +1,14 @@
 #!/usr/bin/env python
 """Быстрая проверка что все компоненты работают."""
 import sys
-import logging
 
 # Проверка 1: Импорты
 print("✓ Проверка импортов...")
 try:
     from agent1_dzo_inspector.agent import create_dzo_agent
     from agent2_tz_inspector.agent import create_tz_agent
+    from config import GITHUB_TOKEN, LLM_BACKEND, OPENAI_API_KEY
     from shared.logger import setup_logger
-    from config import LLM_BACKEND, GITHUB_TOKEN, OPENAI_API_KEY
     print("  ✅ Все импорты успешны")
 except ImportError as e:
     print(f"  ❌ Ошибка импорта: {e}")
