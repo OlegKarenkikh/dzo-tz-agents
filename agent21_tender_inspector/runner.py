@@ -24,7 +24,10 @@ load_dotenv()
 import shared.database as db  # noqa: E402
 from agent21_tender_inspector.agent import create_tender_agent  # noqa: E402
 from api.metrics import EMAILS_ERRORS, EMAILS_PROCESSED, JobTimer, POLL_CYCLES  # noqa: E402
+from config import GITHUB_TOKEN, LLM_BACKEND, MODEL_NAME, OPENAI_API_KEY  # noqa: E402
+from shared.chunked_analysis import analyze_document_in_chunks  # noqa: E402
 from shared.file_extractor import extract_text_from_attachment  # noqa: E402
+from shared.llm import build_github_fallback_chain, estimate_tokens, probe_max_input_tokens  # noqa: E402
 from shared.logger import setup_logger  # noqa: E402
 from shared.telegram_notify import notify  # noqa: E402
 from shared.tracing import get_langfuse_callback, log_agent_steps  # noqa: E402
@@ -41,6 +44,10 @@ TENDER_OUTPUT_DIR = os.getenv("TENDER_OUTPUT_DIR", "")
 SUPPORTED_EXTS = {".pdf", ".docx", ".doc", ".xlsx", ".xls"}
 
 FORCE_REPROCESS = os.getenv("FORCE_REPROCESS", "false").lower() == "true"
+
+# Резерв токенов: системный промпт агента + сериализация инструментов +
+# ReAct scratchpad ≈ 3000 токенов типично.
+_TOOLS_TOKEN_OVERHEAD = 3000
 
 
 # ---------------------------------------------------------------------------
@@ -298,21 +305,16 @@ def process_single_document(
         )
 
         # ── Поблочный анализ для больших документов ───────────────────────
-        from config import LLM_BACKEND, MODEL_NAME, OPENAI_API_KEY, GITHUB_TOKEN
-        from shared.llm import build_github_fallback_chain, probe_max_input_tokens, estimate_tokens
-
         if LLM_BACKEND == "github_models":
             _api_key = OPENAI_API_KEY or GITHUB_TOKEN or ""
-            _TOOLS_OVERHEAD = 3000
             _est = estimate_tokens(chat_input)
             _best_model = max(
                 build_github_fallback_chain(_api_key, MODEL_NAME),
                 key=lambda m: probe_max_input_tokens(_api_key, m),
             )
             _best_ctx = probe_max_input_tokens(_api_key, _best_model)
-            _threshold = max(1, (_best_ctx - _TOOLS_OVERHEAD) // 2)
+            _threshold = max(1, (_best_ctx - _TOOLS_TOKEN_OVERHEAD) // 2)
             if _est > _threshold:
-                from shared.chunked_analysis import analyze_document_in_chunks
                 logger.info(
                     "📦 %s: ~%d токенов > порог %d — поблочный анализ (model=%s, ctx=%d)",
                     filename, _est, _threshold, _best_model, _best_ctx,
