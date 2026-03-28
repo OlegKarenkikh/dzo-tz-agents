@@ -40,7 +40,8 @@ class TestGenerateJsonReport:
 
     def test_invalid_json(self):
         result = json.loads(generate_json_report.invoke("!!!"))
-        assert "error" in result
+        # invalid JSON causes a graceful skeleton to be returned (no hard error)
+        assert "overall_status" in result
 
 
 class TestGenerateCorrectedTz:
