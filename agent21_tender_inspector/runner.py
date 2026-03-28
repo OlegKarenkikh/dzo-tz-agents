@@ -49,6 +49,10 @@ FORCE_REPROCESS = os.getenv("FORCE_REPROCESS", "false").lower() == "true"
 # ReAct scratchpad ≈ 3000 токенов типично.
 _TOOLS_TOKEN_OVERHEAD = 3000
 
+# Кэш цепочки fallback-моделей — строится один раз за жизнь процесса,
+# чтобы не делать HTTP-запрос к /models при обработке каждого документа.
+_fallback_chain_cache: dict[tuple[str, str], list[str]] = {}
+
 
 # ---------------------------------------------------------------------------
 # Вспомогательные функции
@@ -308,16 +312,30 @@ def process_single_document(
         if LLM_BACKEND == "github_models":
             _api_key = OPENAI_API_KEY or GITHUB_TOKEN or ""
             _est = estimate_tokens(chat_input)
+            # Кэшируем цепочку fallback-моделей, чтобы не делать HTTP-запрос
+            # к /models при каждом вызове process_single_document.
+            _cache_key = (_api_key, MODEL_NAME or "")
+            if _cache_key not in _fallback_chain_cache:
+                _fallback_chain_cache[_cache_key] = build_github_fallback_chain(_api_key, MODEL_NAME)
+            _chain = _fallback_chain_cache[_cache_key]
             _best_model = max(
-                build_github_fallback_chain(_api_key, MODEL_NAME),
+                _chain,
                 key=lambda m: probe_max_input_tokens(_api_key, m),
             )
             _best_ctx = probe_max_input_tokens(_api_key, _best_model)
-            _threshold = max(1, (_best_ctx - _TOOLS_TOKEN_OVERHEAD) // 2)
+            # Порог считаем по минимальному контексту: best_model (для поблочного
+            # анализа) и фактической runtime-модели агента (MODEL_NAME), чтобы
+            # не превышать лимит при последующем вызове agent.invoke().
+            _model_ctx = probe_max_input_tokens(_api_key, MODEL_NAME)
+            _threshold_ctx = min(_best_ctx, _model_ctx)
+            _threshold = max(1, (_threshold_ctx - _TOOLS_TOKEN_OVERHEAD) // 2)
             if _est > _threshold:
                 logger.info(
-                    "📦 %s: ~%d токенов > порог %d — поблочный анализ (model=%s, ctx=%d)",
-                    filename, _est, _threshold, _best_model, _best_ctx,
+                    (
+                        "📦 %s: ~%d токенов > порог %d — поблочный анализ "
+                        "(chunk_model=%s, chunk_ctx=%d, agent_model=%s, agent_ctx=%d)"
+                    ),
+                    filename, _est, _threshold, _best_model, _best_ctx, MODEL_NAME, _model_ctx,
                 )
                 try:
                     _summary = analyze_document_in_chunks(chat_input, _api_key, _best_model, "tender")
