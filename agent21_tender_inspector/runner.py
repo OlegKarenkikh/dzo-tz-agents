@@ -152,7 +152,7 @@ def _build_output_path(source_path: str, output_dir: str) -> pathlib.Path:
     source = pathlib.Path(source_path)
     ext = source.suffix.lstrip(".")
     hash_suffix = hashlib.sha256(source_path.encode("utf-8")).hexdigest()[:8]
-    parts: list[str] = [source.stem]
+    parts = [source.stem]
     if ext:
         parts.append(ext)
     parts.append(hash_suffix)
