@@ -1,7 +1,7 @@
 import json
 import logging
 import re
-from datetime import datetime
+from datetime import UTC, datetime
 
 from langchain.tools import tool
 
@@ -153,7 +153,7 @@ def generate_document_list(query: str) -> str:
         conditional_count = len(documents) - mandatory_count
 
         result = {
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "procurement_subject": str(d.get("procurement_subject", "Не определён")).strip(),
             "documents": documents,
             "summary": {

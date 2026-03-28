@@ -297,6 +297,39 @@ def process_single_document(
             f"-- СОДЕРЖИМОЕ ДОКУМЕНТА --\n{text}"
         )
 
+        # ── Поблочный анализ для больших документов ───────────────────────
+        from config import LLM_BACKEND, MODEL_NAME, OPENAI_API_KEY, GITHUB_TOKEN
+        from shared.llm import build_github_fallback_chain, probe_max_input_tokens, estimate_tokens
+
+        if LLM_BACKEND == "github_models":
+            _api_key = OPENAI_API_KEY or GITHUB_TOKEN or ""
+            _TOOLS_OVERHEAD = 3000
+            _est = estimate_tokens(chat_input)
+            _best_model = max(
+                build_github_fallback_chain(_api_key, MODEL_NAME),
+                key=lambda m: probe_max_input_tokens(_api_key, m),
+            )
+            _best_ctx = probe_max_input_tokens(_api_key, _best_model)
+            _threshold = max(1, (_best_ctx - _TOOLS_OVERHEAD) // 2)
+            if _est > _threshold:
+                from shared.chunked_analysis import analyze_document_in_chunks
+                logger.info(
+                    "📦 %s: ~%d токенов > порог %d — поблочный анализ (model=%s, ctx=%d)",
+                    filename, _est, _threshold, _best_model, _best_ctx,
+                )
+                try:
+                    _summary = analyze_document_in_chunks(chat_input, _api_key, _best_model, "tender")
+                    if _summary:
+                        logger.info(
+                            "📦 Поблочный анализ: %d → %d символов резюме (~%d токенов)",
+                            len(chat_input), len(_summary), estimate_tokens(_summary),
+                        )
+                        chat_input = _summary
+                    else:
+                        logger.warning("⚠️ Поблочный анализ не дал результата — используем исходный текст")
+                except Exception as _chunk_err:
+                    logger.warning("⚠️ Поблочный анализ упал: %s — используем исходный текст", _chunk_err)
+
         # ── Запуск агента ─────────────────────────────────────────────────
         agent = create_tender_agent()
         lf_cb = get_langfuse_callback()
@@ -322,7 +355,7 @@ def process_single_document(
                 "⚠️ Агент не вызвал generate_document_list, используем текстовый output"
             )
             document_list = {
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
                 "procurement_subject": "Не определён (агент не вызвал инструмент)",
                 "documents": [],
                 "summary": {"total": 0, "mandatory": 0, "conditional": 0},
@@ -332,7 +365,7 @@ def process_single_document(
         # Добавляем метаданные источника
         document_list["source_document"] = filename
         if "timestamp" not in document_list:
-            document_list["timestamp"] = datetime.now().isoformat()
+            document_list["timestamp"] = datetime.now(UTC).isoformat()
 
         # ── Сохранение результата ─────────────────────────────────────────
         if save_to_file:
