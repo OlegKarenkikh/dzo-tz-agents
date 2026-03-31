@@ -236,15 +236,17 @@ class TestFetchLocalModels:
                 {"id": "llama3.1", "object": "model"},
             ]
         }
-        with patch.object(llm_module.httpx, "get", return_value=mock_resp):
-            models = llm_module.fetch_local_models("http://localhost:11434/v1")
+        with patch.object(llm_module, "_LOCAL_MODELS_CACHE", {}):
+            with patch.object(llm_module.httpx, "get", return_value=mock_resp):
+                models = llm_module.fetch_local_models("http://localhost:11434/v1")
         assert models == ["qwen2.5", "llama3.1"]
 
     def test_connection_error_returns_empty(self):
         import shared.llm as llm_module
 
-        with patch.object(llm_module.httpx, "get", side_effect=Exception("Connection refused")):
-            models = llm_module.fetch_local_models("http://localhost:11434/v1")
+        with patch.object(llm_module, "_LOCAL_MODELS_CACHE", {}):
+            with patch.object(llm_module.httpx, "get", side_effect=Exception("Connection refused")):
+                models = llm_module.fetch_local_models("http://localhost:11434/v1")
         assert models == []
 
 

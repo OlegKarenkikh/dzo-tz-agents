@@ -287,6 +287,11 @@ def resolve_local_base_url() -> str:
 _resolve_local_base_url = resolve_local_base_url
 
 
+def _model_ids_from_raw(raw: list) -> list[str]:
+    """Extract model ID strings from a raw /v1/models payload (list of dicts)."""
+    return [m.get("id") or m.get("name", "") for m in raw if m.get("id") or m.get("name")]
+
+
 def fetch_local_models(base_url: str | None = None) -> list[str]:
     """Fetch available model names from a local OpenAI-compatible /v1/models endpoint.
 
@@ -298,6 +303,10 @@ def fetch_local_models(base_url: str | None = None) -> list[str]:
         List of model IDs. Empty list on failure.
     """
     url = (base_url or resolve_local_base_url()).rstrip("/")
+    # Reuse cached raw payload so probe_local_max_context() benefits from the
+    # same single HTTP round-trip when FALLBACK_MODELS is empty.
+    if url in _LOCAL_MODELS_CACHE:
+        return _model_ids_from_raw(_LOCAL_MODELS_CACHE[url])
     headers: dict[str, str] = {}
     if OPENAI_API_KEY and OPENAI_API_KEY != "not-needed":
         headers["Authorization"] = f"Bearer {OPENAI_API_KEY}"
@@ -310,11 +319,8 @@ def fetch_local_models(base_url: str | None = None) -> list[str]:
         resp.raise_for_status()
         data = resp.json()
         models = data if isinstance(data, list) else data.get("data", data.get("models", []))
-        return [
-            m.get("id") or m.get("name", "")
-            for m in models
-            if m.get("id") or m.get("name")
-        ]
+        _LOCAL_MODELS_CACHE[url] = models
+        return _model_ids_from_raw(models)
     except Exception as exc:
         logger.warning(
             "Не удалось получить список локальных моделей от %s: %s",
