@@ -14,7 +14,7 @@ import logging
 import httpx
 
 from config import LLM_BACKEND, OPENAI_API_BASE
-from shared.llm import _GITHUB_MODELS_BASE_URL, _LOCAL_BACKENDS, _resolve_local_base_url
+from shared.llm import _GITHUB_MODELS_BASE_URL, LOCAL_BACKENDS, resolve_local_base_url
 
 logger = logging.getLogger("chunked_analysis")
 
@@ -169,8 +169,9 @@ def _resolve_completions_url() -> str:
     """Return the chat/completions URL for the current backend."""
     if LLM_BACKEND == "github_models":
         return f"{_GITHUB_MODELS_BASE_URL}/chat/completions"
-    if LLM_BACKEND in _LOCAL_BACKENDS:
-        return f"{_resolve_local_base_url()}/chat/completions"
+    if LLM_BACKEND in LOCAL_BACKENDS:
+        base = resolve_local_base_url().rstrip("/")
+        return f"{base}/chat/completions"
     if OPENAI_API_BASE:
         base = OPENAI_API_BASE.rstrip("/")
         return f"{base}/chat/completions"
