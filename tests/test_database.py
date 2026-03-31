@@ -147,5 +147,13 @@ class TestInMemoryStorage:
         assert db.count_history(date_from="2024-01-01", date_to="2024-12-31") == 2
         assert db.count_history(date_from="2025-01-01") == 0
 
+    def test_date_filter_same_day_datetime_vs_date(self, no_postgres):
+        """Records with ISO datetime created_at should match plain date filters for the same day."""
+        j1 = db.create_job("dzo")
+        db._memory_store[j1]["created_at"] = "2024-01-01T12:30:00"
+        # date_to="2024-01-01" must include records from that day
+        assert db.count_history(date_to="2024-01-01") == 1
+        assert db.get_history(date_to="2024-01-01") == [db._memory_store[j1]]
+
     def test_close_db_no_error_when_no_pool(self, no_postgres):
         db.close_db()  # should not raise
