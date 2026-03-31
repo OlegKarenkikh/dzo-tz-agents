@@ -485,13 +485,14 @@ def build_llm(temperature: float = 0.2, model_name_override: str | None = None) 
         max_retries = 0
         max_tokens_out = 8192
     else:
-        if LLM_BACKEND == "openai" and not OPENAI_API_KEY:
+        effective_key = _effective_openai_key()
+        if LLM_BACKEND == "openai" and not effective_key:
             raise ValueError(
                 "Для LLM_BACKEND='openai' необходимо задать OPENAI_API_KEY. "
                 "Для CodeSpaces рекомендуется использовать LLM_BACKEND=github_models "
                 "(автоматически использует GITHUB_TOKEN)."
             )
-        api_key = OPENAI_API_KEY
+        api_key = effective_key
         base_url = OPENAI_API_BASE or None
         has_fallback = len(FALLBACK_MODELS) > 0
         max_retries = 0 if has_fallback else 2
