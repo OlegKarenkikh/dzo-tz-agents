@@ -104,3 +104,11 @@ POLL_INTERVAL_SEC = _safe_int("POLL_INTERVAL_SEC", 300)
 AGENT_JOB_TIMEOUT_SEC    = _safe_int("AGENT_JOB_TIMEOUT_SEC", 300)
 AGENT_MAX_RETRIES        = _safe_int("AGENT_MAX_RETRIES", 1)
 AGENT_RATE_LIMIT_BACKOFF = _safe_float("AGENT_RATE_LIMIT_BACKOFF", 3.0)
+
+# Fallback-модели (через запятую): резервные модели при 429/413 для любого бэкенда.
+# Для github_models встроенная цепочка работает автоматически.
+# Для ollama/vllm/lmstudio доступные модели обнаруживаются через /v1/models.
+# Эта переменная позволяет задать явный порядок fallback для любого бэкенда.
+FALLBACK_MODELS: list[str] = [
+    m.strip() for m in os.getenv("FALLBACK_MODELS", "").split(",") if m.strip()
+]

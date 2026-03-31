@@ -11,12 +11,20 @@
                   GITHUB_TOKEN / GH_TOKEN (доступен в GitHub Actions,
                   Copilot Workspace и Codespaces без дополнительной настройки).
 
-Автопереключение моделей при 429/413 (только для github_models):
+Автопереключение моделей при 429/413:
   При RateLimitError (429) или превышении лимита токенов (413) агент
-  автоматически переключается на следующую модель из цепочки:
-    gpt-4o-mini → Meta-Llama-3.1-405B-Instruct → gpt-4o → Meta-Llama-3.1-8B-Instruct
-  Модели с недостаточным контекстом отфильтровываются до вызова агента.
-  Список моделей и их лимиты актуализируются через API при старте.
+  автоматически переключается на следующую модель из fallback-цепочки.
+
+  github_models:
+    Встроенная цепочка: gpt-4o-mini → Meta-Llama-3.1-405B-Instruct → gpt-4o → ...
+    Модели и лимиты актуализируются через GitHub Models API при старте.
+
+  ollama / vllm / lmstudio:
+    Доступные модели обнаруживаются автоматически через /v1/models.
+    Можно задать явный порядок через FALLBACK_MODELS в .env.
+
+  openai / deepseek:
+    Fallback только при явно заданном FALLBACK_MODELS в .env.
 """
 import logging
 import re
@@ -24,7 +32,14 @@ import re
 import httpx
 from langchain_openai import ChatOpenAI
 
-from config import GITHUB_TOKEN, LLM_BACKEND, MODEL_NAME, OPENAI_API_BASE, OPENAI_API_KEY
+from config import (
+    FALLBACK_MODELS,
+    GITHUB_TOKEN,
+    LLM_BACKEND,
+    MODEL_NAME,
+    OPENAI_API_BASE,
+    OPENAI_API_KEY,
+)
 
 logger = logging.getLogger("llm")
 
@@ -53,6 +68,15 @@ _MAX_INPUT_TOKENS_CACHE: dict[str, int] = {}
 
 # Fallback, если зондирование input-контекста не удалось
 _DEFAULT_MAX_INPUT_TOKENS = 128_000
+
+# Отдельный кеш для локальных бэкендов: ключ (base_url, model_name)
+# чтобы избежать коллизий при совпадении имён моделей между бэкендами
+_LOCAL_MAX_CTX_CACHE: dict[tuple[str, str], int] = {}
+
+# Кеш списка моделей для локальных бэкендов: ключ — нормализованный base_url.
+# Заполняется при первом обращении к probe_local_max_context для данного хоста,
+# чтобы не делать N HTTP-запросов при оценке N моделей из fallback-цепочки.
+_LOCAL_MODELS_CACHE: dict[str, list] = {}
 
 
 def estimate_tokens(text: str) -> int:
@@ -239,6 +263,232 @@ def build_github_fallback_chain(api_key: str, primary: str) -> list[str]:
     return chain
 
 
+LOCAL_BACKENDS = {"ollama", "vllm", "lmstudio"}
+# Backward-compatible private alias
+_LOCAL_BACKENDS = LOCAL_BACKENDS
+
+
+def resolve_local_base_url() -> str:
+    """Return base URL for the local backend, falling back to common defaults.
+
+    The returned URL is normalized to have no trailing slash.
+    """
+    if OPENAI_API_BASE:
+        return OPENAI_API_BASE.rstrip("/")
+    defaults = {
+        "ollama": "http://localhost:11434/v1",
+        "vllm": "http://localhost:8000/v1",
+        "lmstudio": "http://localhost:1234/v1",
+    }
+    return defaults.get(LLM_BACKEND, "http://localhost:11434/v1")
+
+
+# Backward-compatible private alias
+_resolve_local_base_url = resolve_local_base_url
+
+
+def _model_ids_from_raw(raw: list) -> list[str]:
+    """Extract model ID strings from a raw /v1/models payload (list of dicts)."""
+    return [m.get("id") or m.get("name", "") for m in raw if m.get("id") or m.get("name")]
+
+
+def fetch_local_models(base_url: str | None = None) -> list[str]:
+    """Fetch available model names from a local OpenAI-compatible /v1/models endpoint.
+
+    Args:
+        base_url: The base URL of the local server (e.g. ``http://localhost:11434/v1``).
+                  If None, resolves from config.
+
+    Returns:
+        List of model IDs. Empty list on failure.
+    """
+    url = (base_url or resolve_local_base_url()).rstrip("/")
+    # Reuse cached raw payload so probe_local_max_context() benefits from the
+    # same single HTTP round-trip when FALLBACK_MODELS is empty.
+    if url in _LOCAL_MODELS_CACHE:
+        try:
+            return _model_ids_from_raw(_LOCAL_MODELS_CACHE[url])
+        except Exception as exc:
+            logger.warning(
+                "Некорректные данные в кеше моделей для %s, сброс кеша: %s", url, exc
+            )
+            del _LOCAL_MODELS_CACHE[url]
+    headers: dict[str, str] = {}
+    if OPENAI_API_KEY and OPENAI_API_KEY != "not-needed":
+        headers["Authorization"] = f"Bearer {OPENAI_API_KEY}"
+    try:
+        resp = httpx.get(
+            f"{url}/models",
+            timeout=10,
+            headers=headers,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        models = data if isinstance(data, list) else data.get("data", data.get("models", []))
+        model_ids = _model_ids_from_raw(models)
+        _LOCAL_MODELS_CACHE[url] = models
+        return model_ids
+    except Exception as exc:
+        logger.warning(
+            "Не удалось получить список локальных моделей от %s: %s",
+            url, exc,
+        )
+        return []
+
+
+def probe_local_max_context(base_url: str, model_name: str) -> int:
+    """Probe max context window for a local model via /v1/models endpoint metadata.
+
+    Many local servers (Ollama, vLLM) expose ``context_length`` or similar
+    fields in the model info.  Falls back to the default.
+
+    Args:
+        base_url:   Base URL of the local server.
+        model_name: Model identifier.
+
+    Returns:
+        Estimated max input tokens for the model.
+    """
+    normalized_url = base_url.rstrip("/")
+    cache_key = (normalized_url, model_name)
+    if cache_key in _LOCAL_MAX_CTX_CACHE:
+        return _LOCAL_MAX_CTX_CACHE[cache_key]
+
+    try:
+        if normalized_url not in _LOCAL_MODELS_CACHE:
+            _auth_headers: dict[str, str] = {}
+            if OPENAI_API_KEY and OPENAI_API_KEY != "not-needed":
+                _auth_headers["Authorization"] = f"Bearer {OPENAI_API_KEY}"
+            resp = httpx.get(
+                f"{normalized_url}/models",
+                timeout=10,
+                headers=_auth_headers,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+
+            # Нормализуем ответ /models до списка словарей моделей.
+            models: list[dict] = []
+            if isinstance(data, list):
+                models = [m for m in data if isinstance(m, dict)]
+            elif isinstance(data, dict):
+                raw_models = data.get("data", data.get("models", []))
+                if isinstance(raw_models, dict):
+                    raw_iter = raw_models.values()
+                else:
+                    raw_iter = raw_models
+                try:
+                    models = [m for m in raw_iter if isinstance(m, dict)]
+                except TypeError:
+                    # raw_iter не итерируемый — оставляем models пустым.
+                    models = []
+
+            _LOCAL_MODELS_CACHE[normalized_url] = models
+
+        models_list = _LOCAL_MODELS_CACHE[normalized_url]
+        # Защита от испорченного кэша: ожидаем список.
+        if not isinstance(models_list, list):
+            # Очистим неверный кэш, чтобы следующие вызовы могли повторно запросить /models.
+            try:
+                del _LOCAL_MODELS_CACHE[normalized_url]
+            except KeyError:
+                pass
+            raise TypeError("Cached /models payload is not a list")
+
+        for m in models_list:
+            # Пропускаем неожиданные элементы.
+            if not isinstance(m, dict):
+                continue
+            mid = m.get("id") or m.get("name", "")
+            if mid == model_name:
+                ctx = (
+                    m.get("context_length")
+                    or m.get("max_model_len")
+                    or m.get("details", {}).get("context_length")
+                )
+                if ctx and isinstance(ctx, int) and ctx > 0:
+                    _LOCAL_MAX_CTX_CACHE[cache_key] = ctx
+                    logger.info(
+                        "📐 Локальная модель %s: context_length = %d (из /v1/models)",
+                        model_name, ctx,
+                    )
+                    return ctx
+    except Exception as exc:
+        logger.debug("Не удалось определить контекст для %s: %s", model_name, exc)
+
+    _LOCAL_MAX_CTX_CACHE[cache_key] = _DEFAULT_MAX_INPUT_TOKENS
+    return _DEFAULT_MAX_INPUT_TOKENS
+
+
+def build_local_fallback_chain(primary: str, base_url: str | None = None) -> list[str]:
+    """Build an ordered fallback chain for local backends (ollama/vllm/lmstudio).
+
+    Priority order:
+      1. ``primary`` model (always first).
+      2. Explicitly configured ``FALLBACK_MODELS`` from env.
+      3. Auto-discovered models from the local server (only when ``FALLBACK_MODELS``
+         is empty, to avoid a ~10 s HTTP timeout per job when the backend is down).
+
+    Args:
+        primary:  Primary model name.
+        base_url: Base URL of the local server.
+
+    Returns:
+        Ordered list of model names for sequential fallback.
+    """
+    chain: list[str] = [primary]
+
+    for m in FALLBACK_MODELS:
+        if m not in chain:
+            chain.append(m)
+
+    if not FALLBACK_MODELS:
+        url = (base_url or resolve_local_base_url()).rstrip("/")
+        available = fetch_local_models(url)
+        for m in available:
+            if m not in chain:
+                chain.append(m)
+
+    return chain
+
+
+def effective_openai_key() -> str | None:
+    """Return OPENAI_API_KEY unless it equals the local-backend sentinel 'not-needed'."""
+    return OPENAI_API_KEY if OPENAI_API_KEY and OPENAI_API_KEY != "not-needed" else None
+
+
+# Backward-compatible private alias
+_effective_openai_key = effective_openai_key
+
+
+def build_fallback_chain(primary: str) -> list[str]:
+    """Build an ordered fallback chain for ANY backend.
+
+    - ``github_models``: uses GitHub Models API discovery + built-in priority.
+    - ``ollama``/``vllm``/``lmstudio``: auto-discovers via /v1/models + FALLBACK_MODELS.
+    - ``openai``/``deepseek``: uses FALLBACK_MODELS if configured, otherwise single model.
+
+    Args:
+        primary: Primary model name (usually MODEL_NAME).
+
+    Returns:
+        Ordered list of model names.
+    """
+    if LLM_BACKEND == "github_models":
+        api_key = effective_openai_key() or GITHUB_TOKEN or ""
+        return build_github_fallback_chain(api_key, primary)
+
+    if LLM_BACKEND in LOCAL_BACKENDS:
+        return build_local_fallback_chain(primary)
+
+    # openai / deepseek: explicit fallback only
+    chain: list[str] = [primary]
+    for m in FALLBACK_MODELS:
+        if m not in chain:
+            chain.append(m)
+    return chain
+
+
 def build_llm(temperature: float = 0.2, model_name_override: str | None = None) -> ChatOpenAI:
     """Создать ChatOpenAI-инстанс в соответствии с LLM_BACKEND.
 
@@ -256,7 +506,7 @@ def build_llm(temperature: float = 0.2, model_name_override: str | None = None) 
         # API-ключ: OPENAI_API_KEY → GITHUB_TOKEN → GH_TOKEN.
         # В GitHub Actions / Copilot Workspace / Codespaces GITHUB_TOKEN
         # предоставляется автоматически, поэтому отдельный PAT не нужен.
-        api_key = OPENAI_API_KEY or GITHUB_TOKEN
+        api_key = effective_openai_key() or GITHUB_TOKEN
         if not api_key:
             raise ValueError(
                 "Для LLM_BACKEND='github_models' необходимо задать OPENAI_API_KEY "
@@ -268,16 +518,23 @@ def build_llm(temperature: float = 0.2, model_name_override: str | None = None) 
         max_retries = 0
         # Определяем реальный лимит output-токенов через API
         max_tokens_out = probe_max_output_tokens(api_key, model)
+    elif LLM_BACKEND in LOCAL_BACKENDS:
+        api_key = OPENAI_API_KEY or "not-needed"
+        base_url = resolve_local_base_url()
+        max_retries = 0
+        max_tokens_out = 8192
     else:
-        if LLM_BACKEND == "openai" and not OPENAI_API_KEY:
+        effective_key = effective_openai_key()
+        if LLM_BACKEND == "openai" and not effective_key:
             raise ValueError(
                 "Для LLM_BACKEND='openai' необходимо задать OPENAI_API_KEY. "
                 "Для CodeSpaces рекомендуется использовать LLM_BACKEND=github_models "
                 "(автоматически использует GITHUB_TOKEN)."
             )
-        api_key = OPENAI_API_KEY  # for ollama, deepseek, etc., api_key may be ignored or set differently
+        api_key = effective_key
         base_url = OPENAI_API_BASE or None
-        max_retries = 2  # стандартный ретрай для остальных бэкендов
+        has_fallback = len(FALLBACK_MODELS) > 0
+        max_retries = 0 if has_fallback else 2
         max_tokens_out = 8192
 
     logger.info(
