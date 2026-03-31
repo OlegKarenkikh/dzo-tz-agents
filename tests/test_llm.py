@@ -210,7 +210,7 @@ class TestBuildFallbackChain:
 class TestFetchLocalModels:
     """Проверяет обнаружение моделей через /v1/models."""
 
-    def test_successful_fetch(self, monkeypatch):
+    def test_successful_fetch(self):
         import shared.llm as llm_module
 
         mock_resp = MagicMock()
@@ -225,7 +225,7 @@ class TestFetchLocalModels:
             models = llm_module.fetch_local_models("http://localhost:11434/v1")
         assert models == ["qwen2.5", "llama3.1"]
 
-    def test_connection_error_returns_empty(self, monkeypatch):
+    def test_connection_error_returns_empty(self):
         import shared.llm as llm_module
 
         with patch.object(llm_module.httpx, "get", side_effect=Exception("Connection refused")):
