@@ -155,7 +155,7 @@ class AttachmentData(BaseModel):
 
 
 class ProcessRequest(BaseModel):
-    text: str = Field(default="", description="Текст документа", max_length=50_000_000)
+    text: str = Field(default="", description="Текст документа", max_length=5_000_000)
     filename: str = Field(default="", description="Имя исходного файла", max_length=500)
     sender_email: str = Field(default="", description="Email отправителя", max_length=1000)
     subject: str = Field(default="", description="Тема письма", max_length=10_000)
