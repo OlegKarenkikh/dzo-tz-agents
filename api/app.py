@@ -174,18 +174,24 @@ class ProcessRequest(BaseModel):
 
     @model_validator(mode="after")
     def check_total_payload_size(self) -> "ProcessRequest":
-        """Reject requests whose approximate combined field-value size exceeds the cap."""
+        """Reject requests whose approximate combined field-value size exceeds the cap.
+
+        Uses len(str) instead of .encode('utf-8') to avoid large temporary
+        bytes allocations.  For base64 content (ASCII) len(str) == byte count;
+        for other text fields this is an approximation, which is sufficient
+        given that the limit itself is approximate.
+        """
         total = (
-            len(self.text.encode("utf-8"))
-            + len(self.filename.encode("utf-8"))
-            + len(self.sender_email.encode("utf-8"))
-            + len(self.subject.encode("utf-8"))
+            len(self.text)
+            + len(self.filename)
+            + len(self.sender_email)
+            + len(self.subject)
         )
         for att in self.attachments:
             total += (
-                len(att.content_base64.encode("utf-8"))
-                + len(att.filename.encode("utf-8"))
-                + len(att.mime_type.encode("utf-8"))
+                len(att.content_base64)
+                + len(att.filename)
+                + len(att.mime_type)
             )
         if total > _MAX_REQUEST_BYTES:
             raise ValueError(

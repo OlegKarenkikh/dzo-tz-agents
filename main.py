@@ -55,12 +55,13 @@ def run():
     if run_on_start:
         logger.info("Немедленный запуск всех агентов (RUN_ON_START=true).")
         schedule.run_all()
-    while not _shutdown_requested:
-        schedule.run_pending()
-        time.sleep(30)
-
-    logger.info("Завершение работы.")
-    close_db()
+    try:
+        while not _shutdown_requested:
+            schedule.run_pending()
+            time.sleep(30)
+    finally:
+        logger.info("Завершение работы.")
+        close_db()
 
 
 if __name__ == "__main__":

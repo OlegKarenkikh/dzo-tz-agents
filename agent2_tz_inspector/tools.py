@@ -189,26 +189,26 @@ def generate_corrected_tz(query: str) -> str:
             title = d.get("title", "Исправленное ТЗ")
             for sec in d.get("original_sections", []):
                 mods = [m for m in d.get("modifications", []) if m.get("section") == sec.get("name")]
-                sections_html += f"<h2>{sec.get('name', '')}</h2>"
+                sections_html += f"<h2>{html_escape(str(sec.get('name', '')))}</h2>"
                 if mods:
                     for m in mods:
-                        old, new = m.get("old_text", ""), m.get("new_text", "")
+                        old, new = html_escape(str(m.get("old_text", ""))), html_escape(str(m.get("new_text", "")))
                         sections_html += (
                             f"<p><span style='background:#FFD7D7;text-decoration:line-through'>[БЫЛО: {old}]</span>"
                             f" → <span style='background:#D7FFD7'>[СТАЛО: {new}]</span></p>"
                         )
                     if sec.get("content"):
-                        sections_html += f"<p>{sec['content']}</p>"
+                        sections_html += f"<p>{html_escape(str(sec['content']))}</p>"
                 elif sec.get("status") == "ОК":
-                    sections_html += f"<p style='color:#006600'>{sec.get('content', '')}</p>"
+                    sections_html += f"<p style='color:#006600'>{html_escape(str(sec.get('content', '')))}</p>"
                 else:
-                    sections_html += f"<p>{sec.get('content', '')}</p>"
+                    sections_html += f"<p>{html_escape(str(sec.get('content', '')))}</p>"
 
             for sec in d.get("added_sections", []):
                 sections_html += (
-                    f"<h2><span style='background:#FFFF00;color:#CC0000'>[ДОБАВЛЕНО] {sec.get('name', '')}</span></h2>"
+                    f"<h2><span style='background:#FFFF00;color:#CC0000'>[ДОБАВЛЕНО] {html_escape(str(sec.get('name', '')))}</span></h2>"
                     f"<p><span style='background:#FFFF00;color:#CC0000'>"
-                    f"{sec.get('content', '[Заполните раздел]')}</span></p>"
+                    f"{html_escape(str(sec.get('content', '[Заполните раздел]')))}</span></p>"
                 )
 
         html = (
