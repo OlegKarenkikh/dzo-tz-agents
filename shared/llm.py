@@ -395,7 +395,7 @@ def probe_local_max_context(base_url: str, model_name: str) -> int:
                 pass
             raise TypeError("Cached /models payload is not a list")
 
-       for m in models_list:
+        for m in models_list:
             # Пропускаем неожиданные элементы.
             if not isinstance(m, dict):
                 continue
