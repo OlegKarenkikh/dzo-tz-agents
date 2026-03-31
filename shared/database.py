@@ -290,6 +290,16 @@ def get_history(
         rows = [r for r in rows if r.get("decision") == decision]
     if status:
         rows = [r for r in rows if r.get("status") == status]
+    if date_from:
+        rows = [
+            r for r in rows
+            if r.get("created_at") is not None and r.get("created_at") >= date_from
+        ]
+    if date_to:
+        rows = [
+            r for r in rows
+            if r.get("created_at") is not None and r.get("created_at") <= date_to
+        ]
     rows.sort(key=lambda r: r.get("created_at", ""), reverse=True)
     return rows[offset:offset + limit]
 
@@ -305,30 +315,29 @@ def count_history(
     if _pg_available():
         try:
             with _get_conn() as conn:
-                cur = conn.cursor()
-                filters: list[str] = []
-                params: list = []
-                if agent:
-                    filters.append("agent = %s")
-                    params.append(agent)
-                if decision:
-                    filters.append("decision = %s")
-                    params.append(decision)
-                if status:
-                    filters.append("status = %s")
-                    params.append(status)
-                if date_from:
-                    filters.append("created_at >= %s")
-                    params.append(date_from)
-                if date_to:
-                    filters.append("created_at <= %s")
-                    params.append(date_to)
-                # NB: filter clauses are all hardcoded literals — no external
-                # input enters the SQL template; values are parameterised via %s.
-                where = ("WHERE " + " AND ".join(filters)) if filters else ""
-                cur.execute(f"SELECT COUNT(*) FROM jobs {where}", params)
-                total = cur.fetchone()[0]
-                cur.close()
+                with conn.cursor() as cur:
+                    filters: list[str] = []
+                    params: list = []
+                    if agent:
+                        filters.append("agent = %s")
+                        params.append(agent)
+                    if decision:
+                        filters.append("decision = %s")
+                        params.append(decision)
+                    if status:
+                        filters.append("status = %s")
+                        params.append(status)
+                    if date_from:
+                        filters.append("created_at >= %s")
+                        params.append(date_from)
+                    if date_to:
+                        filters.append("created_at <= %s")
+                        params.append(date_to)
+                    # NB: filter clauses are all hardcoded literals — no external
+                    # input enters the SQL template; values are parameterised via %s.
+                    where = ("WHERE " + " AND ".join(filters)) if filters else ""
+                    cur.execute(f"SELECT COUNT(*) FROM jobs {where}", params)
+                    total = cur.fetchone()[0]
             return total
         except Exception as e:
             logger.error("count_history ошибка: %s", e)
