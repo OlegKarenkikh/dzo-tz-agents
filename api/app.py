@@ -271,33 +271,34 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                 raise ValueError("Неизвестный агент: " + agent_type)
 
             # ── Построить цепочку fallback-моделей ──────────────────────────
-            if LLM_BACKEND == "github_models":
-                from shared.llm import (
-                    build_github_fallback_chain,
-                    probe_max_input_tokens,
-                    estimate_tokens,
-                )
-                _api_key = OPENAI_API_KEY or GITHUB_TOKEN or ""
-                fallback_chain = build_github_fallback_chain(_api_key, MODEL_NAME)
+            from shared.llm import (
+                _LOCAL_BACKENDS,
+                build_fallback_chain,
+                estimate_tokens,
+                probe_local_max_context,
+                probe_max_input_tokens,
+            )
 
-                # Резерв токенов: системный промпт агента + сериализация всех
-                # инструментов + ReAct scratchpad ≈ 3000 токенов типично.
+            fallback_chain = build_fallback_chain(MODEL_NAME)
+
+            if len(fallback_chain) > 1:
+                _api_key = OPENAI_API_KEY or GITHUB_TOKEN or ""
                 _TOOLS_OVERHEAD = 3000
                 _est_input = estimate_tokens(chat_input)
 
-                # Порог поблочного анализа: если документ явно большой
-                # (больше половины лучшего доступного контекста минус overhead),
-                # запускаем map-reduce чтобы агент получил структурированное резюме
-                # вместо сырого полотна текста.  Это лучше и для качества, и для токенов.
-                _best_model = max(
-                    fallback_chain,
-                    key=lambda m: probe_max_input_tokens(_api_key, m),
-                )
-                _best_ctx = probe_max_input_tokens(_api_key, _best_model)
+                def _get_ctx(m: str) -> int:
+                    if LLM_BACKEND == "github_models":
+                        return probe_max_input_tokens(_api_key, m)
+                    if LLM_BACKEND in _LOCAL_BACKENDS:
+                        from shared.llm import _resolve_local_base_url
+                        return probe_local_max_context(_resolve_local_base_url(), m)
+                    return 128_000
+
+                _best_model = max(fallback_chain, key=_get_ctx)
+                _best_ctx = _get_ctx(_best_model)
                 _chunking_threshold_tok = max(1, (_best_ctx - _TOOLS_OVERHEAD) // 2)
 
                 if _est_input > _chunking_threshold_tok:
-                    # Документ большой → поблочный анализ (map-reduce)
                     from shared.chunked_analysis import analyze_document_in_chunks
                     logger.info(
                         "[%s] Документ ~%d токенов > порог %d — запуск поблочного анализа "
@@ -321,12 +322,10 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                     except Exception as _chunk_err:
                         logger.warning("[%s] Поблочный анализ упал: %s — используем исходный текст", job_id, _chunk_err)
 
-                # После (возможной) замены chat_input на резюме — пересчитываем
-                # и строим итоговую fallback-цепочку
                 _est_input = estimate_tokens(chat_input)
                 _filtered = [
                     m for m in fallback_chain
-                    if probe_max_input_tokens(_api_key, m) > _est_input + _TOOLS_OVERHEAD
+                    if _get_ctx(m) > _est_input + _TOOLS_OVERHEAD
                 ]
                 if _filtered:
                     _skipped = [m for m in fallback_chain if m not in _filtered]
@@ -339,13 +338,8 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                         )
                     fallback_chain = _filtered
                 else:
-                    # Последний рубеж: поблочный анализ сам оказался велик —
-                    # обрезаем текст до максимума лучшей модели.
-                    _best = max(
-                        fallback_chain,
-                        key=lambda m: probe_max_input_tokens(_api_key, m),
-                    )
-                    _best_ctx2 = probe_max_input_tokens(_api_key, _best)
+                    _best = max(fallback_chain, key=_get_ctx)
+                    _best_ctx2 = _get_ctx(_best)
                     _max_input_chars = max(1, _best_ctx2 - _TOOLS_OVERHEAD) * 4
                     if len(chat_input) > _max_input_chars:
                         logger.warning(
@@ -354,8 +348,6 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                         )
                         chat_input = chat_input[:_max_input_chars]
                     fallback_chain = [_best] + [m for m in fallback_chain if m != _best]
-            else:
-                fallback_chain = [MODEL_NAME]
 
             logger.info(
                 "[%s] Fallback-цепочка моделей: %s",

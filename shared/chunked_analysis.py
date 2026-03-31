@@ -13,7 +13,8 @@ import logging
 
 import httpx
 
-from shared.llm import _GITHUB_MODELS_BASE_URL
+from config import LLM_BACKEND, OPENAI_API_BASE
+from shared.llm import _GITHUB_MODELS_BASE_URL, _LOCAL_BACKENDS, _resolve_local_base_url
 
 logger = logging.getLogger("chunked_analysis")
 
@@ -164,6 +165,18 @@ def chunk_document(
     return chunks
 
 
+def _resolve_completions_url() -> str:
+    """Return the chat/completions URL for the current backend."""
+    if LLM_BACKEND == "github_models":
+        return f"{_GITHUB_MODELS_BASE_URL}/chat/completions"
+    if LLM_BACKEND in _LOCAL_BACKENDS:
+        return f"{_resolve_local_base_url()}/chat/completions"
+    if OPENAI_API_BASE:
+        base = OPENAI_API_BASE.rstrip("/")
+        return f"{base}/chat/completions"
+    return "https://api.openai.com/v1/chat/completions"
+
+
 def _call_llm_direct(
     api_key: str,
     model_name: str,
@@ -171,14 +184,18 @@ def _call_llm_direct(
     user: str,
     max_tokens: int = _CHUNK_RESPONSE_TOKENS,
 ) -> str:
-    """Прямой HTTP-вызов GitHub Models API (без LangChain) для анализа чанка."""
+    """Прямой HTTP-вызов LLM API (без LangChain) для анализа чанка.
+
+    Работает с любым бэкендом: GitHub Models, OpenAI, Ollama, vLLM, LM Studio, DeepSeek.
+    """
+    url = _resolve_completions_url()
+    headers: dict[str, str] = {"Content-Type": "application/json"}
+    if api_key and api_key != "not-needed":
+        headers["Authorization"] = f"Bearer {api_key}"
     try:
         resp = httpx.post(
-            f"{_GITHUB_MODELS_BASE_URL}/chat/completions",
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
+            url,
+            headers=headers,
             json={
                 "model": model_name,
                 "messages": [
@@ -210,7 +227,7 @@ def analyze_document_in_chunks(
 
     Args:
         text:       Полный текст документа.
-        api_key:    Bearer-токен GitHub Models.
+        api_key:    API-ключ (Bearer-токен) для LLM API.
         model_name: Модель для анализа (та же, что в fallback-цепочке).
         agent_type: ``"tz"``, ``"dzo"`` или ``"tender"``.
 
