@@ -366,11 +366,39 @@ def probe_local_max_context(base_url: str, model_name: str) -> int:
             )
             resp.raise_for_status()
             data = resp.json()
-            _LOCAL_MODELS_CACHE[normalized_url] = (
-                data if isinstance(data, list) else data.get("data", data.get("models", []))
-            )
+
+            # Нормализуем ответ /models до списка словарей моделей.
+            models: list[dict] = []
+            if isinstance(data, list):
+                models = [m for m in data if isinstance(m, dict)]
+            elif isinstance(data, dict):
+                raw_models = data.get("data", data.get("models", []))
+                if isinstance(raw_models, dict):
+                    raw_iter = raw_models.values()
+                else:
+                    raw_iter = raw_models
+                try:
+                    models = [m for m in raw_iter if isinstance(m, dict)]
+                except TypeError:
+                    # raw_iter не итерируемый — оставляем models пустым.
+                    models = []
+
+            _LOCAL_MODELS_CACHE[normalized_url] = models
+
         models_list = _LOCAL_MODELS_CACHE[normalized_url]
-        for m in models_list:
+        # Защита от испорченного кэша: ожидаем список.
+        if not isinstance(models_list, list):
+            # Очистим неверный кэш, чтобы следующие вызовы могли повторно запросить /models.
+            try:
+                del _LOCAL_MODELS_CACHE[normalized_url]
+            except KeyError:
+                pass
+            raise TypeError("Cached /models payload is not a list")
+
+       for m in models_list:
+            # Пропускаем неожиданные элементы.
+            if not isinstance(m, dict):
+                continue
             mid = m.get("id") or m.get("name", "")
             if mid == model_name:
                 ctx = (
