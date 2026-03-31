@@ -282,7 +282,10 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
 
             fallback_chain = build_fallback_chain(MODEL_NAME)
 
-            if len(fallback_chain) > 1:
+            # Context-based chunking and model filtering run whenever we can
+            # probe actual context limits — regardless of fallback chain length,
+            # so a single-model local/github setup still benefits from chunking.
+            if LLM_BACKEND in ("github_models", *LOCAL_BACKENDS):
                 _api_key = OPENAI_API_KEY or GITHUB_TOKEN or ""
                 _TOOLS_OVERHEAD = 3000
                 _est_input = estimate_tokens(chat_input)
@@ -294,63 +297,60 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                         return probe_local_max_context(resolve_local_base_url(), m)
                     return None  # context unknown for openai/deepseek
 
-                # Context-based chunking and model filtering are only meaningful
-                # when we can probe actual context limits.
-                if LLM_BACKEND in ("github_models", *LOCAL_BACKENDS):
-                    _best_model = max(fallback_chain, key=lambda m: _get_ctx(m) or 0)
-                    _best_ctx = _get_ctx(_best_model) or 0
-                    _chunking_threshold_tok = max(1, (_best_ctx - _TOOLS_OVERHEAD) // 2)
+                _best_model = max(fallback_chain, key=lambda m: _get_ctx(m) or 0)
+                _best_ctx = _get_ctx(_best_model) or 0
+                _chunking_threshold_tok = max(1, (_best_ctx - _TOOLS_OVERHEAD) // 2)
 
-                    if _est_input > _chunking_threshold_tok:
-                        from shared.chunked_analysis import analyze_document_in_chunks
-                        logger.info(
-                            "[%s] Документ ~%d токенов > порог %d — запуск поблочного анализа "
-                            "(model=%s, context=%d)",
-                            job_id, _est_input, _chunking_threshold_tok,
-                            _best_model, _best_ctx,
+                if _est_input > _chunking_threshold_tok:
+                    from shared.chunked_analysis import analyze_document_in_chunks
+                    logger.info(
+                        "[%s] Документ ~%d токенов > порог %d — запуск поблочного анализа "
+                        "(model=%s, context=%d)",
+                        job_id, _est_input, _chunking_threshold_tok,
+                        _best_model, _best_ctx,
+                    )
+                    try:
+                        _original_len = len(chat_input)
+                        _summary = analyze_document_in_chunks(
+                            chat_input, _api_key, _best_model, agent_type
                         )
-                        try:
-                            _original_len = len(chat_input)
-                            _summary = analyze_document_in_chunks(
-                                chat_input, _api_key, _best_model, agent_type
+                        if _summary:
+                            chat_input = _summary
+                            logger.info(
+                                "[%s] Поблочный анализ: %d → %d символов резюме (~%d токенов)",
+                                job_id, _original_len, len(chat_input), estimate_tokens(chat_input),
                             )
-                            if _summary:
-                                chat_input = _summary
-                                logger.info(
-                                    "[%s] Поблочный анализ: %d → %d символов резюме (~%d токенов)",
-                                    job_id, _original_len, len(chat_input), estimate_tokens(chat_input),
-                                )
-                            else:
-                                logger.warning("[%s] Поблочный анализ не дал результата — используем исходный текст", job_id)
-                        except Exception as _chunk_err:
-                            logger.warning("[%s] Поблочный анализ упал: %s — используем исходный текст", job_id, _chunk_err)
+                        else:
+                            logger.warning("[%s] Поблочный анализ не дал результата — используем исходный текст", job_id)
+                    except Exception as _chunk_err:
+                        logger.warning("[%s] Поблочный анализ упал: %s — используем исходный текст", job_id, _chunk_err)
 
-                    _est_input = estimate_tokens(chat_input)
-                    _filtered = [
-                        m for m in fallback_chain
-                        if (_get_ctx(m) or 0) > _est_input + _TOOLS_OVERHEAD
-                    ]
-                    if _filtered:
-                        _skipped = [m for m in fallback_chain if m not in _filtered]
-                        if _skipped:
-                            logger.warning(
-                                "[%s] Пропущены модели с малым контекстом "
-                                "(вход ~%d + overhead %d = %d токенов): %s",
-                                job_id, _est_input, _TOOLS_OVERHEAD,
-                                _est_input + _TOOLS_OVERHEAD, ", ".join(_skipped),
-                            )
-                        fallback_chain = _filtered
-                    else:
-                        _best = max(fallback_chain, key=lambda m: _get_ctx(m) or 0)
-                        _best_ctx2 = _get_ctx(_best) or 0
-                        _max_input_chars = max(1, _best_ctx2 - _TOOLS_OVERHEAD) * 4
-                        if len(chat_input) > _max_input_chars:
-                            logger.warning(
-                                "[%s] Финальная обрезка: %d → %d символов (модель %s, ctx %d)",
-                                job_id, len(chat_input), _max_input_chars, _best, _best_ctx2,
-                            )
-                            chat_input = chat_input[:_max_input_chars]
-                        fallback_chain = [_best] + [m for m in fallback_chain if m != _best]
+                _est_input = estimate_tokens(chat_input)
+                _filtered = [
+                    m for m in fallback_chain
+                    if (_get_ctx(m) or 0) > _est_input + _TOOLS_OVERHEAD
+                ]
+                if _filtered:
+                    _skipped = [m for m in fallback_chain if m not in _filtered]
+                    if _skipped:
+                        logger.warning(
+                            "[%s] Пропущены модели с малым контекстом "
+                            "(вход ~%d + overhead %d = %d токенов): %s",
+                            job_id, _est_input, _TOOLS_OVERHEAD,
+                            _est_input + _TOOLS_OVERHEAD, ", ".join(_skipped),
+                        )
+                    fallback_chain = _filtered
+                else:
+                    _best = max(fallback_chain, key=lambda m: _get_ctx(m) or 0)
+                    _best_ctx2 = _get_ctx(_best) or 0
+                    _max_input_chars = max(1, _best_ctx2 - _TOOLS_OVERHEAD) * 4
+                    if len(chat_input) > _max_input_chars:
+                        logger.warning(
+                            "[%s] Финальная обрезка: %d → %d символов (модель %s, ctx %d)",
+                            job_id, len(chat_input), _max_input_chars, _best, _best_ctx2,
+                        )
+                        chat_input = chat_input[:_max_input_chars]
+                    fallback_chain = [_best] + [m for m in fallback_chain if m != _best]
 
             logger.info(
                 "[%s] Fallback-цепочка моделей: %s",

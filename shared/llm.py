@@ -269,9 +269,12 @@ _LOCAL_BACKENDS = LOCAL_BACKENDS
 
 
 def resolve_local_base_url() -> str:
-    """Return base URL for the local backend, falling back to common defaults."""
+    """Return base URL for the local backend, falling back to common defaults.
+
+    The returned URL is normalized to have no trailing slash.
+    """
     if OPENAI_API_BASE:
-        return OPENAI_API_BASE
+        return OPENAI_API_BASE.rstrip("/")
     defaults = {
         "ollama": "http://localhost:11434/v1",
         "vllm": "http://localhost:8000/v1",
