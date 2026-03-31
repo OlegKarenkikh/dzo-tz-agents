@@ -46,7 +46,6 @@ from config import (
     AGENT_RATE_LIMIT_BACKOFF,
     LLM_BACKEND,
     MODEL_NAME,
-    OPENAI_API_KEY,
     GITHUB_TOKEN,
 )
 from shared.database import (
@@ -273,6 +272,7 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
             # ── Построить цепочку fallback-моделей ──────────────────────────
             from shared.llm import (
                 LOCAL_BACKENDS,
+                _effective_openai_key,
                 build_fallback_chain,
                 estimate_tokens,
                 probe_local_max_context,
@@ -287,19 +287,20 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
             # so a single-model local/github setup still benefits from chunking.
             if LLM_BACKEND == "github_models" or LLM_BACKEND in LOCAL_BACKENDS:
                 if LLM_BACKEND == "github_models":
-                    _api_key = OPENAI_API_KEY or GITHUB_TOKEN or ""
+                    # Use OPENAI_API_KEY only if it's real (not the local-backend sentinel).
+                    _api_key = _effective_openai_key() or GITHUB_TOKEN or ""
                 else:
-                    # Never send GITHUB_TOKEN to a local backend
-                    _api_key = OPENAI_API_KEY or "not-needed"
+                    # Never send GITHUB_TOKEN to a local backend.
+                    _api_key = _effective_openai_key() or "not-needed"
                 _TOOLS_OVERHEAD = 3000
                 _est_input = estimate_tokens(chat_input)
 
-                def _get_ctx(m: str) -> int | None:
+                def _get_ctx(m: str) -> int:
                     if LLM_BACKEND == "github_models":
                         return probe_max_input_tokens(_api_key, m)
                     if LLM_BACKEND in LOCAL_BACKENDS:
                         return probe_local_max_context(resolve_local_base_url(), m)
-                    return None  # context unknown for openai/deepseek
+                    raise RuntimeError(f"Unexpected LLM_BACKEND in _get_ctx: {LLM_BACKEND!r}")
 
                 _best_model = max(fallback_chain, key=lambda m: _get_ctx(m) or 0)
                 _best_ctx = _get_ctx(_best_model) or 0

@@ -206,6 +206,21 @@ class TestBuildFallbackChain:
         chain = llm_mod.build_fallback_chain("gpt-4o")
         assert chain.count("gpt-4o") == 1
 
+    def test_github_models_not_needed_sentinel_falls_back_to_github_token(self, monkeypatch):
+        """OPENAI_API_KEY='not-needed' sentinel должен игнорироваться для github_models,
+        и API-ключ должен браться из GITHUB_TOKEN."""
+        llm_mod = self._reload_with_env(monkeypatch, {
+            "LLM_BACKEND": "github_models",
+            "OPENAI_API_KEY": "not-needed",
+            "GITHUB_TOKEN": "ghs_real_token",
+            "GH_TOKEN": None,
+            "FALLBACK_MODELS": "",
+        })
+        with patch.object(llm_mod, "build_github_fallback_chain", return_value=["gpt-4o"]) as mock_gh:
+            llm_mod.build_fallback_chain("gpt-4o")
+            # Sentinel must NOT be forwarded; real GITHUB_TOKEN must be used.
+            mock_gh.assert_called_once_with("ghs_real_token", "gpt-4o")
+
 
 class TestFetchLocalModels:
     """Проверяет обнаружение моделей через /v1/models."""
