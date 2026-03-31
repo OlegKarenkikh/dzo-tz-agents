@@ -2,6 +2,7 @@ import json
 import logging
 import re
 from datetime import datetime
+from html import escape as html_escape
 
 from langchain.tools import tool
 
@@ -253,8 +254,8 @@ def generate_email_to_dzo(query: str) -> str:
             d = _extract_email_fields_from_text(query)
 
         decision = d.get("decision", "На рассмотрении")
-        issues_html = "".join(f"<li>{i}</li>" for i in d.get("issues", []))
-        recs_html   = "".join(f"<li>{r}</li>" for r in d.get("recommendations", []))
+        issues_html = "".join(f"<li>{html_escape(str(i))}</li>" for i in d.get("issues", []))
+        recs_html   = "".join(f"<li>{html_escape(str(r))}</li>" for r in d.get("recommendations", []))
 
         corrected_note = ""
         if d.get("has_corrected_tz"):
@@ -262,9 +263,9 @@ def generate_email_to_dzo(query: str) -> str:
 
         html = (
             "<div style=\"font-family:Arial;font-size:14px;line-height:1.8\">"
-            f"<p>Уважаем(ый/ая) {d.get('dzo_name', 'коллега')}!</p>"
-            f"<p>Благодарим за направленное ТЗ по теме: <strong>«{d.get('tz_subject', '')}»</strong>.</p>"
-            f"<p><strong>Результат проверки: {decision}</strong></p>"
+            f"<p>Уважаем(ый/ая) {html_escape(str(d.get('dzo_name', 'коллега')))}!</p>"
+            f"<p>Благодарим за направленное ТЗ по теме: <strong>«{html_escape(str(d.get('tz_subject', '')))}»</strong>.</p>"
+            f"<p><strong>Результат проверки: {html_escape(str(decision))}</strong></p>"
             + (f"<p>Замечания:<ul>{issues_html}</ul></p>" if issues_html else "")
             + (f"<p>Рекомендации:<ul>{recs_html}</ul></p>" if recs_html else "")
             + corrected_note

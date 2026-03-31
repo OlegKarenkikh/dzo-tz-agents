@@ -37,7 +37,10 @@ def fetch_unseen_emails(
     try:
         M = imaplib.IMAP4_SSL(imap_host, imap_port)
         M.login(imap_user, imap_password)
-        M.select(folder)
+        status, _ = M.select(folder)
+        if status != "OK":
+            logger.error("Не удалось выбрать IMAP-папку %r (status=%s)", folder, status)
+            return emails
         _, uids = M.search(None, "UNSEEN")
 
         for uid in uids[0].split():

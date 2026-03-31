@@ -1,6 +1,7 @@
 import json
 import logging
 from datetime import datetime
+from html import escape as html_escape
 
 from langchain.tools import tool
 
@@ -96,14 +97,14 @@ def generate_info_request(query: str) -> str:
         logger.debug("🔧 generate_info_request вызван")
         d = json.loads(query)
         rows = "".join(
-            f"<tr><td style='border:1px solid #999;padding:8px;font-weight:bold'>{f['field']}</td>"
-            f"<td style='border:1px solid #999;padding:8px'>{f['description']}</td></tr>"
+            f"<tr><td style='border:1px solid #999;padding:8px;font-weight:bold'>{html_escape(str(f['field']))}</td>"
+            f"<td style='border:1px solid #999;padding:8px'>{html_escape(str(f['description']))}</td></tr>"
             for f in d.get("missing_fields", [])
         )
         html = (
             "<div style=\"font-family:Arial;font-size:14px;line-height:1.8\">"
-            f"<p>Уважаем(ый/ая) {d.get('dzo_name', 'коллега')}!</p>"
-            f"<p>Благодарим за направленную заявку по теме: <strong>«{d.get('subject', '')}»</strong>.</p>"
+            f"<p>Уважаем(ый/ая) {html_escape(str(d.get('dzo_name', 'коллега')))}!</p>"
+            f"<p>Благодарим за направленную заявку по теме: <strong>«{html_escape(str(d.get('subject', '')))}»</strong>.</p>"
             "<p>Для корректного оформления в ЭДО «Тезис» просим предоставить следующую информацию:</p>"
             "<table style=\"border-collapse:collapse;width:100%\">"
             "<tr><th style=\"border:1px solid #999;padding:8px;background:#e8e8e8\">Поле</th>"
@@ -135,9 +136,9 @@ def generate_escalation(query: str) -> str:
         html = (
             "<div style=\"font-family:Arial;font-size:14px\">"
             "<p><strong>⚠️ ТРЕБУЕТСЯ ЭСКАЛАЦИЯ</strong></p>"
-            f"<p>Тема заявки: {d.get('subject', '')}</p>"
-            f"<p>Причина: {d.get('reason', '')}</p>"
-            f"<p>Детали: {d.get('details', '')}</p>"
+            f"<p>Тема заявки: {html_escape(str(d.get('subject', '')))}</p>"
+            f"<p>Причина: {html_escape(str(d.get('reason', '')))}</p>"
+            f"<p>Детали: {html_escape(str(d.get('details', '')))}</p>"
             "</div>"
         )
         logger.warning("⚠️  generate_escalation: письмо эскалации готово (причина: %s)", d.get('reason'))
@@ -163,9 +164,9 @@ def generate_response_email(query: str) -> str:
         html = (
             "<div style=\"font-family:Arial;font-size:14px;line-height:1.8\">"
             "<p>Уважаемый коллега!</p>"
-            f"<p>Ваша заявка по теме <strong>«{d.get('subject', '')}»</strong> была обработана ИИ-инспектором.</p>"
-            f"<p><strong>Решение: {d.get('decision', '')}</strong></p>"
-            f"<p>{d.get('agent_summary', '')}</p>"
+            f"<p>Ваша заявка по теме <strong>«{html_escape(str(d.get('subject', '')))}»</strong> была обработана ИИ-инспектором.</p>"
+            f"<p><strong>Решение: {html_escape(str(d.get('decision', '')))}</strong></p>"
+            f"<p>{html_escape(str(d.get('agent_summary', '')))}</p>"
             "<p>С уважением,<br>Служба централизованных закупок</p></div>"
         )
         logger.info("✅ generate_response_email: ответное письмо готово (решение: %s)", d.get('decision'))

@@ -38,7 +38,27 @@ def _get_conn():
     try:
         yield conn
     finally:
-        pool.putconn(conn)
+        try:
+            pool.putconn(conn)
+        except Exception:
+            logger.warning("Не удалось вернуть соединение в пул, закрываем принудительно")
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def close_db():
+    """Закрывает пул соединений (для graceful shutdown)."""
+    global _pool
+    if _pool is not None:
+        try:
+            _pool.closeall()
+            logger.info("Пул соединений PostgreSQL закрыт.")
+        except Exception as e:
+            logger.error("Ошибка при закрытии пула: %s", e)
+        finally:
+            _pool = None
 
 
 def init_db():
@@ -272,6 +292,54 @@ def get_history(
         rows = [r for r in rows if r.get("status") == status]
     rows.sort(key=lambda r: r.get("created_at", ""), reverse=True)
     return rows[offset:offset + limit]
+
+
+def count_history(
+    agent: str | None = None,
+    decision: str | None = None,
+    status: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+) -> int:
+    """Быстрый подсчёт количества записей с фильтрами (SELECT COUNT(*))."""
+    if _pg_available():
+        try:
+            with _get_conn() as conn:
+                cur = conn.cursor()
+                filters: list[str] = []
+                params: list = []
+                if agent:
+                    filters.append("agent = %s")
+                    params.append(agent)
+                if decision:
+                    filters.append("decision = %s")
+                    params.append(decision)
+                if status:
+                    filters.append("status = %s")
+                    params.append(status)
+                if date_from:
+                    filters.append("created_at >= %s")
+                    params.append(date_from)
+                if date_to:
+                    filters.append("created_at <= %s")
+                    params.append(date_to)
+                where = ("WHERE " + " AND ".join(filters)) if filters else ""
+                cur.execute(f"SELECT COUNT(*) FROM jobs {where}", params)
+                total = cur.fetchone()[0]
+                cur.close()
+            return total
+        except Exception as e:
+            logger.error("count_history ошибка: %s", e)
+            return 0
+    # In-memory fallback
+    rows = list(_memory_store.values())
+    if agent:
+        rows = [r for r in rows if r.get("agent") == agent]
+    if decision:
+        rows = [r for r in rows if r.get("decision") == decision]
+    if status:
+        rows = [r for r in rows if r.get("status") == status]
+    return len(rows)
 
 
 def get_stats() -> dict[str, int]:

@@ -50,6 +50,7 @@ from config import (
     GITHUB_TOKEN,
 )
 from shared.database import (
+    count_history as db_count_history,
     create_job,
     delete_job as db_delete_job,
     find_duplicate_job,
@@ -154,10 +155,10 @@ class AttachmentData(BaseModel):
 
 
 class ProcessRequest(BaseModel):
-    text: str = Field(default="", description="Текст документа")
-    filename: str = Field(default="", description="Имя исходного файла")
-    sender_email: str = Field(default="", description="Email отправителя")
-    subject: str = Field(default="", description="Тема письма")
+    text: str = Field(default="", description="Текст документа", max_length=50_000_000)
+    filename: str = Field(default="", description="Имя исходного файла", max_length=500)
+    sender_email: str = Field(default="", description="Email отправителя", max_length=1000)
+    subject: str = Field(default="", description="Тема письма", max_length=10_000)
     attachments: list[AttachmentData] = Field(default_factory=list, description="Вложения в base64")
     force: bool = Field(
         default=False,
@@ -710,8 +711,7 @@ def list_jobs(
     items = db_get_history(agent=agent, status=status, limit=per_page + 1, offset=offset)
     has_next = len(items) > per_page
     items = items[:per_page]
-    total_items = db_get_history(agent=agent, status=status, limit=100_000, offset=0)
-    total = len(total_items)
+    total = db_count_history(agent=agent, status=status)
     pages = math.ceil(total / per_page) if per_page else 1
     return PaginatedResponse(
         total=total, page=page, per_page=per_page,
@@ -753,12 +753,10 @@ def history(
     )
     has_next = len(items) > per_page
     items = items[:per_page]
-    total_items = db_get_history(
+    total = db_count_history(
         agent=agent, status=status, decision=decision,
         date_from=date_from, date_to=date_to,
-        limit=100_000, offset=0,
     )
-    total = len(total_items)
     pages = math.ceil(total / per_page) if per_page else 1
     return PaginatedResponse(
         total=total, page=page, per_page=per_page,
