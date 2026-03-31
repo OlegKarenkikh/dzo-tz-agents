@@ -150,7 +150,8 @@ def _require_api_key(key: str | None = Depends(_api_key_header)) -> str:
 
 # 7 MB base64 ≈ 5.25 MB decoded; generous ceiling for a single attachment.
 _MAX_BASE64_CHARS = 7_000_000
-# Hard cap on total request payload size (bytes) across all fields.
+# Approximate cap on combined field-value size (not the raw HTTP body size,
+# which also includes JSON keys, quotes, braces, etc.).
 _MAX_REQUEST_BYTES = 10_000_000  # 10 MB
 
 
@@ -173,7 +174,7 @@ class ProcessRequest(BaseModel):
 
     @model_validator(mode="after")
     def check_total_payload_size(self) -> "ProcessRequest":
-        """Reject requests whose combined byte size exceeds the hard cap."""
+        """Reject requests whose approximate combined field-value size exceeds the cap."""
         total = (
             len(self.text.encode("utf-8"))
             + len(self.filename.encode("utf-8"))
@@ -188,7 +189,7 @@ class ProcessRequest(BaseModel):
             )
         if total > _MAX_REQUEST_BYTES:
             raise ValueError(
-                f"Суммарный размер запроса ({total} байт) "
+                f"Суммарный размер полей запроса (~{total} байт) "
                 f"превышает лимит {_MAX_REQUEST_BYTES} байт"
             )
         return self

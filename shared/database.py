@@ -33,9 +33,19 @@ def _to_date(value) -> _date | None:
 
 
 def _filter_by_dates(rows: list[dict], date_from: str | None, date_to: str | None) -> list[dict]:
-    """Filter in-memory rows by date_from / date_to using proper date comparison."""
+    """Filter in-memory rows by date_from / date_to using proper date comparison.
+
+    If a provided date string cannot be parsed, returns an empty list to match
+    PostgreSQL behaviour (where an invalid date causes an error / 0 results)
+    rather than silently disabling the filter.
+    """
     date_from_obj = _to_date(date_from) if date_from else None
     date_to_obj = _to_date(date_to) if date_to else None
+    # Treat unparseable date values as an error → return nothing.
+    if date_from and date_from_obj is None:
+        return []
+    if date_to and date_to_obj is None:
+        return []
     if date_from_obj:
         rows = [
             r for r in rows

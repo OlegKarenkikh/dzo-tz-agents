@@ -155,5 +155,14 @@ class TestInMemoryStorage:
         assert db.count_history(date_to="2024-01-01") == 1
         assert db.get_history(date_to="2024-01-01") == [db._memory_store[j1]]
 
+    def test_invalid_date_returns_empty(self, no_postgres):
+        """Invalid date_from/date_to must return empty results (match PG error behaviour)."""
+        j1 = db.create_job("dzo")
+        db._memory_store[j1]["created_at"] = "2024-06-15T00:00:00"
+        assert db.get_history(date_from="not-a-date") == []
+        assert db.get_history(date_to="garbage") == []
+        assert db.count_history(date_from="not-a-date") == 0
+        assert db.count_history(date_to="garbage") == 0
+
     def test_close_db_no_error_when_no_pool(self, no_postgres):
         db.close_db()  # should not raise
