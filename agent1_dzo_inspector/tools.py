@@ -57,7 +57,7 @@ def generate_tezis_form(query: str) -> str:
             ("Распорядитель бюджета",   d.get("budget_manager")),
             ("Рекомендуемые поставщики",
              "; ".join(
-                 f"{html_escape(str(s.get('name', '')))} (ИНН: {html_escape(str(s.get('inn', '')))})"
+                 f"{str(s.get('name', ''))} (ИНН: {str(s.get('inn', ''))})"
                  for s in d.get("recommended_suppliers", [])
              )),
             ("Иная информация",         d.get("additional_info")),
