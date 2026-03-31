@@ -17,8 +17,8 @@ class TestGithubModelsApiKeyPriority:
             else:
                 monkeypatch.setenv(k, v)
 
-        # Мокируем load_dotenv, чтобы локальный .env не перезаписывал env-переменные
-        with patch("config.load_dotenv"):
+        # Patch at source so the reload of config picks up the mock before re-executing from dotenv import load_dotenv
+        with patch("dotenv.load_dotenv"):
             import config
             import shared.llm as llm_module
 
@@ -81,7 +81,7 @@ class TestGithubModelsApiKeyPriority:
             else:
                 monkeypatch.setenv(k, v)
 
-        with patch("config.load_dotenv"):
+        with patch("dotenv.load_dotenv"):
             import config
             import shared.llm as llm_module
 
@@ -125,7 +125,7 @@ class TestBuildFallbackChain:
                 monkeypatch.delenv(k, raising=False)
             else:
                 monkeypatch.setenv(k, v)
-        with patch("config.load_dotenv"):
+        with patch("dotenv.load_dotenv"):
             import config
             import shared.llm as llm_module
             importlib.reload(config)
@@ -242,7 +242,7 @@ class TestBuildLlmLocalBackend:
             else:
                 monkeypatch.setenv(k, v)
 
-        with patch("config.load_dotenv"):
+        with patch("dotenv.load_dotenv"):
             import config
             import shared.llm as llm_module
             importlib.reload(config)
@@ -333,7 +333,7 @@ class TestGithubTokenInConfig:
     def test_github_token_read(self, monkeypatch):
         monkeypatch.setenv("GITHUB_TOKEN", "ghs_config_test")
         monkeypatch.delenv("GH_TOKEN", raising=False)
-        with patch("config.load_dotenv"):
+        with patch("dotenv.load_dotenv"):
             import config
 
             importlib.reload(config)
@@ -342,7 +342,7 @@ class TestGithubTokenInConfig:
     def test_gh_token_fallback(self, monkeypatch):
         monkeypatch.delenv("GITHUB_TOKEN", raising=False)
         monkeypatch.setenv("GH_TOKEN", "ghs_gh_fallback")
-        with patch("config.load_dotenv"):
+        with patch("dotenv.load_dotenv"):
             import config
 
             importlib.reload(config)
@@ -351,7 +351,7 @@ class TestGithubTokenInConfig:
     def test_github_token_none_when_absent(self, monkeypatch):
         monkeypatch.delenv("GITHUB_TOKEN", raising=False)
         monkeypatch.delenv("GH_TOKEN", raising=False)
-        with patch("config.load_dotenv"):
+        with patch("dotenv.load_dotenv"):
             import config
 
             importlib.reload(config)
