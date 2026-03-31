@@ -2,6 +2,7 @@
 Тесты безопасности API — по результатам аудита.
 Проверяют: CORS, API key, metrics endpoint, error masking.
 """
+import base64
 import os
 
 import pytest
@@ -179,7 +180,6 @@ class TestInputSizeValidation:
 
     def test_small_attachment_accepted(self):
         """A small, valid attachment must be accepted (job created)."""
-        import base64
         small_b64 = base64.b64encode(b"hello").decode()
         resp = client.post(
             "/api/v1/process/dzo",

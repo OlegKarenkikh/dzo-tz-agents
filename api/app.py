@@ -181,7 +181,11 @@ class ProcessRequest(BaseModel):
             + len(self.subject.encode("utf-8"))
         )
         for att in self.attachments:
-            total += len(att.content_base64)
+            total += (
+                len(att.content_base64)
+                + len(att.filename.encode("utf-8"))
+                + len(att.mime_type.encode("utf-8"))
+            )
         if total > _MAX_REQUEST_BYTES:
             raise ValueError(
                 f"Суммарный размер запроса ({total} байт) "
