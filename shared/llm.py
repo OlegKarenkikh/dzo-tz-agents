@@ -69,6 +69,10 @@ _MAX_INPUT_TOKENS_CACHE: dict[str, int] = {}
 # Fallback, если зондирование input-контекста не удалось
 _DEFAULT_MAX_INPUT_TOKENS = 128_000
 
+# Отдельный кеш для локальных бэкендов: ключ (base_url, model_name)
+# чтобы избежать коллизий при совпадении имён моделей между бэкендами
+_LOCAL_MAX_CTX_CACHE: dict[tuple[str, str], int] = {}
+
 
 def estimate_tokens(text: str) -> int:
     """Грубая оценка числа токенов в строке (1 токен ≈ 4 символа)."""
@@ -254,10 +258,12 @@ def build_github_fallback_chain(api_key: str, primary: str) -> list[str]:
     return chain
 
 
-_LOCAL_BACKENDS = {"ollama", "vllm", "lmstudio"}
+LOCAL_BACKENDS = {"ollama", "vllm", "lmstudio"}
+# Backward-compatible private alias
+_LOCAL_BACKENDS = LOCAL_BACKENDS
 
 
-def _resolve_local_base_url() -> str:
+def resolve_local_base_url() -> str:
     """Return base URL for the local backend, falling back to common defaults."""
     if OPENAI_API_BASE:
         return OPENAI_API_BASE
@@ -267,6 +273,10 @@ def _resolve_local_base_url() -> str:
         "lmstudio": "http://localhost:1234/v1",
     }
     return defaults.get(LLM_BACKEND, "http://localhost:11434/v1")
+
+
+# Backward-compatible private alias
+_resolve_local_base_url = resolve_local_base_url
 
 
 def fetch_local_models(base_url: str | None = None) -> list[str]:
@@ -279,7 +289,7 @@ def fetch_local_models(base_url: str | None = None) -> list[str]:
     Returns:
         List of model IDs. Empty list on failure.
     """
-    url = base_url or _resolve_local_base_url()
+    url = (base_url or resolve_local_base_url()).rstrip("/")
     try:
         resp = httpx.get(
             f"{url}/models",
@@ -314,11 +324,12 @@ def probe_local_max_context(base_url: str, model_name: str) -> int:
     Returns:
         Estimated max input tokens for the model.
     """
-    if model_name in _MAX_INPUT_TOKENS_CACHE:
-        return _MAX_INPUT_TOKENS_CACHE[model_name]
+    cache_key = (base_url, model_name)
+    if cache_key in _LOCAL_MAX_CTX_CACHE:
+        return _LOCAL_MAX_CTX_CACHE[cache_key]
 
     try:
-        resp = httpx.get(f"{base_url}/models", timeout=10)
+        resp = httpx.get(f"{base_url.rstrip('/')}/models", timeout=10)
         resp.raise_for_status()
         data = resp.json()
         models_list = data if isinstance(data, list) else data.get("data", data.get("models", []))
@@ -331,7 +342,7 @@ def probe_local_max_context(base_url: str, model_name: str) -> int:
                     or m.get("details", {}).get("context_length")
                 )
                 if ctx and isinstance(ctx, int) and ctx > 0:
-                    _MAX_INPUT_TOKENS_CACHE[model_name] = ctx
+                    _LOCAL_MAX_CTX_CACHE[cache_key] = ctx
                     logger.info(
                         "📐 Локальная модель %s: context_length = %d (из /v1/models)",
                         model_name, ctx,
@@ -340,7 +351,7 @@ def probe_local_max_context(base_url: str, model_name: str) -> int:
     except Exception as exc:
         logger.debug("Не удалось определить контекст для %s: %s", model_name, exc)
 
-    _MAX_INPUT_TOKENS_CACHE[model_name] = _DEFAULT_MAX_INPUT_TOKENS
+    _LOCAL_MAX_CTX_CACHE[cache_key] = _DEFAULT_MAX_INPUT_TOKENS
     return _DEFAULT_MAX_INPUT_TOKENS
 
 
@@ -365,7 +376,7 @@ def build_local_fallback_chain(primary: str, base_url: str | None = None) -> lis
         if m not in chain:
             chain.append(m)
 
-    url = base_url or _resolve_local_base_url()
+    url = (base_url or resolve_local_base_url()).rstrip("/")
     available = fetch_local_models(url)
     for m in available:
         if m not in chain:
@@ -391,7 +402,7 @@ def build_fallback_chain(primary: str) -> list[str]:
         api_key = OPENAI_API_KEY or GITHUB_TOKEN or ""
         return build_github_fallback_chain(api_key, primary)
 
-    if LLM_BACKEND in _LOCAL_BACKENDS:
+    if LLM_BACKEND in LOCAL_BACKENDS:
         return build_local_fallback_chain(primary)
 
     # openai / deepseek: explicit fallback only
@@ -431,9 +442,9 @@ def build_llm(temperature: float = 0.2, model_name_override: str | None = None) 
         max_retries = 0
         # Определяем реальный лимит output-токенов через API
         max_tokens_out = probe_max_output_tokens(api_key, model)
-    elif LLM_BACKEND in _LOCAL_BACKENDS:
+    elif LLM_BACKEND in LOCAL_BACKENDS:
         api_key = OPENAI_API_KEY or "not-needed"
-        base_url = _resolve_local_base_url()
+        base_url = resolve_local_base_url()
         max_retries = 0
         max_tokens_out = 8192
     else:

@@ -272,11 +272,12 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
 
             # ── Построить цепочку fallback-моделей ──────────────────────────
             from shared.llm import (
-                _LOCAL_BACKENDS,
+                LOCAL_BACKENDS,
                 build_fallback_chain,
                 estimate_tokens,
                 probe_local_max_context,
                 probe_max_input_tokens,
+                resolve_local_base_url,
             )
 
             fallback_chain = build_fallback_chain(MODEL_NAME)
@@ -289,9 +290,8 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                 def _get_ctx(m: str) -> int:
                     if LLM_BACKEND == "github_models":
                         return probe_max_input_tokens(_api_key, m)
-                    if LLM_BACKEND in _LOCAL_BACKENDS:
-                        from shared.llm import _resolve_local_base_url
-                        return probe_local_max_context(_resolve_local_base_url(), m)
+                    if LLM_BACKEND in LOCAL_BACKENDS:
+                        return probe_local_max_context(resolve_local_base_url(), m)
                     return 128_000
 
                 _best_model = max(fallback_chain, key=_get_ctx)
