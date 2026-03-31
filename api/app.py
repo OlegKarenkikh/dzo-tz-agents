@@ -285,7 +285,7 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
             # Context-based chunking and model filtering run whenever we can
             # probe actual context limits — regardless of fallback chain length,
             # so a single-model local/github setup still benefits from chunking.
-            if LLM_BACKEND in ("github_models", *LOCAL_BACKENDS):
+            if LLM_BACKEND == "github_models" or LLM_BACKEND in LOCAL_BACKENDS:
                 _api_key = OPENAI_API_KEY or GITHUB_TOKEN or ""
                 _TOOLS_OVERHEAD = 3000
                 _est_input = estimate_tokens(chat_input)

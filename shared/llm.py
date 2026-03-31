@@ -298,10 +298,14 @@ def fetch_local_models(base_url: str | None = None) -> list[str]:
         List of model IDs. Empty list on failure.
     """
     url = (base_url or resolve_local_base_url()).rstrip("/")
+    headers: dict[str, str] = {}
+    if OPENAI_API_KEY and OPENAI_API_KEY != "not-needed":
+        headers["Authorization"] = f"Bearer {OPENAI_API_KEY}"
     try:
         resp = httpx.get(
             f"{url}/models",
             timeout=10,
+            headers=headers,
         )
         resp.raise_for_status()
         data = resp.json()
@@ -339,7 +343,14 @@ def probe_local_max_context(base_url: str, model_name: str) -> int:
 
     try:
         if normalized_url not in _LOCAL_MODELS_CACHE:
-            resp = httpx.get(f"{normalized_url}/models", timeout=10)
+            _auth_headers: dict[str, str] = {}
+            if OPENAI_API_KEY and OPENAI_API_KEY != "not-needed":
+                _auth_headers["Authorization"] = f"Bearer {OPENAI_API_KEY}"
+            resp = httpx.get(
+                f"{normalized_url}/models",
+                timeout=10,
+                headers=_auth_headers,
+            )
             resp.raise_for_status()
             data = resp.json()
             _LOCAL_MODELS_CACHE[normalized_url] = (
