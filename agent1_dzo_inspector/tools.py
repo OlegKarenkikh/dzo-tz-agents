@@ -56,14 +56,17 @@ def generate_tezis_form(query: str) -> str:
             ("Инициатор закупки",       f"{d.get('initiator_name', '')} ({d.get('initiator_contacts', '')})"),
             ("Распорядитель бюджета",   d.get("budget_manager")),
             ("Рекомендуемые поставщики",
-             "; ".join(f"{s['name']} (ИНН: {s['inn']})" for s in d.get("recommended_suppliers", []))),
+             "; ".join(
+                 f"{html_escape(str(s.get('name', '')))} (ИНН: {html_escape(str(s.get('inn', '')))})"
+                 for s in d.get("recommended_suppliers", [])
+             )),
             ("Иная информация",         d.get("additional_info")),
             ("ТЗ (вложение)",           d.get("tz_filename")),
         ]
         rows = "".join(
-            f"<tr><th>{label}</th>"
+            f"<tr><th>{html_escape(str(label))}</th>"
             f"<td class=\"{'filled' if val else 'empty'}\">"
-            f"{val or '[Требуется заполнить]'}</td></tr>"
+            f"{html_escape(str(val)) if val else '[Требуется заполнить]'}</td></tr>"
             for label, val in fields
         )
         html = (
@@ -188,21 +191,22 @@ def generate_corrected_application(query: str) -> str:
         d = json.loads(query)
         rows = ""
         for f in d.get("fields", []):
-            old = f.get("old_value", "")
-            new = f.get("new_value", "")
+            name = html_escape(str(f.get("name", "")))
+            old = html_escape(str(f.get("old_value", "")))
+            new = html_escape(str(f.get("new_value", "")))
             if f.get("status") == "added":
                 rows += (
-                    f"<tr><th>{f['name']}</th>"
+                    f"<tr><th>{name}</th>"
                     f"<td style='background:#FFFF00;color:#CC0000'>[ДОБАВЛЕНО: {new}]</td></tr>"
                 )
-            elif old and new:
+            elif f.get("old_value") and f.get("new_value"):
                 rows += (
-                    f"<tr><th>{f['name']}</th><td>"
+                    f"<tr><th>{name}</th><td>"
                     f"<span style='background:#FFD7D7;text-decoration:line-through'>[БЫЛО: {old}]</span> → "
                     f"<span style='background:#D7FFD7'>[СТАЛО: {new}]</span></td></tr>"
                 )
             else:
-                rows += f"<tr><th>{f['name']}</th><td>{new or old}</td></tr>"
+                rows += f"<tr><th>{name}</th><td>{new or old}</td></tr>"
         html = (
             "<!DOCTYPE html><html><head><meta charset=\"utf-8\"></head><body>"
             "<h1>ПРОЕКТ ИСПРАВЛЕННОЙ ЗАЯВКИ</h1>"

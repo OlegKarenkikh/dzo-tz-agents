@@ -64,6 +64,25 @@ class TestGenerateTezisForm:
         result = json.loads(generate_tezis_form.invoke("bad"))
         assert "error" in result
 
+    def test_html_escapes_user_input(self):
+        payload = json.dumps({
+            "procurement_subject": '<script>alert("xss")</script>',
+            "justification": '<img onerror="alert(1)" src=x>',
+            "budget": "500000",
+            "initiator_name": "<b>Hacker</b>",
+            "initiator_contacts": "a]\" onclick=alert(1)",
+            "budget_manager": "&admin",
+            "recommended_suppliers": [{"name": "<em>Evil Corp</em>", "inn": "<script>0</script>"}],
+            "additional_info": "ok",
+            "tz_filename": "file.html\"><img src=x>",
+        })
+        result = json.loads(generate_tezis_form.invoke(payload))
+        html = result["tezisFormHtml"]
+        assert "<script>" not in html
+        assert "&lt;script&gt;" in html
+        assert '<img onerror' not in html
+        assert "<b>Hacker</b>" not in html
+
 
 class TestGenerateInfoRequest:
     def test_basic(self):
@@ -128,3 +147,18 @@ class TestGenerateCorrectedApplication:
         assert "correctedHtml" in result
         assert "БЫЛО" in result["correctedHtml"]
         assert "ДОБАВЛЕНО" in result["correctedHtml"]
+
+    def test_html_escapes_user_input(self):
+        payload = json.dumps({
+            "fields": [
+                {"name": '<script>alert("xss")</script>', "old_value": "<b>old</b>", "new_value": "<img src=x>", "status": "changed"},
+                {"name": "Field2", "old_value": "", "new_value": "&evil<tag>", "status": "added"},
+            ]
+        })
+        result = json.loads(generate_corrected_application.invoke(payload))
+        html = result["correctedHtml"]
+        assert "<script>" not in html
+        assert "&lt;script&gt;" in html
+        assert "<b>old</b>" not in html
+        assert "<img src=x>" not in html
+        assert "&amp;evil&lt;tag&gt;" in html
