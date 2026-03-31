@@ -128,3 +128,13 @@ class TestFetchUnseenEmails:
         subjects = [r["subject"] for r in result]
         assert "Письмо 1" in subjects
         assert "Письмо 2" in subjects
+
+    @patch("shared.email_client.imaplib.IMAP4_SSL")
+    def test_folder_select_failure_returns_empty(self, mock_imap_class):
+        mock_imap = MagicMock()
+        mock_imap_class.return_value = mock_imap
+        mock_imap.login.return_value = ("OK", [b"Logged in"])
+        mock_imap.select.return_value = ("NO", [b"Folder not found"])
+        result = fetch_unseen_emails("imap.test.ru", "user@test.ru", "secret", folder="MISSING")
+        assert result == []
+        mock_imap.logout.assert_called_once()

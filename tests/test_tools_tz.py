@@ -97,3 +97,18 @@ class TestGenerateEmailToDzo:
         })
         result = json.loads(generate_email_to_dzo.invoke(payload))
         assert "Соответствует" in result["emailHtml"]
+
+    def test_html_escapes_user_input(self):
+        payload = json.dumps({
+            "decision": "Требует доработки",
+            "dzo_name": '<script>alert("xss")</script>',
+            "tz_subject": '<img onerror="alert(1)" src=x>',
+            "issues": ['<b>bold</b>'],
+            "recommendations": ['&amp; special'],
+            "has_corrected_tz": False,
+        })
+        result = json.loads(generate_email_to_dzo.invoke(payload))
+        html = result["emailHtml"]
+        assert "<script>" not in html
+        assert "&lt;script&gt;" in html
+        assert '<img onerror' not in html

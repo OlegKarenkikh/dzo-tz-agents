@@ -107,3 +107,34 @@ class TestInMemoryStorage:
         assert stats["errors"] == 1
         assert stats["approved"] == 1
         assert stats["rework"] == 1
+
+    def test_count_history_no_filters(self, no_postgres):
+        db.create_job("dzo")
+        db.create_job("tz")
+        db.create_job("dzo")
+        assert db.count_history() == 3
+
+    def test_count_history_filter_agent(self, no_postgres):
+        db.create_job("dzo")
+        db.create_job("tz")
+        db.create_job("dzo")
+        assert db.count_history(agent="dzo") == 2
+        assert db.count_history(agent="tz") == 1
+
+    def test_count_history_filter_status(self, no_postgres):
+        j1 = db.create_job("dzo")
+        j2 = db.create_job("dzo")
+        db.update_job(j1, status="done", decision="Заявка полная")
+        db.update_job(j2, status="error", error="timeout")
+        assert db.count_history(status="done") == 1
+        assert db.count_history(status="error") == 1
+
+    def test_count_history_filter_decision(self, no_postgres):
+        j1 = db.create_job("dzo")
+        j2 = db.create_job("dzo")
+        db.update_job(j1, status="done", decision="Заявка полная")
+        db.update_job(j2, status="done", decision="Требуется доработка")
+        assert db.count_history(decision="Заявка полная") == 1
+
+    def test_close_db_no_error_when_no_pool(self, no_postgres):
+        db.close_db()  # should not raise

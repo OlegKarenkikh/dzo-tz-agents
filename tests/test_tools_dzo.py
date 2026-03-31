@@ -78,6 +78,18 @@ class TestGenerateInfoRequest:
         assert "Инициатор" in result["emailHtml"]
         assert "Запрос" in result["subject"]
 
+    def test_html_escapes_user_input(self):
+        payload = json.dumps({
+            "dzo_name": '<script>alert("xss")</script>',
+            "subject": '<img onerror="alert(1)" src=x>',
+            "missing_fields": [{"field": "<b>bold</b>", "description": "&amp; special"}],
+        })
+        result = json.loads(generate_info_request.invoke(payload))
+        html = result["emailHtml"]
+        assert "<script>" not in html
+        assert "&lt;script&gt;" in html
+        assert '<img onerror' not in html
+
 
 class TestGenerateEscalation:
     def test_escalation(self):
