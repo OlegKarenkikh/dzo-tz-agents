@@ -341,6 +341,16 @@ def count_history(
         rows = [r for r in rows if r.get("decision") == decision]
     if status:
         rows = [r for r in rows if r.get("status") == status]
+    if date_from:
+        rows = [
+            r for r in rows
+            if r.get("created_at") is not None and r.get("created_at") >= date_from
+        ]
+    if date_to:
+        rows = [
+            r for r in rows
+            if r.get("created_at") is not None and r.get("created_at") <= date_to
+        ]
     return len(rows)
 
 

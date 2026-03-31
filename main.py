@@ -1,6 +1,5 @@
 import os
 import signal
-import sys
 import time
 
 import schedule
@@ -8,6 +7,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+from shared.database import close_db  # noqa: E402
 from shared.logger import setup_logger  # noqa: E402
 
 logger = setup_logger("main")
@@ -59,7 +59,7 @@ def run():
         time.sleep(30)
 
     logger.info("Завершение работы.")
-    sys.exit(0)
+    close_db()
 
 
 if __name__ == "__main__":
