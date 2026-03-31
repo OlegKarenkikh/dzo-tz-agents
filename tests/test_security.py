@@ -2,6 +2,7 @@
 Тесты безопасности API — по результатам аудита.
 Проверяют: CORS, API key, metrics endpoint, error masking.
 """
+import base64
 import os
 
 import pytest
@@ -139,3 +140,57 @@ class TestHealth:
         body = client.get("/health").text
         assert "test-secret" not in body
         assert "OPENAI" not in body
+
+
+# ─── Input size validation ────────────────────────────────────
+class TestInputSizeValidation:
+    """Verify that oversized payloads are rejected by Pydantic validators."""
+
+    def test_attachment_base64_too_large_rejected(self):
+        """A single attachment exceeding _MAX_BASE64_CHARS must be rejected."""
+        oversized_b64 = "A" * 7_000_001  # 1 char over the limit
+        resp = client.post(
+            "/api/v1/process/dzo",
+            json={
+                "text": "тест",
+                "attachments": [
+                    {"filename": "big.pdf", "content_base64": oversized_b64, "mime_type": "application/pdf"},
+                ],
+            },
+            headers={"X-API-Key": TEST_KEY},
+        )
+        assert resp.status_code == 422
+
+    def test_total_payload_byte_size_rejected(self):
+        """Combined payload exceeding _MAX_REQUEST_BYTES must be rejected."""
+        # 6 MB each × 2 attachments = 12 MB > 10 MB limit
+        big_b64 = "A" * 6_000_000
+        resp = client.post(
+            "/api/v1/process/dzo",
+            json={
+                "text": "",
+                "attachments": [
+                    {"filename": "a.pdf", "content_base64": big_b64, "mime_type": "application/pdf"},
+                    {"filename": "b.pdf", "content_base64": big_b64, "mime_type": "application/pdf"},
+                ],
+            },
+            headers={"X-API-Key": TEST_KEY},
+        )
+        assert resp.status_code == 422
+
+    def test_small_attachment_accepted(self):
+        """A small, valid attachment must be accepted (job created)."""
+        small_b64 = base64.b64encode(b"hello").decode()
+        resp = client.post(
+            "/api/v1/process/dzo",
+            json={
+                "text": "тест",
+                "attachments": [
+                    {"filename": "small.txt", "content_base64": small_b64, "mime_type": "text/plain"},
+                ],
+            },
+            headers={"X-API-Key": TEST_KEY},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data.get("job") is not None or "job_id" in data

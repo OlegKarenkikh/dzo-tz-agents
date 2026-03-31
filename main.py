@@ -1,4 +1,5 @@
 import os
+import signal
 import time
 
 import schedule
@@ -6,14 +7,31 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+import config  # noqa: E402
+from shared.database import close_db  # noqa: E402
 from shared.logger import setup_logger  # noqa: E402
 
 logger = setup_logger("main")
 
+_shutdown_requested = False
+
+
+def _handle_signal(signum: int, _frame) -> None:
+    """Graceful shutdown on SIGTERM / SIGINT."""
+    global _shutdown_requested
+    sig_name = signal.Signals(signum).name
+    logger.info("Получен сигнал %s, завершаю работу…", sig_name)
+    _shutdown_requested = True
+
 
 def run():
+    global _shutdown_requested
+
+    signal.signal(signal.SIGTERM, _handle_signal)
+    signal.signal(signal.SIGINT, _handle_signal)
+
     mode = os.getenv("AGENT_MODE", "both").lower()
-    interval = int(os.getenv("POLL_INTERVAL_SEC", 300))
+    interval = config.POLL_INTERVAL_SEC
     # RUN_ON_START=false позволяет отключить немедленный запуск всех агентов при старте
     run_on_start = os.getenv("RUN_ON_START", "true").lower() != "false"
     logger.info(f"Запуск в режиме: {mode}, интервал: {interval} сек., RUN_ON_START={run_on_start}")
@@ -37,9 +55,13 @@ def run():
     if run_on_start:
         logger.info("Немедленный запуск всех агентов (RUN_ON_START=true).")
         schedule.run_all()
-    while True:
-        schedule.run_pending()
-        time.sleep(30)
+    try:
+        while not _shutdown_requested:
+            schedule.run_pending()
+            time.sleep(30)
+    finally:
+        logger.info("Завершение работы.")
+        close_db()
 
 
 if __name__ == "__main__":

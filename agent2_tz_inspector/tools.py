@@ -2,6 +2,7 @@ import json
 import logging
 import re
 from datetime import datetime
+from html import escape as html_escape
 
 from langchain.tools import tool
 
@@ -188,26 +189,26 @@ def generate_corrected_tz(query: str) -> str:
             title = d.get("title", "Исправленное ТЗ")
             for sec in d.get("original_sections", []):
                 mods = [m for m in d.get("modifications", []) if m.get("section") == sec.get("name")]
-                sections_html += f"<h2>{sec.get('name', '')}</h2>"
+                sections_html += f"<h2>{html_escape(str(sec.get('name', '')))}</h2>"
                 if mods:
                     for m in mods:
-                        old, new = m.get("old_text", ""), m.get("new_text", "")
+                        old, new = html_escape(str(m.get("old_text", ""))), html_escape(str(m.get("new_text", "")))
                         sections_html += (
                             f"<p><span style='background:#FFD7D7;text-decoration:line-through'>[БЫЛО: {old}]</span>"
                             f" → <span style='background:#D7FFD7'>[СТАЛО: {new}]</span></p>"
                         )
                     if sec.get("content"):
-                        sections_html += f"<p>{sec['content']}</p>"
+                        sections_html += f"<p>{html_escape(str(sec['content']))}</p>"
                 elif sec.get("status") == "ОК":
-                    sections_html += f"<p style='color:#006600'>{sec.get('content', '')}</p>"
+                    sections_html += f"<p style='color:#006600'>{html_escape(str(sec.get('content', '')))}</p>"
                 else:
-                    sections_html += f"<p>{sec.get('content', '')}</p>"
+                    sections_html += f"<p>{html_escape(str(sec.get('content', '')))}</p>"
 
             for sec in d.get("added_sections", []):
                 sections_html += (
-                    f"<h2><span style='background:#FFFF00;color:#CC0000'>[ДОБАВЛЕНО] {sec.get('name', '')}</span></h2>"
+                    f"<h2><span style='background:#FFFF00;color:#CC0000'>[ДОБАВЛЕНО] {html_escape(str(sec.get('name', '')))}</span></h2>"
                     f"<p><span style='background:#FFFF00;color:#CC0000'>"
-                    f"{sec.get('content', '[Заполните раздел]')}</span></p>"
+                    f"{html_escape(str(sec.get('content', '[Заполните раздел]')))}</span></p>"
                 )
 
         html = (
@@ -253,8 +254,8 @@ def generate_email_to_dzo(query: str) -> str:
             d = _extract_email_fields_from_text(query)
 
         decision = d.get("decision", "На рассмотрении")
-        issues_html = "".join(f"<li>{i}</li>" for i in d.get("issues", []))
-        recs_html   = "".join(f"<li>{r}</li>" for r in d.get("recommendations", []))
+        issues_html = "".join(f"<li>{html_escape(str(i))}</li>" for i in d.get("issues", []))
+        recs_html   = "".join(f"<li>{html_escape(str(r))}</li>" for r in d.get("recommendations", []))
 
         corrected_note = ""
         if d.get("has_corrected_tz"):
@@ -262,9 +263,9 @@ def generate_email_to_dzo(query: str) -> str:
 
         html = (
             "<div style=\"font-family:Arial;font-size:14px;line-height:1.8\">"
-            f"<p>Уважаем(ый/ая) {d.get('dzo_name', 'коллега')}!</p>"
-            f"<p>Благодарим за направленное ТЗ по теме: <strong>«{d.get('tz_subject', '')}»</strong>.</p>"
-            f"<p><strong>Результат проверки: {decision}</strong></p>"
+            f"<p>Уважаем(ый/ая) {html_escape(str(d.get('dzo_name', 'коллега')))}!</p>"
+            f"<p>Благодарим за направленное ТЗ по теме: <strong>«{html_escape(str(d.get('tz_subject', '')))}»</strong>.</p>"
+            f"<p><strong>Результат проверки: {html_escape(str(decision))}</strong></p>"
             + (f"<p>Замечания:<ul>{issues_html}</ul></p>" if issues_html else "")
             + (f"<p>Рекомендации:<ul>{recs_html}</ul></p>" if recs_html else "")
             + corrected_note

@@ -7,7 +7,7 @@ import json
 import logging
 import os
 from contextlib import contextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, date as _date
 from uuid import uuid4
 
 logger = logging.getLogger("database")
@@ -16,6 +16,47 @@ DATABASE_URL = os.getenv("DATABASE_URL", "")
 
 _memory_store: dict[str, dict] = {}
 _pool = None
+
+
+def _to_date(value) -> _date | None:
+    """Convert a datetime, date, or ISO-format string to a date object."""
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, _date):
+        return value
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value).date()
+        except ValueError:
+            return None
+    return None
+
+
+def _filter_by_dates(rows: list[dict], date_from: str | None, date_to: str | None) -> list[dict]:
+    """Filter in-memory rows by date_from / date_to using proper date comparison.
+
+    If a provided date string cannot be parsed, returns an empty list to match
+    PostgreSQL behaviour (where an invalid date causes an error / 0 results)
+    rather than silently disabling the filter.
+    """
+    date_from_obj = _to_date(date_from) if date_from else None
+    date_to_obj = _to_date(date_to) if date_to else None
+    # Treat unparseable date values as an error → return nothing.
+    if date_from and date_from_obj is None:
+        return []
+    if date_to and date_to_obj is None:
+        return []
+    if date_from_obj:
+        rows = [
+            r for r in rows
+            if (d := _to_date(r.get("created_at"))) is not None and d >= date_from_obj
+        ]
+    if date_to_obj:
+        rows = [
+            r for r in rows
+            if (d := _to_date(r.get("created_at"))) is not None and d <= date_to_obj
+        ]
+    return rows
 
 
 def _pg_available() -> bool:
@@ -38,7 +79,27 @@ def _get_conn():
     try:
         yield conn
     finally:
-        pool.putconn(conn)
+        try:
+            pool.putconn(conn)
+        except Exception:
+            logger.warning("Не удалось вернуть соединение в пул, закрываем принудительно")
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def close_db():
+    """Закрывает пул соединений (для graceful shutdown)."""
+    global _pool
+    if _pool is not None:
+        try:
+            _pool.closeall()
+            logger.info("Пул соединений PostgreSQL закрыт.")
+        except Exception as e:
+            logger.error("Ошибка при закрытии пула: %s", e)
+        finally:
+            _pool = None
 
 
 def init_db():
@@ -245,10 +306,10 @@ def get_history(
                     filters.append("status = %s")
                     params.append(status)
                 if date_from:
-                    filters.append("created_at >= %s")
+                    filters.append("created_at >= %s::date")
                     params.append(date_from)
                 if date_to:
-                    filters.append("created_at <= %s")
+                    filters.append("created_at < (%s::date + interval '1 day')")
                     params.append(date_to)
                 where = ("WHERE " + " AND ".join(filters)) if filters else ""
                 params += [limit, offset]
@@ -270,8 +331,59 @@ def get_history(
         rows = [r for r in rows if r.get("decision") == decision]
     if status:
         rows = [r for r in rows if r.get("status") == status]
+    rows = _filter_by_dates(rows, date_from, date_to)
     rows.sort(key=lambda r: r.get("created_at", ""), reverse=True)
     return rows[offset:offset + limit]
+
+
+def count_history(
+    agent: str | None = None,
+    decision: str | None = None,
+    status: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+) -> int:
+    """Быстрый подсчёт количества записей с фильтрами (SELECT COUNT(*))."""
+    if _pg_available():
+        try:
+            with _get_conn() as conn:
+                with conn.cursor() as cur:
+                    filters: list[str] = []
+                    params: list = []
+                    if agent:
+                        filters.append("agent = %s")
+                        params.append(agent)
+                    if decision:
+                        filters.append("decision = %s")
+                        params.append(decision)
+                    if status:
+                        filters.append("status = %s")
+                        params.append(status)
+                    if date_from:
+                        filters.append("created_at >= %s::date")
+                        params.append(date_from)
+                    if date_to:
+                        filters.append("created_at < (%s::date + interval '1 day')")
+                        params.append(date_to)
+                    # NB: filter clauses are all hardcoded literals — no external
+                    # input enters the SQL template; values are parameterised via %s.
+                    where = ("WHERE " + " AND ".join(filters)) if filters else ""
+                    cur.execute(f"SELECT COUNT(*) FROM jobs {where}", params)
+                    total = cur.fetchone()[0]
+            return total
+        except Exception as e:
+            logger.error("count_history ошибка: %s", e)
+            return 0
+    # In-memory fallback
+    rows = list(_memory_store.values())
+    if agent:
+        rows = [r for r in rows if r.get("agent") == agent]
+    if decision:
+        rows = [r for r in rows if r.get("decision") == decision]
+    if status:
+        rows = [r for r in rows if r.get("status") == status]
+    rows = _filter_by_dates(rows, date_from, date_to)
+    return len(rows)
 
 
 def get_stats() -> dict[str, int]:

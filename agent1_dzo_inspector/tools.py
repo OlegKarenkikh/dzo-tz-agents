@@ -1,6 +1,7 @@
 import json
 import logging
 from datetime import datetime
+from html import escape as html_escape
 
 from langchain.tools import tool
 
@@ -55,14 +56,17 @@ def generate_tezis_form(query: str) -> str:
             ("Инициатор закупки",       f"{d.get('initiator_name', '')} ({d.get('initiator_contacts', '')})"),
             ("Распорядитель бюджета",   d.get("budget_manager")),
             ("Рекомендуемые поставщики",
-             "; ".join(f"{s['name']} (ИНН: {s['inn']})" for s in d.get("recommended_suppliers", []))),
+             "; ".join(
+                 f"{str(s.get('name', ''))} (ИНН: {str(s.get('inn', ''))})"
+                 for s in d.get("recommended_suppliers", [])
+             )),
             ("Иная информация",         d.get("additional_info")),
             ("ТЗ (вложение)",           d.get("tz_filename")),
         ]
         rows = "".join(
-            f"<tr><th>{label}</th>"
+            f"<tr><th>{html_escape(str(label))}</th>"
             f"<td class=\"{'filled' if val else 'empty'}\">"
-            f"{val or '[Требуется заполнить]'}</td></tr>"
+            f"{html_escape(str(val)) if val else '[Требуется заполнить]'}</td></tr>"
             for label, val in fields
         )
         html = (
@@ -96,14 +100,14 @@ def generate_info_request(query: str) -> str:
         logger.debug("🔧 generate_info_request вызван")
         d = json.loads(query)
         rows = "".join(
-            f"<tr><td style='border:1px solid #999;padding:8px;font-weight:bold'>{f['field']}</td>"
-            f"<td style='border:1px solid #999;padding:8px'>{f['description']}</td></tr>"
+            f"<tr><td style='border:1px solid #999;padding:8px;font-weight:bold'>{html_escape(str(f['field']))}</td>"
+            f"<td style='border:1px solid #999;padding:8px'>{html_escape(str(f['description']))}</td></tr>"
             for f in d.get("missing_fields", [])
         )
         html = (
             "<div style=\"font-family:Arial;font-size:14px;line-height:1.8\">"
-            f"<p>Уважаем(ый/ая) {d.get('dzo_name', 'коллега')}!</p>"
-            f"<p>Благодарим за направленную заявку по теме: <strong>«{d.get('subject', '')}»</strong>.</p>"
+            f"<p>Уважаем(ый/ая) {html_escape(str(d.get('dzo_name', 'коллега')))}!</p>"
+            f"<p>Благодарим за направленную заявку по теме: <strong>«{html_escape(str(d.get('subject', '')))}»</strong>.</p>"
             "<p>Для корректного оформления в ЭДО «Тезис» просим предоставить следующую информацию:</p>"
             "<table style=\"border-collapse:collapse;width:100%\">"
             "<tr><th style=\"border:1px solid #999;padding:8px;background:#e8e8e8\">Поле</th>"
@@ -135,9 +139,9 @@ def generate_escalation(query: str) -> str:
         html = (
             "<div style=\"font-family:Arial;font-size:14px\">"
             "<p><strong>⚠️ ТРЕБУЕТСЯ ЭСКАЛАЦИЯ</strong></p>"
-            f"<p>Тема заявки: {d.get('subject', '')}</p>"
-            f"<p>Причина: {d.get('reason', '')}</p>"
-            f"<p>Детали: {d.get('details', '')}</p>"
+            f"<p>Тема заявки: {html_escape(str(d.get('subject', '')))}</p>"
+            f"<p>Причина: {html_escape(str(d.get('reason', '')))}</p>"
+            f"<p>Детали: {html_escape(str(d.get('details', '')))}</p>"
             "</div>"
         )
         logger.warning("⚠️  generate_escalation: письмо эскалации готово (причина: %s)", d.get('reason'))
@@ -163,9 +167,9 @@ def generate_response_email(query: str) -> str:
         html = (
             "<div style=\"font-family:Arial;font-size:14px;line-height:1.8\">"
             "<p>Уважаемый коллега!</p>"
-            f"<p>Ваша заявка по теме <strong>«{d.get('subject', '')}»</strong> была обработана ИИ-инспектором.</p>"
-            f"<p><strong>Решение: {d.get('decision', '')}</strong></p>"
-            f"<p>{d.get('agent_summary', '')}</p>"
+            f"<p>Ваша заявка по теме <strong>«{html_escape(str(d.get('subject', '')))}»</strong> была обработана ИИ-инспектором.</p>"
+            f"<p><strong>Решение: {html_escape(str(d.get('decision', '')))}</strong></p>"
+            f"<p>{html_escape(str(d.get('agent_summary', '')))}</p>"
             "<p>С уважением,<br>Служба централизованных закупок</p></div>"
         )
         logger.info("✅ generate_response_email: ответное письмо готово (решение: %s)", d.get('decision'))
@@ -187,21 +191,22 @@ def generate_corrected_application(query: str) -> str:
         d = json.loads(query)
         rows = ""
         for f in d.get("fields", []):
-            old = f.get("old_value", "")
-            new = f.get("new_value", "")
+            name = html_escape(str(f.get("name", "")))
+            old = html_escape(str(f.get("old_value", "")))
+            new = html_escape(str(f.get("new_value", "")))
             if f.get("status") == "added":
                 rows += (
-                    f"<tr><th>{f['name']}</th>"
+                    f"<tr><th>{name}</th>"
                     f"<td style='background:#FFFF00;color:#CC0000'>[ДОБАВЛЕНО: {new}]</td></tr>"
                 )
             elif old and new:
                 rows += (
-                    f"<tr><th>{f['name']}</th><td>"
+                    f"<tr><th>{name}</th><td>"
                     f"<span style='background:#FFD7D7;text-decoration:line-through'>[БЫЛО: {old}]</span> → "
                     f"<span style='background:#D7FFD7'>[СТАЛО: {new}]</span></td></tr>"
                 )
             else:
-                rows += f"<tr><th>{f['name']}</th><td>{new or old}</td></tr>"
+                rows += f"<tr><th>{name}</th><td>{new or old}</td></tr>"
         html = (
             "<!DOCTYPE html><html><head><meta charset=\"utf-8\"></head><body>"
             "<h1>ПРОЕКТ ИСПРАВЛЕННОЙ ЗАЯВКИ</h1>"

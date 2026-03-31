@@ -1,10 +1,10 @@
-import os
 import smtplib
 from email import encoders
 from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
+import config
 from shared.logger import setup_logger
 
 logger = setup_logger("email_sender")
@@ -19,9 +19,13 @@ def send_email(
     from_addr: str | None = None,
     attachment_bytes: bytes | None = None,
     attachment_name: str | None = None,
-) -> None:
-    """Отправляет HTML-письмо с опциональным вложением."""
-    sender = from_addr or os.getenv("SENDER_EMAIL", "ucz@company.ru")
+) -> bool:
+    """Отправляет HTML-письмо с опциональным вложением.
+
+    Returns:
+        True если отправка успешна, False при ошибке.
+    """
+    sender = from_addr or config.DZO_SMTP_FROM
     msg = MIMEMultipart("mixed")
     msg["From"] = sender
     msg["To"] = to
@@ -39,12 +43,19 @@ def send_email(
         msg.attach(part)
 
     try:
-        smtp_host = os.getenv("SMTP_HOST", "localhost")
-        smtp_port = int(os.getenv("SMTP_PORT", "587"))
+        smtp_host = config.SMTP_HOST
+        smtp_port = config.SMTP_PORT
+        smtp_user = config.SMTP_USER
+        smtp_password = config.SMTP_PASSWORD
+        if not smtp_user or not smtp_password:
+            logger.error("SMTP_USER или SMTP_PASSWORD не настроены — отправка невозможна")
+            return False
         with smtplib.SMTP(smtp_host, smtp_port, timeout=_SMTP_TIMEOUT) as s:
             s.starttls()
-            s.login(os.getenv("SMTP_USER"), os.getenv("SMTP_PASSWORD"))
+            s.login(smtp_user, smtp_password)
             s.send_message(msg)
         logger.info(f"Письмо отправлено: {to} / {subject}")
+        return True
     except Exception as e:
         logger.error(f"Ошибка отправки письма: {e}")
+        return False
