@@ -31,7 +31,7 @@ from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Req
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.security import APIKeyHeader
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from api.metrics import (
     API_LATENCY,
@@ -148,10 +148,16 @@ def _require_api_key(key: str | None = Depends(_api_key_header)) -> str:
 # Модели данных
 # ---------------------------------------------------------------------------
 
+# 7 MB base64 ≈ 5.25 MB decoded; generous ceiling for a single attachment.
+_MAX_BASE64_CHARS = 7_000_000
+# Hard cap on total request payload size (bytes) across all fields.
+_MAX_REQUEST_BYTES = 10_000_000  # 10 MB
+
+
 class AttachmentData(BaseModel):
-    filename: str
-    content_base64: str
-    mime_type: str
+    filename: str = Field(max_length=500)
+    content_base64: str = Field(max_length=_MAX_BASE64_CHARS)
+    mime_type: str = Field(max_length=200)
 
 
 class ProcessRequest(BaseModel):
@@ -164,6 +170,24 @@ class ProcessRequest(BaseModel):
         default=False,
         description="Обработать заново, даже если дубликат уже есть",
     )
+
+    @model_validator(mode="after")
+    def check_total_payload_size(self) -> "ProcessRequest":
+        """Reject requests whose combined byte size exceeds the hard cap."""
+        total = (
+            len(self.text.encode("utf-8"))
+            + len(self.filename.encode("utf-8"))
+            + len(self.sender_email.encode("utf-8"))
+            + len(self.subject.encode("utf-8"))
+        )
+        for att in self.attachments:
+            total += len(att.content_base64)
+        if total > _MAX_REQUEST_BYTES:
+            raise ValueError(
+                f"Суммарный размер запроса ({total} байт) "
+                f"превышает лимит {_MAX_REQUEST_BYTES} байт"
+            )
+        return self
 
 
 class JobResponse(BaseModel):
