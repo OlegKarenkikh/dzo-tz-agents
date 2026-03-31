@@ -161,19 +161,20 @@ class TestBuildFallbackChain:
             assert "mistral" in chain
 
     def test_ollama_explicit_fallback_models_first(self, monkeypatch):
-        """FALLBACK_MODELS идут раньше автообнаруженных моделей."""
+        """FALLBACK_MODELS задан — автообнаружение пропускается, используются только явные модели."""
         llm_mod = self._reload_with_env(monkeypatch, {
             "LLM_BACKEND": "ollama",
             "OPENAI_API_KEY": None,
             "OPENAI_API_BASE": "http://localhost:11434/v1",
             "FALLBACK_MODELS": "mistral,codellama",
         })
-        with patch.object(llm_mod, "fetch_local_models", return_value=["qwen2.5", "llama3.1", "mistral"]):
+        with patch.object(llm_mod, "fetch_local_models") as mock_fetch:
             chain = llm_mod.build_fallback_chain("qwen2.5")
+            mock_fetch.assert_not_called()
             assert chain[0] == "qwen2.5"
             assert chain[1] == "mistral"
             assert chain[2] == "codellama"
-            assert "llama3.1" in chain
+            assert "llama3.1" not in chain
 
     def test_openai_no_fallback_single_model(self, monkeypatch):
         """openai без FALLBACK_MODELS — одна модель."""

@@ -73,6 +73,11 @@ _DEFAULT_MAX_INPUT_TOKENS = 128_000
 # чтобы избежать коллизий при совпадении имён моделей между бэкендами
 _LOCAL_MAX_CTX_CACHE: dict[tuple[str, str], int] = {}
 
+# Кеш списка моделей для локальных бэкендов: ключ — нормализованный base_url.
+# Заполняется при первом обращении к probe_local_max_context для данного хоста,
+# чтобы не делать N HTTP-запросов при оценке N моделей из fallback-цепочки.
+_LOCAL_MODELS_CACHE: dict[str, list] = {}
+
 
 def estimate_tokens(text: str) -> int:
     """Грубая оценка числа токенов в строке (1 токен ≈ 4 символа)."""
@@ -324,15 +329,20 @@ def probe_local_max_context(base_url: str, model_name: str) -> int:
     Returns:
         Estimated max input tokens for the model.
     """
-    cache_key = (base_url, model_name)
+    normalized_url = base_url.rstrip("/")
+    cache_key = (normalized_url, model_name)
     if cache_key in _LOCAL_MAX_CTX_CACHE:
         return _LOCAL_MAX_CTX_CACHE[cache_key]
 
     try:
-        resp = httpx.get(f"{base_url.rstrip('/')}/models", timeout=10)
-        resp.raise_for_status()
-        data = resp.json()
-        models_list = data if isinstance(data, list) else data.get("data", data.get("models", []))
+        if normalized_url not in _LOCAL_MODELS_CACHE:
+            resp = httpx.get(f"{normalized_url}/models", timeout=10)
+            resp.raise_for_status()
+            data = resp.json()
+            _LOCAL_MODELS_CACHE[normalized_url] = (
+                data if isinstance(data, list) else data.get("data", data.get("models", []))
+            )
+        models_list = _LOCAL_MODELS_CACHE[normalized_url]
         for m in models_list:
             mid = m.get("id") or m.get("name", "")
             if mid == model_name:
@@ -361,7 +371,8 @@ def build_local_fallback_chain(primary: str, base_url: str | None = None) -> lis
     Priority order:
       1. ``primary`` model (always first).
       2. Explicitly configured ``FALLBACK_MODELS`` from env.
-      3. Auto-discovered models from the local server.
+      3. Auto-discovered models from the local server (only when ``FALLBACK_MODELS``
+         is empty, to avoid a ~10 s HTTP timeout per job when the backend is down).
 
     Args:
         primary:  Primary model name.
@@ -376,11 +387,12 @@ def build_local_fallback_chain(primary: str, base_url: str | None = None) -> lis
         if m not in chain:
             chain.append(m)
 
-    url = (base_url or resolve_local_base_url()).rstrip("/")
-    available = fetch_local_models(url)
-    for m in available:
-        if m not in chain:
-            chain.append(m)
+    if not FALLBACK_MODELS:
+        url = (base_url or resolve_local_base_url()).rstrip("/")
+        available = fetch_local_models(url)
+        for m in available:
+            if m not in chain:
+                chain.append(m)
 
     return chain
 
