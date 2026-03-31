@@ -199,7 +199,7 @@ def generate_corrected_application(query: str) -> str:
                     f"<tr><th>{name}</th>"
                     f"<td style='background:#FFFF00;color:#CC0000'>[ДОБАВЛЕНО: {new}]</td></tr>"
                 )
-            elif f.get("old_value") and f.get("new_value"):
+            elif old and new:
                 rows += (
                     f"<tr><th>{name}</th><td>"
                     f"<span style='background:#FFD7D7;text-decoration:line-through'>[БЫЛО: {old}]</span> → "

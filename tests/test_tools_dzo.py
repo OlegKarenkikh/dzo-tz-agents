@@ -82,6 +82,8 @@ class TestGenerateTezisForm:
         assert "&lt;script&gt;" in html
         assert '<img onerror' not in html
         assert "<b>Hacker</b>" not in html
+        # The quote in the onclick vector is escaped, preventing attribute injection
+        assert '&quot; onclick' in html
 
 
 class TestGenerateInfoRequest:
