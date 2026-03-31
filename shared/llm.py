@@ -411,6 +411,11 @@ def build_local_fallback_chain(primary: str, base_url: str | None = None) -> lis
     return chain
 
 
+def _effective_openai_key() -> str | None:
+    """Return OPENAI_API_KEY unless it equals the local-backend sentinel 'not-needed'."""
+    return OPENAI_API_KEY if OPENAI_API_KEY and OPENAI_API_KEY != "not-needed" else None
+
+
 def build_fallback_chain(primary: str) -> list[str]:
     """Build an ordered fallback chain for ANY backend.
 
@@ -425,7 +430,7 @@ def build_fallback_chain(primary: str) -> list[str]:
         Ordered list of model names.
     """
     if LLM_BACKEND == "github_models":
-        api_key = OPENAI_API_KEY or GITHUB_TOKEN or ""
+        api_key = _effective_openai_key() or GITHUB_TOKEN or ""
         return build_github_fallback_chain(api_key, primary)
 
     if LLM_BACKEND in LOCAL_BACKENDS:
@@ -456,7 +461,7 @@ def build_llm(temperature: float = 0.2, model_name_override: str | None = None) 
         # API-ключ: OPENAI_API_KEY → GITHUB_TOKEN → GH_TOKEN.
         # В GitHub Actions / Copilot Workspace / Codespaces GITHUB_TOKEN
         # предоставляется автоматически, поэтому отдельный PAT не нужен.
-        api_key = OPENAI_API_KEY or GITHUB_TOKEN
+        api_key = _effective_openai_key() or GITHUB_TOKEN
         if not api_key:
             raise ValueError(
                 "Для LLM_BACKEND='github_models' необходимо задать OPENAI_API_KEY "
