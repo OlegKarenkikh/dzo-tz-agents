@@ -323,6 +323,8 @@ def count_history(
                 if date_to:
                     filters.append("created_at <= %s")
                     params.append(date_to)
+                # NB: filter clauses are all hardcoded literals — no external
+                # input enters the SQL template; values are parameterised via %s.
                 where = ("WHERE " + " AND ".join(filters)) if filters else ""
                 cur.execute(f"SELECT COUNT(*) FROM jobs {where}", params)
                 total = cur.fetchone()[0]
