@@ -306,7 +306,13 @@ def fetch_local_models(base_url: str | None = None) -> list[str]:
     # Reuse cached raw payload so probe_local_max_context() benefits from the
     # same single HTTP round-trip when FALLBACK_MODELS is empty.
     if url in _LOCAL_MODELS_CACHE:
-        return _model_ids_from_raw(_LOCAL_MODELS_CACHE[url])
+        try:
+            return _model_ids_from_raw(_LOCAL_MODELS_CACHE[url])
+        except Exception as exc:
+            logger.warning(
+                "Некорректные данные в кеше моделей для %s, сброс кеша: %s", url, exc
+            )
+            del _LOCAL_MODELS_CACHE[url]
     headers: dict[str, str] = {}
     if OPENAI_API_KEY and OPENAI_API_KEY != "not-needed":
         headers["Authorization"] = f"Bearer {OPENAI_API_KEY}"
@@ -319,8 +325,9 @@ def fetch_local_models(base_url: str | None = None) -> list[str]:
         resp.raise_for_status()
         data = resp.json()
         models = data if isinstance(data, list) else data.get("data", data.get("models", []))
+        model_ids = _model_ids_from_raw(models)
         _LOCAL_MODELS_CACHE[url] = models
-        return _model_ids_from_raw(models)
+        return model_ids
     except Exception as exc:
         logger.warning(
             "Не удалось получить список локальных моделей от %s: %s",
@@ -417,9 +424,13 @@ def build_local_fallback_chain(primary: str, base_url: str | None = None) -> lis
     return chain
 
 
-def _effective_openai_key() -> str | None:
+def effective_openai_key() -> str | None:
     """Return OPENAI_API_KEY unless it equals the local-backend sentinel 'not-needed'."""
     return OPENAI_API_KEY if OPENAI_API_KEY and OPENAI_API_KEY != "not-needed" else None
+
+
+# Backward-compatible private alias
+_effective_openai_key = effective_openai_key
 
 
 def build_fallback_chain(primary: str) -> list[str]:
@@ -436,7 +447,7 @@ def build_fallback_chain(primary: str) -> list[str]:
         Ordered list of model names.
     """
     if LLM_BACKEND == "github_models":
-        api_key = _effective_openai_key() or GITHUB_TOKEN or ""
+        api_key = effective_openai_key() or GITHUB_TOKEN or ""
         return build_github_fallback_chain(api_key, primary)
 
     if LLM_BACKEND in LOCAL_BACKENDS:
@@ -467,7 +478,7 @@ def build_llm(temperature: float = 0.2, model_name_override: str | None = None) 
         # API-ключ: OPENAI_API_KEY → GITHUB_TOKEN → GH_TOKEN.
         # В GitHub Actions / Copilot Workspace / Codespaces GITHUB_TOKEN
         # предоставляется автоматически, поэтому отдельный PAT не нужен.
-        api_key = _effective_openai_key() or GITHUB_TOKEN
+        api_key = effective_openai_key() or GITHUB_TOKEN
         if not api_key:
             raise ValueError(
                 "Для LLM_BACKEND='github_models' необходимо задать OPENAI_API_KEY "
@@ -485,7 +496,7 @@ def build_llm(temperature: float = 0.2, model_name_override: str | None = None) 
         max_retries = 0
         max_tokens_out = 8192
     else:
-        effective_key = _effective_openai_key()
+        effective_key = effective_openai_key()
         if LLM_BACKEND == "openai" and not effective_key:
             raise ValueError(
                 "Для LLM_BACKEND='openai' необходимо задать OPENAI_API_KEY. "

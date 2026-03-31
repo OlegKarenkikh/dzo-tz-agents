@@ -272,7 +272,7 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
             # ── Построить цепочку fallback-моделей ──────────────────────────
             from shared.llm import (
                 LOCAL_BACKENDS,
-                _effective_openai_key,
+                effective_openai_key,
                 build_fallback_chain,
                 estimate_tokens,
                 probe_local_max_context,
@@ -288,10 +288,10 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
             if LLM_BACKEND == "github_models" or LLM_BACKEND in LOCAL_BACKENDS:
                 if LLM_BACKEND == "github_models":
                     # Use OPENAI_API_KEY only if it's real (not the local-backend sentinel).
-                    _api_key = _effective_openai_key() or GITHUB_TOKEN or ""
+                    _api_key = effective_openai_key() or GITHUB_TOKEN or ""
                 else:
                     # Never send GITHUB_TOKEN to a local backend.
-                    _api_key = _effective_openai_key() or "not-needed"
+                    _api_key = effective_openai_key() or "not-needed"
                 _TOOLS_OVERHEAD = 3000
                 _est_input = estimate_tokens(chat_input)
 
