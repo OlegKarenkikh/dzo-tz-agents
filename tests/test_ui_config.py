@@ -32,6 +32,8 @@ class TestApiUrl:
 
 class TestApiKey:
     def test_empty_by_default(self, monkeypatch):
+        # reload() заново импортирует load_dotenv; патчим модуль dotenv, а не ui.config.
+        monkeypatch.setattr("dotenv.load_dotenv", lambda *a, **k: None)
         monkeypatch.delenv("UI_API_KEY", raising=False)
         monkeypatch.delenv("API_KEY", raising=False)
         import ui.config as cfg
@@ -48,6 +50,7 @@ class TestApiKey:
         assert cfg.AUTH_HEADERS == {"X-API-Key": "ui-key"}
 
     def test_fallback_to_api_key(self, monkeypatch):
+        monkeypatch.setattr("dotenv.load_dotenv", lambda *a, **k: None)
         monkeypatch.delenv("UI_API_KEY", raising=False)
         monkeypatch.setenv("API_KEY", "fallback-key")
         import ui.config as cfg
