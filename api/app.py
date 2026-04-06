@@ -189,7 +189,7 @@ _AGENT_KEYWORDS: dict[str, list[str]] = {
     ], key=len, reverse=True),
     "tz": sorted([
         "техническое задание", "техзадание", "технического задания",
-        "terms of reference", "tor", "тз №", "тз к",
+        "terms of reference", "tor", "тз №", "тз к", "тз",
         "требования к поставке", "требования к услуге",
         "требования к работе", "технические требования",
     ], key=len, reverse=True),
