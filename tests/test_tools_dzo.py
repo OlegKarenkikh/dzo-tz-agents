@@ -112,6 +112,15 @@ class TestGenerateInfoRequest:
         assert "&lt;script&gt;" in html
         assert '<img onerror' not in html
 
+    def test_corrected_form_note(self):
+        payload = json.dumps({
+            "dzo_name": "ООО Тест",
+            "subject": "Закупка Тест",
+            "has_corrected_form": True,
+        })
+        result = json.loads(generate_info_request.invoke(json.loads(payload)))
+        assert "исправленная форма заявки" in result["emailHtml"]
+
 
 class TestGenerateEscalation:
     def test_escalation(self):

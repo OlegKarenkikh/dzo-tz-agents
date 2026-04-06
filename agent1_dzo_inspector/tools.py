@@ -225,6 +225,7 @@ def generate_info_request(
             f"<td style='border:1px solid #999;padding:8px'>{html_escape(f.description)}</td></tr>"
             for f in missing_fields
         )
+        corrected_note = "<p>📎 К письму приложена исправленная форма заявки.</p>" if has_corrected_form else ""
         html = (
             "<div style=\"font-family:Arial;font-size:14px;line-height:1.8\">"
             f"<p>Уважаем(ый/ая) {html_escape(dzo_name)}!</p>"
@@ -234,7 +235,8 @@ def generate_info_request(
             "<tr><th style=\"border:1px solid #999;padding:8px;background:#e8e8e8\">Поле</th>"
             "<th style=\"border:1px solid #999;padding:8px;background:#e8e8e8\">Что необходимо указать</th></tr>"
             f"{rows}</table>"
-            "<p>Просим направить ответным письмом.</p>"
+            + corrected_note
+            + "<p>Просим направить ответным письмом.</p>"
             "<p>С уважением,<br>Служба централизованных закупок</p></div>"
         )
         logger.info("✅ generate_info_request: письмо с запросом готово (тема: %s)", subject)
