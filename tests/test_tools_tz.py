@@ -1,5 +1,8 @@
 import json
 
+import pytest
+from pydantic import ValidationError
+
 from agent2_tz_inspector.tools import (
     generate_corrected_tz,
     generate_email_to_dzo,
@@ -20,7 +23,7 @@ class TestGenerateJsonReport:
             "critical_issues": [],
             "recommendations": [],
         })
-        result = json.loads(generate_json_report.invoke(payload))
+        result = json.loads(generate_json_report.invoke(json.loads(payload)))
         assert result["overall_status"] == "Соответствует"
         assert result["stats"]["ok"] == 8
         assert result["stats"]["issues"] == 0
@@ -34,14 +37,13 @@ class TestGenerateJsonReport:
             "overall_status": "Требует доработки",
             "sections": sections,
         })
-        result = json.loads(generate_json_report.invoke(payload))
+        result = json.loads(generate_json_report.invoke(json.loads(payload)))
         assert result["stats"]["ok"] == 1
         assert result["stats"]["issues"] == 1
 
     def test_invalid_json(self):
-        result = json.loads(generate_json_report.invoke("!!!"))
-        # invalid JSON causes a graceful skeleton to be returned (no hard error)
-        assert "overall_status" in result
+        with pytest.raises(ValidationError):
+            generate_json_report.invoke({"overall_status": 123})
 
 
 class TestGenerateCorrectedTz:
@@ -58,14 +60,14 @@ class TestGenerateCorrectedTz:
                 {"section": "Цель закупки", "old_text": "купить", "new_text": "приобрести"}
             ]
         })
-        result = json.loads(generate_corrected_tz.invoke(payload))
+        result = json.loads(generate_corrected_tz.invoke(json.loads(payload)))
         assert "html" in result
         assert "ДОБАВЛЕНО" in result["html"]
         assert "БЫЛО" in result["html"]
 
     def test_empty_sections(self):
         payload = json.dumps({"title": "empty", "original_sections": [], "added_sections": [], "modifications": []})
-        result = json.loads(generate_corrected_tz.invoke(payload))
+        result = json.loads(generate_corrected_tz.invoke(json.loads(payload)))
         assert "html" in result
 
 
@@ -79,7 +81,7 @@ class TestGenerateEmailToDzo:
             "recommendations": ["Добавьте количество"],
             "has_corrected_tz": True,
         })
-        result = json.loads(generate_email_to_dzo.invoke(payload))
+        result = json.loads(generate_email_to_dzo.invoke(json.loads(payload)))
         assert result["decision"] == "Требует доработки"
         # generate_email_to_dzo не содержит слово "ДОБАВЛЕНО" — проверяем реальное содержимое
         assert "Отсутствует раздел 3" in result["emailHtml"]
@@ -95,7 +97,7 @@ class TestGenerateEmailToDzo:
             "recommendations": [],
             "has_corrected_tz": False,
         })
-        result = json.loads(generate_email_to_dzo.invoke(payload))
+        result = json.loads(generate_email_to_dzo.invoke(json.loads(payload)))
         assert "Соответствует" in result["emailHtml"]
 
     def test_html_escapes_user_input(self):
@@ -107,7 +109,7 @@ class TestGenerateEmailToDzo:
             "recommendations": ['&amp; special'],
             "has_corrected_tz": False,
         })
-        result = json.loads(generate_email_to_dzo.invoke(payload))
+        result = json.loads(generate_email_to_dzo.invoke(json.loads(payload)))
         html = result["emailHtml"]
         assert "<script>" not in html
         assert "&lt;script&gt;" in html

@@ -1,6 +1,7 @@
 import json
 
 import pytest
+from pydantic import ValidationError
 
 from agent1_dzo_inspector.tools import (
     generate_corrected_application,
@@ -16,25 +17,25 @@ class TestGenerateValidationReport:
     def test_full_report(self):
         payload = json.dumps({
             "decision": "Заявка полная",
-            "checklist_attachments": [{"item": "ТЗ", "status": "Да"}],
-            "checklist_required": [{"item": "Наименование", "status": "ОК"}],
-            "checklist_additional": [{"item": "Бюджет", "status": "ОК"}],
+            "checklist_attachments": [{"field": "ТЗ", "status": "Да"}],
+            "checklist_required": [{"field": "Наименование", "status": "ОК"}],
+            "checklist_additional": [{"field": "Бюджет", "status": "ОК"}],
             "missing_fields": [],
         })
-        result = json.loads(generate_validation_report.invoke(payload))
+        result = json.loads(generate_validation_report.invoke(json.loads(payload)))
         assert result["decision"] == "Заявка полная"
         assert result["stats"]["attachments_ok"] == 1
         assert result["stats"]["required_ok"] == 1
         assert result["stats"]["additional_ok"] == 1
 
     def test_empty_input(self):
-        result = json.loads(generate_validation_report.invoke("{}"))
+        result = json.loads(generate_validation_report.invoke(json.loads("{}")))
         assert result["decision"] == "Не определено"
         assert result["stats"]["attachments_ok"] == 0
 
     def test_invalid_json(self):
-        result = json.loads(generate_validation_report.invoke("not-json"))
-        assert "error" in result
+        with pytest.raises(ValidationError):
+            generate_validation_report.invoke({"decision": "ok", "checklist_attachments": "not-a-list"})
 
 
 class TestGenerateTezisForm:
@@ -50,19 +51,19 @@ class TestGenerateTezisForm:
             "additional_info": "Нет",
             "tz_filename": "tz.docx",
         })
-        result = json.loads(generate_tezis_form.invoke(payload))
+        result = json.loads(generate_tezis_form.invoke(json.loads(payload)))
         assert "tezisFormHtml" in result
         assert "ТЕЗИС" in result["tezisFormHtml"]
         assert "filled" in result["tezisFormHtml"]
 
     def test_partial_form_has_empty_class(self):
         payload = json.dumps({"procurement_subject": "Тест"})
-        result = json.loads(generate_tezis_form.invoke(payload))
+        result = json.loads(generate_tezis_form.invoke(json.loads(payload)))
         assert "empty" in result["tezisFormHtml"]
 
     def test_invalid_json(self):
-        result = json.loads(generate_tezis_form.invoke("bad"))
-        assert "error" in result
+        with pytest.raises(ValidationError):
+            generate_tezis_form.invoke({"procurement_subject": 123})
 
     def test_html_escapes_user_input(self):
         payload = json.dumps({
@@ -76,7 +77,7 @@ class TestGenerateTezisForm:
             "additional_info": "ok",
             "tz_filename": "file.html\"><img src=x>",
         })
-        result = json.loads(generate_tezis_form.invoke(payload))
+        result = json.loads(generate_tezis_form.invoke(json.loads(payload)))
         html = result["tezisFormHtml"]
         assert "<script>" not in html
         assert "&lt;script&gt;" in html
@@ -94,7 +95,7 @@ class TestGenerateInfoRequest:
             "missing_fields": [{"field": "Инициатор", "description": "Укажите ФИО"}],
             "has_corrected_form": False,
         })
-        result = json.loads(generate_info_request.invoke(payload))
+        result = json.loads(generate_info_request.invoke(json.loads(payload)))
         assert result["decision"] == "Требуется доработка"
         assert "Инициатор" in result["emailHtml"]
         assert "Запрос" in result["subject"]
@@ -105,7 +106,7 @@ class TestGenerateInfoRequest:
             "subject": '<img onerror="alert(1)" src=x>',
             "missing_fields": [{"field": "<b>bold</b>", "description": "&amp; special"}],
         })
-        result = json.loads(generate_info_request.invoke(payload))
+        result = json.loads(generate_info_request.invoke(json.loads(payload)))
         html = result["emailHtml"]
         assert "<script>" not in html
         assert "&lt;script&gt;" in html
@@ -119,7 +120,7 @@ class TestGenerateEscalation:
             "reason": "Противоречие данных",
             "details": "Бюджет превышает лимит",
         })
-        result = json.loads(generate_escalation.invoke(payload))
+        result = json.loads(generate_escalation.invoke(json.loads(payload)))
         assert result["decision"] == "Требуется эскалация"
         assert "ЭСКАЛАЦИЯ" in result["escalationHtml"]
         assert "⚠️" in result["subject"]
@@ -132,7 +133,7 @@ class TestGenerateResponseEmail:
             "subject": "Закупка оборудования",
             "agent_summary": "Все реквизиты заполнены.",
         })
-        result = json.loads(generate_response_email.invoke(payload))
+        result = json.loads(generate_response_email.invoke(json.loads(payload)))
         assert "emailHtml" in result
         assert "Заявка полная" in result["emailHtml"]
 
@@ -145,7 +146,7 @@ class TestGenerateCorrectedApplication:
                 {"name": "Новое поле", "old_value": "", "new_value": "Значение", "status": "added"},
             ]
         })
-        result = json.loads(generate_corrected_application.invoke(payload))
+        result = json.loads(generate_corrected_application.invoke(json.loads(payload)))
         assert "correctedHtml" in result
         assert "БЫЛО" in result["correctedHtml"]
         assert "ДОБАВЛЕНО" in result["correctedHtml"]
@@ -157,7 +158,7 @@ class TestGenerateCorrectedApplication:
                 {"name": "Field2", "old_value": "", "new_value": "&evil<tag>", "status": "added"},
             ]
         })
-        result = json.loads(generate_corrected_application.invoke(payload))
+        result = json.loads(generate_corrected_application.invoke(json.loads(payload)))
         html = result["correctedHtml"]
         assert "<script>" not in html
         assert "&lt;script&gt;" in html

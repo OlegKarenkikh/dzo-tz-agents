@@ -726,47 +726,47 @@ def check_duplicate(
 @app.post("/api/v1/process/dzo", summary="Обработать заявку ДЗО")
 @limiter.limit(PROCESS_RATE_LIMIT)
 def process_dzo(
-    request: ProcessRequest,
+    body: ProcessRequest,
     background_tasks: BackgroundTasks,
-    http_request: Request,
+    request: Request,
     _: str = Depends(_require_api_key),
 ):
-    return _check_and_process("dzo", request, background_tasks)
+    return _check_and_process("dzo", body, background_tasks)
 
 
 @app.post("/api/v1/process/tz", summary="Обработать ТЗ")
 @limiter.limit(PROCESS_RATE_LIMIT)
 def process_tz(
-    request: ProcessRequest,
+    body: ProcessRequest,
     background_tasks: BackgroundTasks,
-    http_request: Request,
+    request: Request,
     _: str = Depends(_require_api_key),
 ):
-    return _check_and_process("tz", request, background_tasks)
+    return _check_and_process("tz", body, background_tasks)
 
 
 @app.post("/api/v1/process/tender", summary="Парсинг тендерной документации")
 @limiter.limit(PROCESS_RATE_LIMIT)
 def process_tender(
-    request: ProcessRequest,
+    body: ProcessRequest,
     background_tasks: BackgroundTasks,
-    http_request: Request,
+    request: Request,
     _: str = Depends(_require_api_key),
 ):
     """Извлекает список документов, требуемых от участника закупки."""
-    return _check_and_process("tender", request, background_tasks)
+    return _check_and_process("tender", body, background_tasks)
 
 
 @app.post("/api/v1/process/auto", summary="Автоопределение типа")
 @limiter.limit(PROCESS_RATE_LIMIT)
 def process_auto(
-    request: ProcessRequest,
+    body: ProcessRequest,
     background_tasks: BackgroundTasks,
-    http_request: Request,
+    request: Request,
     _: str = Depends(_require_api_key),
 ):
-    agent_type = _detect_agent_type(request)
-    return _check_and_process(agent_type, request, background_tasks)
+    agent_type = _detect_agent_type(body)
+    return _check_and_process(agent_type, body, background_tasks)
 
 
 @app.get("/api/v1/jobs", summary="Список заданий")

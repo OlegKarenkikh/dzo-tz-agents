@@ -1,7 +1,6 @@
 import json
 from datetime import datetime
 from html import escape as html_escape
-from typing import List, Optional
 
 from langchain.tools import tool
 from pydantic import BaseModel, Field
@@ -24,11 +23,14 @@ class ChecklistItem(BaseModel):
 
 
 class ValidationReportInput(BaseModel):
-    decision: str = Field(description="Итоговое решение: 'Заявка полная' | 'Требуется доработка' | 'Требуется эскалация'")
-    checklist_attachments: List[ChecklistItem] = Field(default_factory=list)
-    checklist_required: List[ChecklistItem] = Field(default_factory=list)
-    checklist_additional: List[ChecklistItem] = Field(default_factory=list)
-    missing_fields: List[str] = Field(default_factory=list)
+    decision: str = Field(
+        default="Не определено",
+        description="Итоговое решение: 'Заявка полная' | 'Требуется доработка' | 'Требуется эскалация'",
+    )
+    checklist_attachments: list[ChecklistItem] = Field(default_factory=list)
+    checklist_required: list[ChecklistItem] = Field(default_factory=list)
+    checklist_additional: list[ChecklistItem] = Field(default_factory=list)
+    missing_fields: list[str] = Field(default_factory=list)
 
 
 class Supplier(BaseModel):
@@ -38,14 +40,14 @@ class Supplier(BaseModel):
 
 class TezisFormInput(BaseModel):
     procurement_subject: str = Field(description="Предмет закупки")
-    justification: Optional[str] = None
-    budget: Optional[str] = None
+    justification: str | None = None
+    budget: str | None = None
     initiator_name: str = ""
     initiator_contacts: str = ""
-    budget_manager: Optional[str] = None
-    recommended_suppliers: List[Supplier] = Field(default_factory=list)
-    additional_info: Optional[str] = None
-    tz_filename: Optional[str] = None
+    budget_manager: str | None = None
+    recommended_suppliers: list[Supplier] = Field(default_factory=list)
+    additional_info: str | None = None
+    tz_filename: str | None = None
 
 
 class MissingField(BaseModel):
@@ -56,7 +58,7 @@ class MissingField(BaseModel):
 class InfoRequestInput(BaseModel):
     dzo_name: str = "коллега"
     subject: str = ""
-    missing_fields: List[MissingField] = Field(default_factory=list)
+    missing_fields: list[MissingField] = Field(default_factory=list)
     has_corrected_form: bool = False
 
 
@@ -80,7 +82,7 @@ class CorrectedField(BaseModel):
 
 
 class CorrectedApplicationInput(BaseModel):
-    fields: List[CorrectedField] = Field(default_factory=list)
+    fields: list[CorrectedField] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -90,10 +92,10 @@ class CorrectedApplicationInput(BaseModel):
 @tool(args_schema=ValidationReportInput)
 def generate_validation_report(
     decision: str,
-    checklist_attachments: List[ChecklistItem] = None,
-    checklist_required: List[ChecklistItem] = None,
-    checklist_additional: List[ChecklistItem] = None,
-    missing_fields: List[str] = None,
+    checklist_attachments: list[ChecklistItem] = None,
+    checklist_required: list[ChecklistItem] = None,
+    checklist_additional: list[ChecklistItem] = None,
+    missing_fields: list[str] = None,
 ) -> str:
     """
     Генерирует JSON-отчёт по чек-листам проверки заявки ДЗО.
@@ -131,14 +133,14 @@ def generate_validation_report(
 @tool(args_schema=TezisFormInput)
 def generate_tezis_form(
     procurement_subject: str,
-    justification: Optional[str] = None,
-    budget: Optional[str] = None,
+    justification: str | None = None,
+    budget: str | None = None,
     initiator_name: str = "",
     initiator_contacts: str = "",
-    budget_manager: Optional[str] = None,
-    recommended_suppliers: List[Supplier] = None,
-    additional_info: Optional[str] = None,
-    tz_filename: Optional[str] = None,
+    budget_manager: str | None = None,
+    recommended_suppliers: list[Supplier] = None,
+    additional_info: str | None = None,
+    tz_filename: str | None = None,
 ) -> str:
     """
     Генерирует предзаполненную HTML-форму заявки для ЭДО «Тезис».
@@ -188,7 +190,7 @@ def generate_tezis_form(
 def generate_info_request(
     dzo_name: str = "коллега",
     subject: str = "",
-    missing_fields: List[MissingField] = None,
+    missing_fields: list[MissingField] = None,
     has_corrected_form: bool = False,
 ) -> str:
     """
@@ -286,7 +288,7 @@ def generate_response_email(
 
 @tool(args_schema=CorrectedApplicationInput)
 def generate_corrected_application(
-    fields: List[CorrectedField] = None,
+    fields: list[CorrectedField] = None,
 ) -> str:
     """
     Генерирует HTML проект исправленной заявки с цветовой разметкой.

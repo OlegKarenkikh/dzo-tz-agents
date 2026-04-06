@@ -13,6 +13,7 @@ Rate limiting middleware для FastAPI.
   key_func=lambda req: req.headers.get("X-API-Key") or get_remote_address(req)
 """
 import os
+
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 

@@ -1,8 +1,6 @@
 import json
-import re
 from datetime import datetime
 from html import escape as html_escape
-from typing import List, Optional
 
 from langchain.tools import tool
 from pydantic import BaseModel, Field
@@ -29,9 +27,9 @@ class SectionResult(BaseModel):
 class JsonReportInput(BaseModel):
     overall_status: str = Field(description="'Соответствует' | 'Требует доработки' | 'Не соответствует'")
     category: str = "Не определена"
-    sections: List[SectionResult] = Field(default_factory=list)
-    critical_issues: List[str] = Field(default_factory=list)
-    recommendations: List[str] = Field(default_factory=list)
+    sections: list[SectionResult] = Field(default_factory=list)
+    critical_issues: list[str] = Field(default_factory=list)
+    recommendations: list[str] = Field(default_factory=list)
 
 
 class OriginalSection(BaseModel):
@@ -53,17 +51,17 @@ class Modification(BaseModel):
 
 class CorrectedTzInput(BaseModel):
     title: str = "Исправленное ТЗ"
-    original_sections: List[OriginalSection] = Field(default_factory=list)
-    added_sections: List[AddedSection] = Field(default_factory=list)
-    modifications: List[Modification] = Field(default_factory=list)
+    original_sections: list[OriginalSection] = Field(default_factory=list)
+    added_sections: list[AddedSection] = Field(default_factory=list)
+    modifications: list[Modification] = Field(default_factory=list)
 
 
 class EmailToDzoInput(BaseModel):
     decision: str = Field(description="'Соответствует' | 'Требует доработки' | 'Не соответствует'")
     dzo_name: str = "коллега"
     tz_subject: str = ""
-    issues: List[str] = Field(default_factory=list)
-    recommendations: List[str] = Field(default_factory=list)
+    issues: list[str] = Field(default_factory=list)
+    recommendations: list[str] = Field(default_factory=list)
     has_corrected_tz: bool = False
 
 
@@ -75,9 +73,9 @@ class EmailToDzoInput(BaseModel):
 def generate_json_report(
     overall_status: str,
     category: str = "Не определена",
-    sections: List[SectionResult] = None,
-    critical_issues: List[str] = None,
-    recommendations: List[str] = None,
+    sections: list[SectionResult] = None,
+    critical_issues: list[str] = None,
+    recommendations: list[str] = None,
 ) -> str:
     """
     Генерирует JSON-отчёт проверки ТЗ по 8 разделам.
@@ -133,9 +131,9 @@ def generate_json_report(
 @tool(args_schema=CorrectedTzInput)
 def generate_corrected_tz(
     title: str = "Исправленное ТЗ",
-    original_sections: List[OriginalSection] = None,
-    added_sections: List[AddedSection] = None,
-    modifications: List[Modification] = None,
+    original_sections: list[OriginalSection] = None,
+    added_sections: list[AddedSection] = None,
+    modifications: list[Modification] = None,
 ) -> str:
     """
     Генерирует HTML-версию исправленного ТЗ с цветовой разметкой.
@@ -197,8 +195,8 @@ def generate_email_to_dzo(
     decision: str,
     dzo_name: str = "коллега",
     tz_subject: str = "",
-    issues: List[str] = None,
-    recommendations: List[str] = None,
+    issues: list[str] = None,
+    recommendations: list[str] = None,
     has_corrected_tz: bool = False,
 ) -> str:
     """
