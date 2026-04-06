@@ -33,6 +33,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.security import APIKeyHeader
 from pydantic import BaseModel, Field, model_validator
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
 from api.metrics import (
     API_LATENCY,
@@ -41,6 +44,7 @@ from api.metrics import (
     JobTimer,
     metrics_router,
 )
+from api.rate_limit import PROCESS_RATE_LIMIT, limiter
 from config import (
     AGENT_JOB_TIMEOUT_SEC,
     AGENT_MAX_RETRIES,
@@ -104,12 +108,19 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="DZO/TZ Agents API",
     description="REST API для обработки заявок ДЗО и ТЗ",
-    version="1.2.0",
+    version="1.3.0",
     docs_url="/docs",
     redoc_url="/redoc",
     openapi_url="/openapi.json" if os.getenv("ENABLE_DOCS", "true") == "true" else None,
     lifespan=lifespan,
 )
+
+# Rate limiting — slowapi поверх стандартного ASGI middleware.
+# Лимиты задаются через RATE_LIMIT_PROCESS / RATE_LIMIT_DEFAULT в .env.
+# Ответ при превышении: HTTP 429 Too Many Requests.
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
 
 app.include_router(metrics_router)
 
@@ -148,6 +159,27 @@ AGENT_REGISTRY: dict[str, dict] = {
         ),
         "decisions": ["documents_found", "tool_error"],
     },
+}
+
+# ---------------------------------------------------------------------------
+# Словарь ключевых слов для _detect_agent_type.
+# Формат: {agent_type: [список ключевых слов]}.
+# Слова проверяются в порядке убывания специфичности (длинные раньше коротких),
+# первое совпадение определяет тип агента.
+# ---------------------------------------------------------------------------
+_AGENT_KEYWORDS: dict[str, list[str]] = {
+    "tender": [
+        "тендерная документация", "закупочная документация",
+        "конкурсная документация", "аукционная документация",
+        "извещение о закупке", "документация о закупке",
+        "44-фз", "223-фз", "тендер",
+    ],
+    "tz": [
+        "техническое задание", "техзадание", "технического задания",
+        "terms of reference", "tor", "тз №", "тз к",
+        "требования к поставке", "требования к услуге",
+        "требования к работе", "технические требования",
+    ],
 }
 
 
@@ -194,13 +226,7 @@ class ProcessRequest(BaseModel):
 
     @model_validator(mode="after")
     def check_total_payload_size(self) -> "ProcessRequest":
-        """Reject requests whose approximate combined field-value size exceeds the cap.
-
-        Uses len(str) instead of .encode('utf-8') to avoid large temporary
-        bytes allocations.  For base64 content (ASCII) len(str) == byte count;
-        for other text fields this is an approximation, which is sufficient
-        given that the limit itself is approximate.
-        """
+        """Reject requests whose approximate combined field-value size exceeds the cap."""
         total = (
             len(self.text)
             + len(self.filename)
@@ -303,15 +329,10 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
 
             fallback_chain = build_fallback_chain(MODEL_NAME)
 
-            # Context-based chunking and model filtering run whenever we can
-            # probe actual context limits — regardless of fallback chain length,
-            # so a single-model local/github setup still benefits from chunking.
             if LLM_BACKEND == "github_models" or LLM_BACKEND in LOCAL_BACKENDS:
                 if LLM_BACKEND == "github_models":
-                    # Use OPENAI_API_KEY only if it's real (not the local-backend sentinel).
                     _api_key = effective_openai_key() or GITHUB_TOKEN or ""
                 else:
-                    # Never send GITHUB_TOKEN to a local backend.
                     _api_key = effective_openai_key() or "not-needed"
                 _TOOLS_OVERHEAD = 3000
                 _est_input = estimate_tokens(chat_input)
@@ -407,7 +428,6 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                             mod = importlib.import_module("agent_" + agent_type + ".agent")
                             agent = mod.create_agent(model_name=model_name)
 
-                        # Вызов с жёстким таймаутом через отдельный тред
                         if AGENT_JOB_TIMEOUT_SEC > 0:
                             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
                                 future = ex.submit(agent.invoke, {"input": chat_input})
@@ -422,14 +442,12 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                             result = agent.invoke({"input": chat_input})
 
                         last_exc = None
-                        break  # успех — выходим из retry-цикла
+                        break
 
                     except TimeoutError:
-                        raise  # таймаут не ретраим — сразу ошибка
+                        raise
 
                     except Exception as exc:
-                        # Проверяем тип ошибки — используем и isinstance, и строковый
-                        # matching, т.к. LangChain может оборачивать openai-исключения.
                         from openai import APIStatusError, RateLimitError as _RLE, AuthenticationError
                         _exc_str = str(exc)
 
@@ -446,14 +464,12 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                             and getattr(exc, "status_code", 0) == 401
                         )
 
-                        # 401 обрабатываем как фатальную ошибку конфигурации
                         if is_auth_error:
                             error_msg = str(exc)
                             logger.error(
                                 "[%s] Ошибка аутентификации на модели %s: %s",
                                 job_id, model_name, error_msg,
                             )
-                            # Проверяем, не использует ли мы placeholders
                             if "ollama" in error_msg.lower() or "invalid_request_error" in error_msg.lower():
                                 logger.error(
                                     "[%s] Похоже, API key не настроен правильно. "
@@ -471,7 +487,6 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                             "[%s] %s на %s (попытка %d/%d)",
                             job_id, reason, model_name, retry + 1, max(1, AGENT_MAX_RETRIES),
                         )
-                        # 413 — детерминированная ошибка: ретрай бессмыслен, сразу на следующую модель
                         if is_token_limit:
                             logger.warning(
                                 "[%s] 413 TokenLimit — пропускаем ретраи, "
@@ -481,12 +496,10 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                             break
                         if retry + 1 < max(1, AGENT_MAX_RETRIES):
                             time.sleep(AGENT_RATE_LIMIT_BACKOFF)
-                        # выходим из retry-цикла, перейдём к следующей модели
 
                 if last_exc is None:
-                    break  # успех — выходим из fallback-цикла
+                    break
 
-                # 429/413 исчерпаны для этой модели — пробуем следующую
                 from openai import APIStatusError as _APIStatusError
                 from openai import RateLimitError as _RateLimitError
                 _exc_str_sw = str(last_exc)
@@ -517,46 +530,30 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                     if not isinstance(obs, dict):
                         continue
 
-                    # decision — из любого инструмента, который его возвращает
                     if obs.get("decision"):
                         decision = obs["decision"]
 
-                    # ── Общие ──────────────────────────────────────────────────
-                    # emailHtml: ответное письмо, запрос информации, письмо в ДЗО
                     if obs.get("emailHtml"):
                         artifacts["email_html"] = obs["emailHtml"]
-
-                    # ── ДЗО-специфичные ────────────────────────────────────────
-                    # Форма ЭДО «Тезис»
                     if obs.get("tezisFormHtml"):
                         artifacts["tezis_form_html"] = obs["tezisFormHtml"]
-                    # Исправленная заявка
                     if obs.get("correctedHtml"):
                         artifacts["corrected_html"] = obs["correctedHtml"]
-                    # Письмо-эскалация
                     if obs.get("escalationHtml"):
                         artifacts["escalation_html"] = obs["escalationHtml"]
-                    # Отчёт валидации (содержит checklist_required / checklist_attachments)
                     if "checklist_required" in obs or "checklist_attachments" in obs:
                         artifacts["validation_report"] = obs
-
-                    # ── ТЗ-специфичные ─────────────────────────────────────────
-                    # JSON-отчёт проверки ТЗ (содержит sections)
                     if "sections" in obs and isinstance(obs.get("sections"), list):
                         artifacts["json_report"] = obs
-                    # HTML исправленного ТЗ (generate_corrected_tz → {"html": ..., "title": ...})
                     if "html" in obs and "title" in obs:
                         artifacts["corrected_tz_html"] = obs["html"]
 
-                    # ── Тендер-специфичные ──────────────────────────────────────
-                    # Обрабатываем только ответы инструмента generate_document_list агента tender
                     if (
                         agent_type == "tender"
                         and isinstance(step, (list, tuple))
                         and len(step) >= 2
                         and step[0] == "generate_document_list"
                     ):
-                        # Список документов участника → {"documents": [...]}
                         if "documents" in obs and isinstance(obs.get("documents"), list):
                             summary = obs.get("summary") or {}
                             if not isinstance(summary, dict):
@@ -564,7 +561,6 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                             total = summary.get("total", len(obs["documents"]))
                             artifacts["document_list"] = {**obs, "total": total}
                             decision = "documents_found"
-                        # Ошибка инструмента → {"error": ...}
                         elif "error" in obs and not artifacts.get("document_list"):
                             artifacts["document_list_error"] = obs
                             decision = "tool_error"
@@ -601,10 +597,25 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
 
 
 def _detect_agent_type(request: ProcessRequest) -> str:
-    combined = (request.text + " " + request.subject + " " + request.filename).lower()
-    for kw in ["техническое задание", "тз", "tor", "техзадание", "требования к"]:
-        if kw in combined:
-            return "tz"
+    """Определяет тип агента по ключевым словам в тексте, теме и имени файла.
+
+    Использует словарь _AGENT_KEYWORDS с приоритетом:
+    tender > tz > dzo (dzo — fallback по умолчанию).
+    Для повышения точности рекомендуется заменить на ML-классификатор
+    (например, fasttext или fine-tuned sentence-transformer).
+    """
+    combined = (
+        request.text[:2000] + " "  # Ограничиваем длину для производительности
+        + request.subject + " "
+        + request.filename
+    ).lower()
+
+    for agent_type, keywords in _AGENT_KEYWORDS.items():
+        for kw in keywords:
+            if kw in combined:
+                logger.debug("_detect_agent_type: '%s' → %s (ключ: '%s')", request.subject[:50], agent_type, kw)
+                return agent_type
+
     return "dzo"
 
 
@@ -667,7 +678,7 @@ def health():
     return {
         "status": "ok",
         "uptime_sec": int((datetime.now(UTC) - _start_time).total_seconds()),
-        "version": "1.2.0",
+        "version": "1.3.0",
         "agent_mode": os.getenv("AGENT_MODE", "both"),
         "model": os.getenv("MODEL_NAME", "gpt-4o"),
         "timestamp": datetime.now(UTC).isoformat(),
@@ -713,42 +724,45 @@ def check_duplicate(
 
 
 @app.post("/api/v1/process/dzo", summary="Обработать заявку ДЗО")
+@limiter.limit(PROCESS_RATE_LIMIT)
 def process_dzo(
     request: ProcessRequest,
     background_tasks: BackgroundTasks,
+    http_request: Request,
     _: str = Depends(_require_api_key),
 ):
     return _check_and_process("dzo", request, background_tasks)
 
 
 @app.post("/api/v1/process/tz", summary="Обработать ТЗ")
+@limiter.limit(PROCESS_RATE_LIMIT)
 def process_tz(
     request: ProcessRequest,
     background_tasks: BackgroundTasks,
+    http_request: Request,
     _: str = Depends(_require_api_key),
 ):
     return _check_and_process("tz", request, background_tasks)
 
 
 @app.post("/api/v1/process/tender", summary="Парсинг тендерной документации")
+@limiter.limit(PROCESS_RATE_LIMIT)
 def process_tender(
     request: ProcessRequest,
     background_tasks: BackgroundTasks,
+    http_request: Request,
     _: str = Depends(_require_api_key),
 ):
-    """Извлекает список документов, требуемых от участника закупки.
-
-    Принимает текст/файл тендерной документации и возвращает структурированный
-    JSON с перечнем требуемых документов, ссылками на разделы документации
-    и требованиями к содержанию каждого документа.
-    """
+    """Извлекает список документов, требуемых от участника закупки."""
     return _check_and_process("tender", request, background_tasks)
 
 
 @app.post("/api/v1/process/auto", summary="Автоопределение типа")
+@limiter.limit(PROCESS_RATE_LIMIT)
 def process_auto(
     request: ProcessRequest,
     background_tasks: BackgroundTasks,
+    http_request: Request,
     _: str = Depends(_require_api_key),
 ):
     agent_type = _detect_agent_type(request)
