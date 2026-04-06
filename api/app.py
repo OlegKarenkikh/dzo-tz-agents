@@ -24,6 +24,7 @@ import math
 import os
 import time
 from collections import deque
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 
 from dotenv import load_dotenv
@@ -62,17 +63,43 @@ from shared.database import (
 
 load_dotenv()
 
-logger = logging.getLogger("api")
+# ---------------------------------------------------------------------------
+# Логирование — настраивается один раз при импорте модуля.
+# basicConfig вызывается здесь намеренно до создания любых логгеров,
+# чтобы не конфликтовать с uvicorn/gunicorn, которые настраивают root-логгер позже.
+# ---------------------------------------------------------------------------
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
+logger = logging.getLogger("api")
 
 CORS_ORIGINS = [
     o.strip()
     for o in os.getenv("CORS_ORIGINS", "http://localhost:8501").split(",")
     if o.strip()
 ]
+
+
+# ---------------------------------------------------------------------------
+# Lifespan — заменяет deprecated @app.on_event("startup") / "shutdown".
+# Совместимо с FastAPI >= 0.93 и Starlette >= 0.27.
+# ---------------------------------------------------------------------------
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # --- startup ---
+    if not _get_api_key():
+        logger.warning("АПИ-ключ не задан! Установите переменную окружения API_KEY.")
+    init_db()
+    # NOTE: _run_log хранится в памяти одного процесса.
+    # При использовании нескольких воркеров Gunicorn/uvicorn каждый воркер
+    # ведёт свой независимый лог. Для консолидированного хранилища используйте
+    # shared.database (уже персистит все job-события в SQLite/PostgreSQL).
+    logger.info("API запущен. Модель: %s, бэкенд: %s", os.getenv("MODEL_NAME", "gpt-4o"), os.getenv("LLM_BACKEND", "openai"))
+    yield
+    # --- shutdown ---
+    logger.info("API остановлен.")
+
 
 app = FastAPI(
     title="DZO/TZ Agents API",
@@ -81,6 +108,7 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
     openapi_url="/openapi.json" if os.getenv("ENABLE_DOCS", "true") == "true" else None,
+    lifespan=lifespan,
 )
 
 app.include_router(metrics_router)
@@ -125,13 +153,6 @@ AGENT_REGISTRY: dict[str, dict] = {
 
 def _get_api_key() -> str:
     return os.getenv("API_KEY", "")
-
-
-@app.on_event("startup")
-def on_startup():
-    if not _get_api_key():
-        logger.warning("АПИ-ключ не задан!")
-    init_db()
 
 
 def _require_api_key(key: str | None = Depends(_api_key_header)) -> str:
