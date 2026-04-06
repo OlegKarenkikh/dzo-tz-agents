@@ -63,28 +63,6 @@ SYSTEM_PROMPT = """Ты — ИИ-инспектор «Контролер ТЗ».
 Пример вызова generate_email_to_dzo (только поля решения):
 {"decision":"Требует доработки","dzo_name":"Название ДЗО","tz_subject":"Тема ТЗ","issues":["Замечание 1","Замечание 2"],"recommendations":["Рекомендация 1"],"has_corrected_tz":true}"""
 
-# {tools}/{tool_names} экранируем двойными скобками — LangChain подставит их позже через PromptTemplate,
-# а .format(system_prompt=...) обрабатывает только {system_prompt}.
-_REACT_TEMPLATE = (
-    "Assistant is a helpful AI agent.\n\n"
-    "Has access to the following tools:\n"
-    "{{tools}}\n\n"
-    "Use the following format:\n"
-    "Thought: what to do next\n"
-    "Action: tool name (one of [{{tool_names}}])\n"
-    "Action Input: input to the tool\n"
-    "Observation: result\n"
-    "... (repeat Thought/Action/Observation as needed)\n"
-    "Thought: I now know the final answer\n"
-    "Final Answer: the final answer\n\n"
-    "Begin!\n\n"
-    "System: {system_prompt}\n\n"
-    "Question: {{input}}\n"
-    "{{agent_scratchpad}}"
-)
-
-REACT_TEMPLATE = _REACT_TEMPLATE.format(system_prompt=SYSTEM_PROMPT)
-
 
 class AgentRunner:
     """Adapter to keep legacy `invoke({"input": ...})` contract for api/app.py."""
@@ -100,9 +78,6 @@ class AgentRunner:
             {"messages": [{"role": "user", "content": chat_input}]},
             **kwargs,
         )
-
-        # Логируем весь результат для отладки
-        logger.debug("Результат агента (тип: %s): %s", type(result).__name__, result)
 
         output = ""
         messages: list = []
@@ -146,8 +121,8 @@ def create_tz_agent(model_name: str | None = None) -> AgentRunner:
     """
     llm = build_llm(temperature=0.2, model_name_override=model_name)
     tools = [generate_json_report, generate_corrected_tz, generate_email_to_dzo]
-    # Debug режим: по умолчанию включен, если явно не отключен
-    debug_mode = os.getenv("AGENT_DEBUG", "1") not in {"0", "false", "False"}
+    # Debug режим: по умолчанию выключен — включается явно через AGENT_DEBUG=1
+    debug_mode = os.getenv("AGENT_DEBUG", "0") in {"1", "true", "True"}
     logger.info("Создание агента ТЗ (debug=%s, модель=%s)", debug_mode, llm.model_name)
 
     graph_agent = create_agent(

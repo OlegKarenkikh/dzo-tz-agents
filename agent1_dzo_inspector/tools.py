@@ -1,11 +1,12 @@
 import json
-import logging
 from datetime import datetime
 from html import escape as html_escape
 
 from langchain.tools import tool
 
-logger = logging.getLogger("agent_dzo")
+from shared.logger import setup_logger
+
+logger = setup_logger("agent_dzo")
 
 
 @tool
