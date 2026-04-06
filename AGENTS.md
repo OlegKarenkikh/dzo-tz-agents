@@ -16,7 +16,7 @@ DZO/TZ Agents is a Python 3.11+ LLM-powered email processing system using FastAP
 
 | Task | Command |
 |------|---------|
-| Install deps | `pip install -e ".[ui,dev]"` |
+| Install deps | `make install` (или `pip install -e ".[ui,dev]"`) |
 | Lint | `make lint` |
 | Format | `make fmt` |
 | Test | `make test` (run **without** `.env` loaded, or ensure env vars don't conflict with test expectations) |

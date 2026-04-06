@@ -36,9 +36,10 @@ jobs:
           python-version: "3.11"
       - name: pip-audit
         run: |
-          pip install pip-audit
-          pip-audit -r requirements.txt --format json -o pip-audit.json || true
-          pip-audit -r requirements.txt
+          python -m pip install --upgrade pip
+          pip install -e ".[ui,dev]"
+          pip-audit --format json -o pip-audit.json || true
+          pip-audit
 
       - name: Upload audit report
         if: always()
