@@ -4,8 +4,8 @@
 help: ## Показать доступные команды
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
-install: ## Установить зависимости
-	pip install -r requirements.txt
+install: ## Установить зависимости (как в CI и README: editable + ui + dev)
+	pip install -e ".[ui,dev]"
 
 test: ## Запустить тесты
 	python -m pytest tests/ -v --tb=short --cov=. --cov-report=term-missing
