@@ -3,7 +3,7 @@ from datetime import datetime
 from html import escape as html_escape
 
 from langchain.tools import tool
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from shared.logger import setup_logger
 
@@ -18,6 +18,8 @@ logger = setup_logger("agent_tz")
 # ---------------------------------------------------------------------------
 
 class SectionResult(BaseModel):
+    model_config = ConfigDict(strict=True)
+
     id: int
     name: str
     status: str = Field(description="'ОК' | '❌' | '❓'")
@@ -25,6 +27,8 @@ class SectionResult(BaseModel):
 
 
 class JsonReportInput(BaseModel):
+    model_config = ConfigDict(strict=True)
+
     overall_status: str = Field(description="'Соответствует' | 'Требует доработки' | 'Не соответствует'")
     category: str = "Не определена"
     sections: list[SectionResult] = Field(default_factory=list)
@@ -33,23 +37,31 @@ class JsonReportInput(BaseModel):
 
 
 class OriginalSection(BaseModel):
+    model_config = ConfigDict(strict=True)
+
     name: str
     content: str = ""
     status: str = "ОК"
 
 
 class AddedSection(BaseModel):
+    model_config = ConfigDict(strict=True)
+
     name: str
     content: str = ""
 
 
 class Modification(BaseModel):
+    model_config = ConfigDict(strict=True)
+
     section: str
     old_text: str = ""
     new_text: str = ""
 
 
 class CorrectedTzInput(BaseModel):
+    model_config = ConfigDict(strict=True)
+
     title: str = "Исправленное ТЗ"
     original_sections: list[OriginalSection] = Field(default_factory=list)
     added_sections: list[AddedSection] = Field(default_factory=list)
@@ -57,6 +69,8 @@ class CorrectedTzInput(BaseModel):
 
 
 class EmailToDzoInput(BaseModel):
+    model_config = ConfigDict(strict=True)
+
     decision: str = Field(description="'Соответствует' | 'Требует доработки' | 'Не соответствует'")
     dzo_name: str = "коллега"
     tz_subject: str = ""

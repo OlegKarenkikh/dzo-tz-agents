@@ -3,7 +3,7 @@ from datetime import datetime
 from html import escape as html_escape
 
 from langchain.tools import tool
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from shared.logger import setup_logger
 
@@ -17,12 +17,16 @@ logger = setup_logger("agent_dzo")
 # ---------------------------------------------------------------------------
 
 class ChecklistItem(BaseModel):
+    model_config = ConfigDict(strict=True)
+
     field: str
     status: str  # "Да" | "Нет" | "ОК"
     comment: str = ""
 
 
 class ValidationReportInput(BaseModel):
+    model_config = ConfigDict(strict=True)
+
     decision: str = Field(
         default="Не определено",
         description="Итоговое решение: 'Заявка полная' | 'Требуется доработка' | 'Требуется эскалация'",
@@ -34,11 +38,15 @@ class ValidationReportInput(BaseModel):
 
 
 class Supplier(BaseModel):
+    model_config = ConfigDict(strict=True)
+
     inn: str = ""
     name: str = ""
 
 
 class TezisFormInput(BaseModel):
+    model_config = ConfigDict(strict=True)
+
     procurement_subject: str = Field(description="Предмет закупки")
     justification: str | None = None
     budget: str | None = None
@@ -51,11 +59,15 @@ class TezisFormInput(BaseModel):
 
 
 class MissingField(BaseModel):
+    model_config = ConfigDict(strict=True)
+
     field: str
     description: str
 
 
 class InfoRequestInput(BaseModel):
+    model_config = ConfigDict(strict=True)
+
     dzo_name: str = "коллега"
     subject: str = ""
     missing_fields: list[MissingField] = Field(default_factory=list)
@@ -63,18 +75,24 @@ class InfoRequestInput(BaseModel):
 
 
 class EscalationInput(BaseModel):
+    model_config = ConfigDict(strict=True)
+
     subject: str = ""
     reason: str = ""
     details: str = ""
 
 
 class ResponseEmailInput(BaseModel):
+    model_config = ConfigDict(strict=True)
+
     decision: str = ""
     subject: str = ""
     agent_summary: str = ""
 
 
 class CorrectedField(BaseModel):
+    model_config = ConfigDict(strict=True)
+
     name: str
     old_value: str = ""
     new_value: str = ""
@@ -82,6 +100,8 @@ class CorrectedField(BaseModel):
 
 
 class CorrectedApplicationInput(BaseModel):
+    model_config = ConfigDict(strict=True)
+
     fields: list[CorrectedField] = Field(default_factory=list)
 
 
