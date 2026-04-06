@@ -47,7 +47,7 @@ class Supplier(BaseModel):
 class TezisFormInput(BaseModel):
     model_config = ConfigDict(strict=True)
 
-    procurement_subject: str = Field(description="Предмет закупки")
+    procurement_subject: str = Field(default="", description="Предмет закупки")
     justification: str | None = None
     budget: str | None = None
     initiator_name: str = ""

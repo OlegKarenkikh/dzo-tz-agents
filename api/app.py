@@ -109,7 +109,8 @@ async def lifespan(app: FastAPI):
     # NOTE: _run_log хранится в памяти одного процесса.
     # При использовании нескольких воркеров Gunicorn/uvicorn каждый воркер
     # ведёт свой независимый лог. Для консолидированного хранилища используйте
-    # shared.database (уже персистит все job-события в SQLite/PostgreSQL).
+    # shared.database (персистит job-события в PostgreSQL, а без БД использует
+    # in-memory fallback в рамках процесса).
     logger.info("API запущен. Модель: %s, бэкенд: %s", os.getenv("MODEL_NAME", "gpt-4o"), os.getenv("LLM_BACKEND", "openai"))
     yield
     # --- shutdown ---

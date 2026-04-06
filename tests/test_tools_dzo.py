@@ -86,6 +86,11 @@ class TestGenerateTezisForm:
         # The quote in the onclick vector is escaped, preventing attribute injection
         assert '&quot; onclick' in html
 
+    def test_omitted_procurement_subject_uses_placeholder(self):
+        result = json.loads(generate_tezis_form.invoke({}))
+        assert "tezisFormHtml" in result
+        assert "empty" in result["tezisFormHtml"]
+
 
 class TestGenerateInfoRequest:
     def test_basic(self):
