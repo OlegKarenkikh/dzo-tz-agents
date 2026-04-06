@@ -37,15 +37,19 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
-from api.metrics import (
+# load_dotenv() must run before first-party imports so that RATE_LIMIT_*
+# and other env-vars are available when api.rate_limit / config are imported.
+load_dotenv()
+
+from api.metrics import (  # noqa: E402
     API_LATENCY,
     API_REQUESTS,
     DECISIONS_TOTAL,
     JobTimer,
     metrics_router,
 )
-from api.rate_limit import PROCESS_RATE_LIMIT, limiter
-from config import (
+from api.rate_limit import PROCESS_RATE_LIMIT, limiter  # noqa: E402
+from config import (  # noqa: E402
     AGENT_JOB_TIMEOUT_SEC,
     AGENT_MAX_RETRIES,
     AGENT_RATE_LIMIT_BACKOFF,
@@ -53,7 +57,8 @@ from config import (
     MODEL_NAME,
     GITHUB_TOKEN,
 )
-from shared.database import (
+from shared.database import (  # noqa: E402
+    close_db,
     count_history as db_count_history,
     create_job,
     delete_job as db_delete_job,
@@ -64,8 +69,6 @@ from shared.database import (
     init_db,
     update_job,
 )
-
-load_dotenv()
 
 # ---------------------------------------------------------------------------
 # Логирование — настраивается один раз при импорте модуля.
@@ -102,6 +105,7 @@ async def lifespan(app: FastAPI):
     logger.info("API запущен. Модель: %s, бэкенд: %s", os.getenv("MODEL_NAME", "gpt-4o"), os.getenv("LLM_BACKEND", "openai"))
     yield
     # --- shutdown ---
+    close_db()
     logger.info("API остановлен.")
 
 

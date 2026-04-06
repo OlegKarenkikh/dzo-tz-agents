@@ -92,8 +92,8 @@ ignore = ["E501", "B008", "B904"]
 "agent1_dzo_inspector/runner.py" = ["I001", "E402"]
 "agent2_tz_inspector/runner.py" = ["I001", "E402"]
 "agent21_tender_inspector/runner.py" = ["I001", "E402"]
-# api: I001 — load_dotenv() block position, app.py multi-group imports
-"api/app.py" = ["I001"]
+# api: I001/E402 — load_dotenv() must run before first-party imports
+"api/app.py" = ["I001", "E402"]
 # shared: UP006/UP035 — typing generics kept where needed
 #         I001 — TYPE_CHECKING block must remain after stdlib imports
 "shared/*.py" = ["UP006", "UP035", "I001"]
