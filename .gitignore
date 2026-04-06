@@ -12,3 +12,9 @@ logs/
 .DS_Store
 .venv/
 venv/
+
+# Coverage / pytest
+.coverage
+coverage.xml
+htmlcov/
+.pytest_cache/
