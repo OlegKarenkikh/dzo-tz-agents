@@ -49,7 +49,7 @@ from api.metrics import (  # noqa: E402
     JobTimer,
     metrics_router,
 )
-from api.rate_limit import PROCESS_RATE_LIMIT, limiter  # noqa: E402
+from api.rate_limit import DEFAULT_RATE_LIMIT, PROCESS_RATE_LIMIT, limiter  # noqa: E402
 from config import (  # noqa: E402
     AGENT_JOB_TIMEOUT_SEC,
     AGENT_MAX_RETRIES,
@@ -176,22 +176,22 @@ AGENT_REGISTRY: dict[str, dict] = {
 # ---------------------------------------------------------------------------
 # Словарь ключевых слов для _detect_agent_type.
 # Формат: {agent_type: [список ключевых слов]}.
-# Слова проверяются в порядке убывания специфичности (длинные раньше коротких),
-# первое совпадение определяет тип агента.
+# Списки сортируются по убыванию длины (длинные раньше коротких), чтобы более
+# специфичные фразы проверялись первыми; первое совпадение определяет тип агента.
 # ---------------------------------------------------------------------------
 _AGENT_KEYWORDS: dict[str, list[str]] = {
-    "tender": [
+    "tender": sorted([
         "тендерная документация", "закупочная документация",
         "конкурсная документация", "аукционная документация",
         "извещение о закупке", "документация о закупке",
         "44-фз", "223-фз", "тендер",
-    ],
-    "tz": [
+    ], key=len, reverse=True),
+    "tz": sorted([
         "техническое задание", "техзадание", "технического задания",
         "terms of reference", "tor", "тз №", "тз к",
         "требования к поставке", "требования к услуге",
         "требования к работе", "технические требования",
-    ],
+    ], key=len, reverse=True),
 }
 
 
@@ -718,7 +718,9 @@ def list_agents():
 # ---------------------------------------------------------------------------
 
 @app.get("/api/v1/check-duplicate", summary="Проверить дубликат")
+@limiter.limit(DEFAULT_RATE_LIMIT)
 def check_duplicate(
+    request: Request,
     agent: str = Query(..., description="dzo или tz"),
     sender: str = Query(default=""),
     subject: str = Query(default=""),
@@ -782,7 +784,9 @@ def process_auto(
 
 
 @app.get("/api/v1/jobs", summary="Список заданий")
+@limiter.limit(DEFAULT_RATE_LIMIT)
 def list_jobs(
+    request: Request,
     agent: str | None = Query(default=None),
     status: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
@@ -802,7 +806,8 @@ def list_jobs(
 
 
 @app.get("/api/v1/jobs/{job_id}", response_model=JobResponse, summary="Статус задания")
-def get_job(job_id: str, _: str = Depends(_require_api_key)):
+@limiter.limit(DEFAULT_RATE_LIMIT)
+def get_job(job_id: str, request: Request, _: str = Depends(_require_api_key)):
     job = db_get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Задание " + repr(job_id) + " не найдено")
@@ -810,14 +815,17 @@ def get_job(job_id: str, _: str = Depends(_require_api_key)):
 
 
 @app.delete("/api/v1/jobs/{job_id}", summary="Удалить задание")
-def delete_job(job_id: str, _: str = Depends(_require_api_key)):
+@limiter.limit(DEFAULT_RATE_LIMIT)
+def delete_job(job_id: str, request: Request, _: str = Depends(_require_api_key)):
     if not db_delete_job(job_id):
         raise HTTPException(status_code=404, detail="Задание " + repr(job_id) + " не найдено")
     return {"message": "Задание " + repr(job_id) + " удалено"}
 
 
 @app.get("/api/v1/history", summary="История")
+@limiter.limit(DEFAULT_RATE_LIMIT)
 def history(
+    request: Request,
     agent: str | None = Query(default=None),
     status: str | None = Query(default=None),
     decision: str | None = Query(default=None),
@@ -847,7 +855,8 @@ def history(
 
 
 @app.get("/api/v1/stats", summary="Аггрегированная статистика")
-def get_stats(_: str = Depends(_require_api_key)):
+@limiter.limit(DEFAULT_RATE_LIMIT)
+def get_stats(request: Request, _: str = Depends(_require_api_key)):
     return db_get_stats()
 
 

@@ -21,10 +21,9 @@ from slowapi.util import get_remote_address
 _PROCESS_LIMIT = os.getenv("RATE_LIMIT_PROCESS", "20/minute")
 _DEFAULT_LIMIT = os.getenv("RATE_LIMIT_DEFAULT", "120/minute")
 
-limiter = Limiter(
-    key_func=get_remote_address,
-    default_limits=[_DEFAULT_LIMIT],
-)
+limiter = Limiter(key_func=get_remote_address)
 
 # Лимит для тяжёлых LLM-эндпоинтов (process/*)
 PROCESS_RATE_LIMIT = _PROCESS_LIMIT
+# Лимит для остальных защищённых эндпоинтов; применять явно на роуты
+DEFAULT_RATE_LIMIT = _DEFAULT_LIMIT
