@@ -104,6 +104,15 @@ class TestProcessAuto:
         assert resp.status_code == 200
         assert resp.json()["job"]["agent"] == "tz"
 
+    def test_auto_detects_tz_by_bare_tz_token(self, client):
+        resp = client.post(
+            "/api/v1/process/auto",
+            json={"text": "ТЗ на разработку ПО", "subject": "ТЗ"},
+            headers=HEADERS,
+        )
+        assert resp.status_code == 200
+        assert resp.json()["job"]["agent"] == "tz"
+
     def test_auto_defaults_to_dzo(self, client):
         resp = client.post(
             "/api/v1/process/auto",
