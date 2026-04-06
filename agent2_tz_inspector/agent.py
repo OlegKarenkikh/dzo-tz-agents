@@ -121,7 +121,7 @@ def create_tz_agent(model_name: str | None = None) -> AgentRunner:
     """
     llm = build_llm(temperature=0.2, model_name_override=model_name)
     tools = [generate_json_report, generate_corrected_tz, generate_email_to_dzo]
-    # Debug режим: по умолчанию выключен — включается явно через AGENT_DEBUG=1
+    # Debug: по умолчанию выключен (прод). Включается только при AGENT_DEBUG ∈ {1, true, True}.
     debug_mode = os.getenv("AGENT_DEBUG", "0") in {"1", "true", "True"}
     logger.info("Создание агента ТЗ (debug=%s, модель=%s)", debug_mode, llm.model_name)
 
