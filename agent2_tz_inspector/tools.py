@@ -1,12 +1,13 @@
 import json
-import logging
 import re
 from datetime import datetime
 from html import escape as html_escape
 
 from langchain.tools import tool
 
-logger = logging.getLogger("agent_tz")
+from shared.logger import setup_logger
+
+logger = setup_logger("agent_tz")
 
 # --------------------------------------------------------------------------- #
 #  Вспомогательные функции парсинга                                            #

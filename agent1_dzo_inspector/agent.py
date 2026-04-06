@@ -66,29 +66,6 @@ SLA (ОБЯЗАТЕЛЬНЫЕ СРОКИ)
 
 ОГРАНИЧЕНИЯ: не оценивай качество ТЗ — только полноту заявки. Вежливый деловой тон."""
 
-# В ReAct-шаблоне {tools}/{tool_names} являются плейсхолдерами LangChain.
-# {system_prompt} подставляется через .format(), поэтому
-# {tools}/{tool_names} экранируем двойными скобками.
-_REACT_TEMPLATE = (
-    "Assistant is a helpful AI agent.\n\n"
-    "Has access to the following tools:\n"
-    "{{tools}}\n\n"
-    "Use the following format:\n"
-    "Thought: what to do next\n"
-    "Action: tool name (one of [{{tool_names}}])\n"
-    "Action Input: input to the tool\n"
-    "Observation: result\n"
-    "... (repeat Thought/Action/Observation as needed)\n"
-    "Thought: I now know the final answer\n"
-    "Final Answer: the final answer\n\n"
-    "Begin!\n\n"
-    "System: {system_prompt}\n\n"
-    "Question: {{input}}\n"
-    "{{agent_scratchpad}}"
-)
-
-REACT_TEMPLATE = _REACT_TEMPLATE.format(system_prompt=SYSTEM_PROMPT)
-
 
 class AgentRunner:
     """Adapter to keep legacy `invoke({"input": ...})` contract for api/app.py."""

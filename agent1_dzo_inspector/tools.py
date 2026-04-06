@@ -1,11 +1,12 @@
 import json
-import logging
 from datetime import datetime
 from html import escape as html_escape
 
 from langchain.tools import tool
 
-logger = logging.getLogger("agent_dzo")
+from shared.logger import setup_logger
+
+logger = setup_logger("agent_dzo")
 
 
 @tool
@@ -168,7 +169,7 @@ def generate_response_email(query: str) -> str:
             "<div style=\"font-family:Arial;font-size:14px;line-height:1.8\">"
             "<p>Уважаемый коллега!</p>"
             f"<p>Ваша заявка по теме <strong>«{html_escape(str(d.get('subject', '')))}»</strong> была обработана ИИ-инспектором.</p>"
-            f"<p><strong>Решение: {html_escape(str(d.get('decision', '')))}</strong></p>"
+            f"<p><strong>Решение: {html_escape(str(d.get('decision', '')))}\</strong></p>"
             f"<p>{html_escape(str(d.get('agent_summary', '')))}</p>"
             "<p>С уважением,<br>Служба централизованных закупок</p></div>"
         )
