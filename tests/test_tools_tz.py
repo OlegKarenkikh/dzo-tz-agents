@@ -41,7 +41,7 @@ class TestGenerateJsonReport:
         assert result["stats"]["ok"] == 1
         assert result["stats"]["issues"] == 1
 
-    def test_invalid_json(self):
+    def test_validation_error_on_wrong_types(self):
         with pytest.raises(ValidationError):
             generate_json_report.invoke({"overall_status": 123})
 

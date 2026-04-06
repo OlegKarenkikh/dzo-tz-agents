@@ -33,7 +33,7 @@ class TestGenerateValidationReport:
         assert result["decision"] == "Не определено"
         assert result["stats"]["attachments_ok"] == 0
 
-    def test_invalid_json(self):
+    def test_validation_error_on_wrong_types(self):
         with pytest.raises(ValidationError):
             generate_validation_report.invoke({"decision": "ok", "checklist_attachments": "not-a-list"})
 
@@ -61,7 +61,7 @@ class TestGenerateTezisForm:
         result = json.loads(generate_tezis_form.invoke(json.loads(payload)))
         assert "empty" in result["tezisFormHtml"]
 
-    def test_invalid_json(self):
+    def test_validation_error_on_wrong_types(self):
         with pytest.raises(ValidationError):
             generate_tezis_form.invoke({"procurement_subject": 123})
 
