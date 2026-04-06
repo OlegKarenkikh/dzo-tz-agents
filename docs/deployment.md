@@ -53,8 +53,11 @@ cp .env.example .env
 ```bash
 git clone https://github.com/OlegKarenkikh/dzo-tz-agents.git
 cd dzo-tz-agents
-pip install -r requirements.txt
+make install
+# эквивалентно: pip install -e ".[ui,dev]"
 ```
+
+Образ Docker по-прежнему собирается из `requirements.txt` (см. `Dockerfile`); для разработки и CI используется editable-установка с extras, как в README и `AGENTS.md`.
 
 ### 2. Настройка окружения
 
