@@ -18,6 +18,7 @@ FastAPI REST API для обработки документов агентами
 """
 import base64
 import concurrent.futures
+import importlib.metadata
 import json
 import logging
 import math
@@ -71,15 +72,22 @@ from shared.database import (  # noqa: E402
 )
 
 # ---------------------------------------------------------------------------
-# Логирование — настраивается один раз при импорте модуля.
-# basicConfig вызывается здесь намеренно до создания любых логгеров,
-# чтобы не конфликтовать с uvicorn/gunicorn, которые настраивают root-логгер позже.
+# Логирование — настраивается как fallback при прямом запуске модуля.
+# Если uvicorn/gunicorn уже настроили root-логгер, basicConfig не вызываем,
+# чтобы не переопределять их форматирование и обработчики.
 # ---------------------------------------------------------------------------
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-)
+if not logging.getLogger().handlers:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    )
 logger = logging.getLogger("api")
+
+_API_VERSION: str
+try:
+    _API_VERSION = importlib.metadata.version("dzo-tz-agents")
+except importlib.metadata.PackageNotFoundError:
+    _API_VERSION = "unknown"
 
 CORS_ORIGINS = [
     o.strip()
@@ -112,7 +120,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="DZO/TZ Agents API",
     description="REST API для обработки заявок ДЗО и ТЗ",
-    version="1.3.0",
+    version=_API_VERSION,
     docs_url="/docs",
     redoc_url="/redoc",
     openapi_url="/openapi.json" if os.getenv("ENABLE_DOCS", "true") == "true" else None,
@@ -682,7 +690,7 @@ def health():
     return {
         "status": "ok",
         "uptime_sec": int((datetime.now(UTC) - _start_time).total_seconds()),
-        "version": "1.3.0",
+        "version": _API_VERSION,
         "agent_mode": os.getenv("AGENT_MODE", "both"),
         "model": os.getenv("MODEL_NAME", "gpt-4o"),
         "timestamp": datetime.now(UTC).isoformat(),
