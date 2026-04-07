@@ -109,6 +109,27 @@ def _api_delete(path: str) -> bool:
     return False
 
 
+def _fetch_registered_agents() -> list[dict]:
+    """Возвращает список зарегистрированных агентов из API /agents."""
+    payload = _api_get("/agents") or {}
+    agents = payload.get("agents") if isinstance(payload, dict) else None
+    if not isinstance(agents, list):
+        return []
+    return [a for a in agents if isinstance(a, dict) and a.get("id")]
+
+
+def _get_ui_agents() -> list[dict]:
+    """Список агентов для UI: сначала API, затем fallback."""
+    registered_agents = _fetch_registered_agents()
+    if registered_agents:
+        return registered_agents
+    return [
+        {"id": "dzo", "name": "Инспектор ДЗО"},
+        {"id": "tz", "name": "Инспектор ТЗ"},
+        {"id": "tender", "name": "Парсер тендерной документации"},
+    ]
+
+
 def _decision_badge(decision: str) -> str:
     """Возвращает HTML-бейдж с цветовой кодировкой решения."""
     d = (decision or "").lower()
@@ -281,21 +302,25 @@ if page == "📊 Дашборд":
         st.info("Нет данных. Запустите обработку документа.")
 
     st.subheader("Ручной запуск")
-    col_a, col_b, col_c = st.columns(3)
-    with col_a:
-        if st.button("▶️ Запустить ДЗО", width='stretch'):
-            result = _api_post("/api/v1/process/dzo", {"text": "(ручной запуск)", "subject": "Тестовый запуск"})
-            if result and "job" in result:
-                st.success(f"Задание создано: `{result['job']['job_id']}`")
-    with col_b:
-        if st.button("▶️ Запустить ТЗ", width='stretch'):
-            result = _api_post("/api/v1/process/tz", {"text": "(ручной запуск)", "subject": "Тестовый запуск"})
-            if result and "job" in result:
-                st.success(f"Задание создано: `{result['job']['job_id']}`")
-    with col_c:
-        if st.button("▶️ Запустить оба", width='stretch'):
-            for agent_path in ["/api/v1/process/dzo", "/api/v1/process/tz"]:
-                result = _api_post(agent_path, {"text": "(ручной запуск)", "subject": "Тестовый запуск"})
+    dashboard_agents = _get_ui_agents()
+    run_columns = st.columns(len(dashboard_agents) + 1)
+    for idx, agent in enumerate(dashboard_agents):
+        aid = str(agent.get("id", "")).strip()
+        name = str(agent.get("name", aid)).strip() or aid
+        with run_columns[idx]:
+            if st.button(
+                f"▶️ Запустить {name}",
+                key=f"run_dashboard_{aid}",
+                width='stretch',
+            ):
+                result = _api_post(f"/api/v1/process/{aid}", {"text": "(ручной запуск)", "subject": "Тестовый запуск"})
+                if result and "job" in result:
+                    st.success(f"Задание создано: `{result['job']['job_id']}`")
+    with run_columns[-1]:
+        if st.button("▶️ Запустить все", key="run_dashboard_all", width='stretch'):
+            for agent in dashboard_agents:
+                aid = str(agent.get("id", "")).strip()
+                result = _api_post(f"/api/v1/process/{aid}", {"text": "(ручной запуск)", "subject": "Тестовый запуск"})
                 if result and "job" in result:
                     st.success(f"Задание создано: `{result['job']['job_id']}`")
 
@@ -317,13 +342,19 @@ elif page == "🧪 Тестирование":
     if "test_payload" not in st.session_state:
         st.session_state.test_payload = None
 
-    agent_choice = st.selectbox("Выберите агента", ["ДЗО — Инспектор заявок", "ТЗ — Инспектор техзаданий", "Авто (определить по тексту)"])
-    if "ДЗО" in agent_choice:
-        agent_key = "dzo"
-    elif "ТЗ" in agent_choice:
-        agent_key = "tz"
-    else:
-        agent_key = "auto"
+    registered_agents = _get_ui_agents()
+
+    labels_to_ids: dict[str, str] = {}
+    for agent in registered_agents:
+        aid = str(agent.get("id", "")).strip()
+        name = str(agent.get("name", aid)).strip() or aid
+        label = f"{name} ({aid})"
+        labels_to_ids[label] = aid
+
+    auto_label = "Авто (определить по тексту)"
+    selector_options = list(labels_to_ids.keys()) + [auto_label]
+    agent_choice = st.selectbox("Выберите агента", selector_options)
+    agent_key = "auto" if agent_choice == auto_label else labels_to_ids[agent_choice]
 
     col_left, col_right = st.columns([1, 1])
 
@@ -392,8 +423,17 @@ elif page == "🧪 Тестирование":
             }
             st.session_state.test_payload = payload
 
-            # Проверка дубликата (только если агент не auto)
-            resolve_key = agent_key if agent_key != "auto" else "dzo"
+            resolve_key = agent_key
+            if agent_key == "auto":
+                resolved = _api_post("/api/v1/resolve-agent", payload)
+                if resolved and resolved.get("agent"):
+                    resolve_key = resolved["agent"]
+                    st.info(f"Автоопределение: выбран агент `{resolve_key}`")
+                    if resolved.get("matched_keyword"):
+                        st.caption(f"Ключевое слово: `{resolved['matched_keyword']}`")
+
+            st.session_state.test_agent_key = resolve_key
+
             dup = _api_get("/api/v1/check-duplicate", {
                 "agent": resolve_key,
                 "sender": sender_email,
@@ -404,7 +444,7 @@ elif page == "🧪 Тестирование":
                 st.session_state.test_duplicate = dup["job"]
             else:
                 with st.spinner("Отправляем запрос к агенту..."):
-                    job = _api_post(f"/api/v1/process/{agent_key}", payload)
+                    job = _api_post(f"/api/v1/process/{resolve_key}", payload)
                 if job and "job" in job:
                     st.session_state.test_result = _poll_job(job["job"]["job_id"])
 
@@ -424,8 +464,9 @@ elif page == "🧪 Тестирование":
             if b2.button("Переобработать", width='stretch'):
                 payload = st.session_state.test_payload
                 payload["force"] = True
+                force_agent_key = st.session_state.get("test_agent_key", agent_key)
                 with st.spinner("Повторная отправка..."):
-                    job = _api_post(f"/api/v1/process/{agent_key}", payload)
+                    job = _api_post(f"/api/v1/process/{force_agent_key}", payload)
                 if job and "job" in job:
                     st.session_state.test_result = _poll_job(job["job"]["job_id"])
                 st.session_state.test_duplicate = None
@@ -944,7 +985,7 @@ elif page == "📖 Документация":
         _history_params_table = (
             "| Параметр | Тип | Описание |\n"
             "|---|---|---|\n"
-            "| `agent` | str | `dzo` или `tz` |\n"
+            "| `agent` | str | `dzo`, `tz` или `tender` |\n"
             "| `status` | str | `pending`, `running`, `done`, `error` |\n"
             "| `decision` | str | Фильтр по тексту решения |\n"
             "| `date_from` | str | ISO 8601, начало периода |\n"
@@ -955,7 +996,7 @@ elif page == "📖 Документация":
         _dup_params_table = (
             "| Параметр | Тип | Описание |\n"
             "|---|---|---|\n"
-            "| `agent` | str | `dzo` или `tz` |\n"
+            "| `agent` | str | `dzo`, `tz` или `tender` |\n"
             "| `sender` | str | Email отправителя |\n"
             "| `subject` | str | Тема письма |"
         )
@@ -985,6 +1026,9 @@ X-API-Key: <ваш ключ>
 | GET | `/metrics` | — | Prometheus scrape |
 | POST | `/api/v1/process/dzo` | ✅ | Обработать заявку ДЗО |
 | POST | `/api/v1/process/tz` | ✅ | Обработать ТЗ |
+| POST | `/api/v1/process/tender` | ✅ | Парсинг тендерной документации |
+| POST | `/api/v1/process/{{agent}}` | ✅ | Универсальный запуск агента по ID из `/agents` |
+| POST | `/api/v1/resolve-agent` | ✅ | Определить ID агента по тексту/теме/имени файла |
 | POST | `/api/v1/process/auto` | ✅ | Автоопределение типа |
 | GET | `/api/v1/check-duplicate` | ✅ | Проверить дубликат без запуска агента |
 | GET | `/api/v1/jobs` | ✅ | Список заданий (с пагинацией) |
@@ -1008,6 +1052,11 @@ X-API-Key: <ваш ключ>
 Система ищет дубликаты по `(агент, sender_email, subject)`.
 Если найдено завершённое задание — API вернёт `duplicate: true` и `existing_job_id`.
 Передайте `"force": true` чтобы принудительно переобработать.
+
+### Автоопределение
+В UI список агентов и селектор формируются динамически из `GET /agents`.
+Для режима «Авто» UI вызывает `POST /api/v1/resolve-agent`, получает фактический `agent`,
+после чего использует этот ID для проверки дубликатов и запуска обработки.
 
 ### GET /api/v1/check-duplicate — параметры
 

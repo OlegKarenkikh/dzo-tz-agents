@@ -146,6 +146,9 @@ make monitoring    # Prometheus + Grafana + Alertmanager
 | GET | `/agents` | — | Список агентов |
 | POST | `/api/v1/process/dzo` | ✅ | Обработать заявку ДЗО |
 | POST | `/api/v1/process/tz` | ✅ | Обработать ТЗ |
+| POST | `/api/v1/process/tender` | ✅ | Парсинг тендерной документации |
+| POST | `/api/v1/process/{agent}` | ✅ | Универсальный запуск агента по ID из `/agents` |
+| POST | `/api/v1/resolve-agent` | ✅ | Определить агента по тексту/теме/файлу |
 | POST | `/api/v1/process/auto` | ✅ | Автоопределение типа |
 | GET | `/api/v1/check-duplicate` | ✅ | Проверить дубликат без запуска агента |
 | GET | `/api/v1/jobs` | ✅ | Список заданий |
@@ -170,6 +173,18 @@ curl -X POST https://your-domain/api/v1/process/dzo \
 # Проверить дубликат перед отправкой
 curl -H "X-API-Key: $API_KEY" \
   "https://your-domain/api/v1/check-duplicate?agent=dzo&sender=dzo@company.ru&subject=Закупка"
+
+# Определить агента по содержимому (для режима Auto в UI)
+curl -X POST https://your-domain/api/v1/resolve-agent \
+  -H "X-API-Key: $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"text": "Тендерная документация", "subject": "Проверка"}'
+
+# Универсальный запуск по ID агента из /agents
+curl -X POST https://your-domain/api/v1/process/tender \
+  -H "X-API-Key: $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"text": "Тендерная документация", "subject": "Проверка"}'
 
 # Переобработать принудительно (если дубликат есть)
 curl -X POST https://your-domain/api/v1/process/dzo \
