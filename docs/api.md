@@ -32,6 +32,9 @@ X-API-Key: <ваш_секретный_ключ>
 | GET | `/metrics` | — | Prometheus scrape |
 | POST | `/api/v1/process/dzo` | ✅ | Обработать заявку ДЗО |
 | POST | `/api/v1/process/tz` | ✅ | Обработать ТЗ |
+| POST | `/api/v1/process/tender` | ✅ | Парсинг тендерной документации |
+| POST | `/api/v1/process/{agent}` | ✅ | Универсальный запуск агента по ID из `/agents` |
+| POST | `/api/v1/resolve-agent` | ✅ | Определить ID агента по содержимому |
 | POST | `/api/v1/process/auto` | ✅ | Автоопределение типа агента |
 | GET | `/api/v1/check-duplicate` | ✅ | Проверить дубликат без запуска агента |
 | GET | `/api/v1/jobs` | ✅ | Список заданий (с фильтрацией) |
@@ -84,6 +87,8 @@ curl "http://localhost:8000/status?limit=20"
 
 Список доступных агентов с описаниями.
 
+Публичный контракт ответа: `id`, `name`, `description`, `decisions`.
+
 **curl:**
 ```bash
 curl http://localhost:8000/agents
@@ -104,6 +109,12 @@ curl http://localhost:8000/agents
             "name": "Инспектор технических заданий",
             "description": "...",
             "decisions": ["Соответствует", "Требует доработки", "Не соответствует"]
+        },
+        {
+          "id": "tender",
+          "name": "Парсер тендерной документации",
+          "description": "...",
+          "decisions": ["documents_found", "tool_error"]
         }
     ]
 }
@@ -152,11 +163,60 @@ curl -X POST http://localhost:8000/api/v1/process/dzo \
 
 ---
 
+### `POST /api/v1/process/tender`
+
+Обработать тендерную документацию. Аналогично `/api/v1/process/dzo`.
+
+---
+
+### `POST /api/v1/process/{agent}`
+
+Универсальный запуск агента по его ID из `GET /agents`.
+
+Если агент не зарегистрирован, API вернёт `400`.
+
+**curl:**
+```bash
+curl -X POST http://localhost:8000/api/v1/process/tender \
+  -H "X-API-Key: your-secret-key" \
+  -H "Content-Type: application/json" \
+  -d '{"text": "Тендерная документация", "subject": "Проверка"}'
+```
+
+---
+
+### `POST /api/v1/resolve-agent`
+
+Определить целевого агента по содержимому запроса.
+
+Использует auto-detect профили из зарегистрированных агентов (`GET /agents`).
+
+**curl:**
+```bash
+curl -X POST http://localhost:8000/api/v1/resolve-agent \
+  -H "X-API-Key: your-secret-key" \
+  -H "Content-Type: application/json" \
+  -d '{"text": "Тендерная документация", "subject": "Проверка"}'
+```
+
+**Ответ:**
+```json
+{
+  "agent": "tender",
+  "matched_keyword": "тендерная документация",
+  "method": "keyword-profile",
+  "available_agents": ["dzo", "tz", "tender"]
+}
+```
+
+---
+
 ### `POST /api/v1/process/auto`
 
 Автоматическое определение типа агента по содержимому запроса.
 
-**Логика:** если в тексте / теме / имени файла есть слова «техническое задание», «тз», «tor», «техзадание» — агент ТЗ; иначе — агент ДЗО.
+**Логика:** используется динамический профиль `auto_detect` зарегистрированных агентов.
+Порядок определяется приоритетом (`priority`) в реестре агентов.
 
 **curl:**
 ```bash
@@ -176,7 +236,7 @@ curl -X POST http://localhost:8000/api/v1/process/auto \
 
 | Параметр | Тип | Описание |
 |---|---|---|
-| `agent` | str | `dzo` или `tz` |
+| `agent` | str | ID агента из `GET /agents` |
 | `sender` | str | Email отправителя |
 | `subject` | str | Тема письма |
 
@@ -197,7 +257,7 @@ curl -H "X-API-Key: your-secret-key" \
 
 Список всех заданий с опциональной фильтрацией.
 
-**Параметры:** `agent` (`dzo`/`tz`), `status` (`pending`/`running`/`done`/`error`)
+**Параметры:** `agent` (ID из `GET /agents`), `status` (`pending`/`running`/`done`/`error`)
 
 **curl:**
 ```bash

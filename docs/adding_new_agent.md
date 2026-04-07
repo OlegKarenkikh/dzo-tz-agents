@@ -330,34 +330,31 @@ __all__ = ["process_text", "run_forever"]
 
 База данных хранит `job.agent` как строку — новое значение `"<name>"` сразу попадёт в хранилище.
 
-### 7.2 `api/app.py` — добавить агент в два места
+### 7.2 `api/app.py` — добавить агент в `AGENT_REGISTRY`
 
-**Место 1** — список агентов (`GET /agents`):
-
-```python
-# добавить в существующий список AGENTS
-AGENTS = [
-    {"id": "dzo", "name": "Инспектор ДЗО"},
-    {"id": "tz",  "name": "Инспектор ТЗ"},
-    {"id": "<name>", "name": "<Описание>"},  # ← добавить
-]
-```
-
-**Место 2** — маршрутизация (`POST /api/v1/process/<name>`):
+В текущей архитектуре UI и автоопределение работают динамически через `GET /agents`.
+Достаточно зарегистрировать нового агента в `AGENT_REGISTRY`.
 
 ```python
-# добавить в существующий роутер _run_agent()
-def _run_agent(agent_id: str, text: str, subject: str, sender: str) -> dict:
-    if agent_id == "dzo":
-        from agent1_dzo_inspector import process_text
-    elif agent_id == "tz":
-        from agent2_tz_inspector import process_text
-    elif agent_id == "<name>":                          # ← добавить
-        from agent3_<name>_inspector import process_text  # ←
-    else:
-        raise ValueError(f"Unknown agent: {agent_id}")
-    return process_text(text, subject=subject, sender=sender)
+AGENT_REGISTRY = {
+    "<name>": {
+        "name": "<Человекочитаемое имя>",
+        "description": "<Описание>",
+        "decisions": ["<decision1>", "<decision2>"],
+        "auto_detect": {
+            "priority": 70,
+            "keywords": ["ключевая фраза", "синоним", "термин"]
+        },
+    },
+    # ... существующие агенты
+}
 ```
+
+После этого:
+- агент автоматически появится в `GET /agents`;
+- агент автоматически попадёт в селектор на странице тестирования UI;
+- универсальный запуск через `POST /api/v1/process/{agent}` начнёт принимать новый ID без добавления отдельного route;
+- `POST /api/v1/process/auto` и `POST /api/v1/resolve-agent` начнут учитывать его профиль `auto_detect`.
 
 ---
 

@@ -53,6 +53,15 @@ class TestAgents:
         ids = [a["id"] for a in data["agents"]]
         assert "dzo" in ids
         assert "tz" in ids
+        assert "tender" in ids
+
+    def test_list_agents_does_not_expose_internal_auto_detect(self, client):
+        resp = client.get("/agents")
+        assert resp.status_code == 200
+        agents = resp.json()["agents"]
+        assert agents
+        for agent in agents:
+            assert "auto_detect" not in agent
 
 
 class TestProcessDzo:
@@ -121,6 +130,61 @@ class TestProcessAuto:
         )
         assert resp.status_code == 200
         assert resp.json()["job"]["agent"] == "dzo"
+
+    def test_auto_detects_tender_by_keyword(self, client):
+        resp = client.post(
+            "/api/v1/process/auto",
+            json={"text": "Просим проверить тендерную документацию", "subject": "Тендер"},
+            headers=HEADERS,
+        )
+        assert resp.status_code == 200
+        assert resp.json()["job"]["agent"] == "tender"
+
+
+class TestProcessGeneric:
+    def test_process_generic_tender_returns_job_id(self, client):
+        resp = client.post(
+            "/api/v1/process/tender",
+            json={"text": "Тендерная документация", "subject": "Тендер"},
+            headers=HEADERS,
+        )
+        assert resp.status_code == 200
+        assert resp.json()["job"]["agent"] == "tender"
+
+    def test_process_generic_unknown_agent_returns_400(self, client):
+        resp = client.post(
+            "/api/v1/process/unknown",
+            json={"text": "Тест", "subject": "Тест"},
+            headers=HEADERS,
+        )
+        assert resp.status_code == 400
+
+    def test_process_generic_without_api_key_returns_401(self, client):
+        resp = client.post(
+            "/api/v1/process/dzo",
+            json={"text": "Тест", "subject": "Тест"},
+        )
+        assert resp.status_code == 401
+
+
+class TestResolveAgent:
+    def test_resolve_agent_returns_tz(self, client):
+        resp = client.post(
+            "/api/v1/resolve-agent",
+            json={"text": "Техническое задание на поставку", "subject": "ТЗ"},
+            headers=HEADERS,
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["agent"] == "tz"
+        assert "available_agents" in data
+
+    def test_resolve_agent_without_api_key_returns_401(self, client):
+        resp = client.post(
+            "/api/v1/resolve-agent",
+            json={"text": "Заявка", "subject": "Тест"},
+        )
+        assert resp.status_code == 401
 
 
 class TestJobs:

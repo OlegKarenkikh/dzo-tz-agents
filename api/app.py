@@ -8,6 +8,9 @@ FastAPI REST API для обработки документов агентами
   GET  /metrics                        — Prometheus scrape
   POST /api/v1/process/dzo             — обработать заявку ДЗО
   POST /api/v1/process/tz              — обработать ТЗ
+    POST /api/v1/process/tender          — парсинг тендерной документации
+    POST /api/v1/process/{agent}         — обработать документ указанным агентом
+    POST /api/v1/resolve-agent           — определить агента по содержимому
   POST /api/v1/process/auto            — автоопределение типа
   GET  /api/v1/check-duplicate         — проверить дубликат без обработки
   GET  /api/v1/jobs                    — список всех заданий (с пагинацией)
@@ -29,7 +32,7 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 
 from dotenv import load_dotenv
-from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Path, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.security import APIKeyHeader
@@ -158,11 +161,26 @@ AGENT_REGISTRY: dict[str, dict] = {
         "name": "Инспектор ДЗО",
         "description": "Проверяет заявки ДЗО на полноту и соответствие требованиям",
         "decisions": ["Заявка полная", "Требуется доработка", "Требуется эскалация"],
+        "auto_detect": {
+            "priority": 10,
+            "keywords": [
+                "заявка на закупку", "инициатор", "форма тезис", "обоснование закупки", "дзо",
+            ],
+        },
     },
     "tz": {
         "name": "Инспектор ТЗ",
         "description": "Анализирует технические задания на соответствие ГОСТ и внутренним стандартам",
         "decisions": ["Соответствует", "Требует доработки", "Не соответствует"],
+        "auto_detect": {
+            "priority": 80,
+            "keywords": [
+                "техническое задание", "техзадание", "технического задания",
+                "terms of reference", "tor", "тз №", "тз к", "тз",
+                "требования к поставке", "требования к услуге",
+                "требования к работе", "технические требования",
+            ],
+        },
     },
     "tender": {
         "name": "Парсер тендерной документации",
@@ -171,29 +189,53 @@ AGENT_REGISTRY: dict[str, dict] = {
             "с указанием раздела документации и требований к содержанию"
         ),
         "decisions": ["documents_found", "tool_error"],
+        "auto_detect": {
+            "priority": 100,
+            "keywords": [
+                "тендерная документация", "закупочная документация",
+                "конкурсная документация", "аукционная документация",
+                "извещение о закупке", "документация о закупке",
+                "44-фз", "223-фз", "тендер",
+            ],
+        },
     },
 }
 
-# ---------------------------------------------------------------------------
-# Словарь ключевых слов для _detect_agent_type.
-# Формат: {agent_type: [список ключевых слов]}.
-# Списки сортируются по убыванию длины (длинные раньше коротких), чтобы более
-# специфичные фразы проверялись первыми; первое совпадение определяет тип агента.
-# ---------------------------------------------------------------------------
-_AGENT_KEYWORDS: dict[str, list[str]] = {
-    "tender": sorted([
-        "тендерная документация", "закупочная документация",
-        "конкурсная документация", "аукционная документация",
-        "извещение о закупке", "документация о закупке",
-        "44-фз", "223-фз", "тендер",
-    ], key=len, reverse=True),
-    "tz": sorted([
-        "техническое задание", "техзадание", "технического задания",
-        "terms of reference", "tor", "тз №", "тз к", "тз",
-        "требования к поставке", "требования к услуге",
-        "требования к работе", "технические требования",
-    ], key=len, reverse=True),
-}
+
+def _fallback_agent_id() -> str:
+    """Возвращает fallback-агента: dzo, иначе первый из реестра."""
+    if "dzo" in AGENT_REGISTRY:
+        return "dzo"
+    return next(iter(AGENT_REGISTRY.keys()), "dzo")
+
+
+def _resolve_agent(request: "ProcessRequest") -> tuple[str, str | None]:
+    """Определяет агента по реестру AGENT_REGISTRY и его auto_detect-профилям."""
+    combined = (
+        request.text[:2000] + " "
+        + request.subject + " "
+        + request.filename
+    ).lower()
+
+    profiles: list[tuple[int, str, list[str]]] = []
+    for agent_id, info in AGENT_REGISTRY.items():
+        auto_detect = info.get("auto_detect") or {}
+        raw_keywords = auto_detect.get("keywords") or []
+        keywords = [str(k).strip().lower() for k in raw_keywords if str(k).strip()]
+        if not keywords:
+            continue
+        priority = int(auto_detect.get("priority", 0))
+        profiles.append((priority, agent_id, sorted(keywords, key=len, reverse=True)))
+
+    profiles.sort(key=lambda x: x[0], reverse=True)
+
+    for _priority, agent_id, keywords in profiles:
+        for kw in keywords:
+            if kw in combined:
+                logger.debug("_resolve_agent: '%s' → %s (ключ: '%s')", request.subject[:50], agent_id, kw)
+                return agent_id, kw
+
+    return _fallback_agent_id(), None
 
 
 def _get_api_key() -> str:
@@ -610,26 +652,9 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
 
 
 def _detect_agent_type(request: ProcessRequest) -> str:
-    """Определяет тип агента по ключевым словам в тексте, теме и имени файла.
-
-    Использует словарь _AGENT_KEYWORDS с приоритетом:
-    tender > tz > dzo (dzo — fallback по умолчанию).
-    Для повышения точности рекомендуется заменить на ML-классификатор
-    (например, fasttext или fine-tuned sentence-transformer).
-    """
-    combined = (
-        request.text[:2000] + " "  # Ограничиваем длину для производительности
-        + request.subject + " "
-        + request.filename
-    ).lower()
-
-    for agent_type, keywords in _AGENT_KEYWORDS.items():
-        for kw in keywords:
-            if kw in combined:
-                logger.debug("_detect_agent_type: '%s' → %s (ключ: '%s')", request.subject[:50], agent_type, kw)
-                return agent_type
-
-    return "dzo"
+    """Определяет тип агента по auto_detect-профилям зарегистрированных агентов."""
+    agent_type, _matched_keyword = _resolve_agent(request)
+    return agent_type
 
 
 def _check_and_process(
@@ -706,9 +731,15 @@ def status(limit: int = Query(default=10, ge=1, le=100)):
 
 @app.get("/agents", summary="Список агентов")
 def list_agents():
+    # Публичный контракт /agents: не раскрываем внутренние auto_detect-настройки.
     return {
         "agents": [
-            {"id": aid, **info}
+            {
+                "id": aid,
+                "name": info.get("name", aid),
+                "description": info.get("description", ""),
+                "decisions": info.get("decisions", []),
+            }
             for aid, info in AGENT_REGISTRY.items()
         ]
     }
@@ -722,11 +753,13 @@ def list_agents():
 @limiter.limit(DEFAULT_RATE_LIMIT)
 def check_duplicate(
     request: Request,
-    agent: str = Query(..., description="dzo или tz"),
+    agent: str = Query(..., description="ID агента из GET /agents"),
     sender: str = Query(default=""),
     subject: str = Query(default=""),
     _: str = Depends(_require_api_key),
 ):
+    if agent not in AGENT_REGISTRY:
+        raise HTTPException(status_code=400, detail="Неизвестный агент: " + repr(agent))
     dup = find_duplicate_job(agent, sender, subject)
     if dup:
         return DuplicateResponse(
@@ -782,6 +815,34 @@ def process_auto(
 ):
     agent_type = _detect_agent_type(body)
     return _check_and_process(agent_type, body, background_tasks)
+
+
+@app.post("/api/v1/process/{agent}", summary="Обработать документ указанным агентом")
+@limiter.limit(PROCESS_RATE_LIMIT)
+def process_agent(
+    body: ProcessRequest,
+    background_tasks: BackgroundTasks,
+    request: Request,
+    agent: str = Path(..., description="ID агента из GET /agents"),
+    _: str = Depends(_require_api_key),
+):
+    return _check_and_process(agent, body, background_tasks)
+
+
+@app.post("/api/v1/resolve-agent", summary="Определить агента по содержимому")
+@limiter.limit(DEFAULT_RATE_LIMIT)
+def resolve_agent(
+    body: ProcessRequest,
+    request: Request,
+    _: str = Depends(_require_api_key),
+):
+    agent_type, matched_keyword = _resolve_agent(body)
+    return {
+        "agent": agent_type,
+        "matched_keyword": matched_keyword,
+        "method": "keyword-profile" if matched_keyword else "fallback",
+        "available_agents": list(AGENT_REGISTRY.keys()),
+    }
 
 
 @app.get("/api/v1/jobs", summary="Список заданий")
