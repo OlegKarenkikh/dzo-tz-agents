@@ -1,0 +1,79 @@
+{
+  "meta": {
+    "repo": "OlegKarenkikh/dzo-tz-agents",
+    "analyzed_files": 43,
+    "total_python_files": 30,
+    "analysis_date": "2026-04-08",
+    "total_issues": 27
+  },
+  "summary": {
+    "CRITICAL": 5,
+    "HIGH": 11,
+    "MEDIUM": 7,
+    "LOW": 4
+  },
+  "categories": {
+    "RACE_CONDITION": {
+      "severity": "CRITICAL",
+      "items": [
+        {"id": "RC-01", "file": "shared/database.py", "lines": "67-71", "title": "double-init _pool без Lock", "pattern": "check-then-act", "fix": "threading.Lock() + double-checked locking"},
+        {"id": "RC-02", "file": "api/app.py", "lines": "152,643,728", "title": "_run_log deque без Lock", "pattern": "concurrent append+iterate", "fix": "threading.Lock() вокруг append и list()"},
+        {"id": "RC-03", "file": "shared/llm.py", "lines": "61-80,101-420", "title": "4 глобальных LLM-кеша без Lock", "pattern": "concurrent read-modify-write", "fix": "threading.RLock() или functools.lru_cache"},
+        {"id": "RC-04", "file": "shared/database.py", "lines": "17,222,257,439", "title": "_memory_store dict без Lock", "pattern": "concurrent mutation", "fix": "threading.RLock()"},
+        {"id": "RC-05", "file": "agent21_tender_inspector/runner.py", "lines": "56,361-366", "title": "_fallback_chain_cache без Lock", "pattern": "concurrent miss", "fix": "threading.Lock() + double-checked"}
+      ]
+    },
+    "MUTATION": {
+      "severity": "HIGH",
+      "items": [
+        {"id": "MU-01", "file": "api/app.py", "lines": "553,573", "title": "time.sleep() в async BackgroundTasks", "impact": "blocks event loop", "fix": "asyncio.sleep() + async def _run_job"},
+        {"id": "MU-02", "file": "api/app.py", "lines": "596-623", "title": "dict artifacts перезаписывается без лога", "impact": "silent data loss", "fix": "logger.warning on key overwrite"},
+        {"id": "MU-03", "file": "agent1/2/21 runners", "lines": "22 in each", "title": "FORCE_REPROCESS дублируется в 3 файлах", "impact": "maintenance", "fix": "централизовать в config.py"}
+      ]
+    },
+    "DATA": {
+      "severity": "HIGH",
+      "items": [
+        {"id": "DA-01", "file": "shared/migrations/001_*.sql", "title": "нет trace-колонки в SQL-миграциях", "impact": "KeyError при ручном применении", "fix": "002_add_trace_column.sql"},
+        {"id": "DA-02", "file": "agent1_dzo_inspector/runner.py", "lines": "132-133", "title": "bare except pass теряет artifacts", "impact": "silent data loss", "fix": "logger.warning"},
+        {"id": "DA-03", "file": "api/app.py", "lines": "623-624", "title": "bare except pass теряет artifacts", "impact": "silent data loss", "fix": "logger.warning"},
+        {"id": "DA-04", "file": "shared/email_client.py", "lines": "94-102", "title": "нет retry/метрики при ошибке письма", "impact": "silent email loss", "fix": "EMAILS_ERRORS.inc()"},
+        {"id": "DA-05", "file": "api/app.py", "lines": "580-586", "title": "decision='' при пустых intermediate_steps", "impact": "пустые записи в БД", "fix": "явная проверка + logger.warning"}
+      ]
+    },
+    "DUPLICATE": {
+      "severity": "MEDIUM",
+      "items": [
+        {"id": "DU-01", "files": ["agent1_dzo_inspector/agent.py:70", "agent2_tz_inspector/agent.py:67", "agent21_tender_inspector/agent.py:62"], "title": "AgentRunner продублирован 3 раза", "overlap": "90%", "fix": "shared/agent_runner.py::BaseAgentRunner"},
+        {"id": "DU-02", "files": ["agent1_dzo_inspector/runner.py", "agent2_tz_inspector/runner.py"], "title": "process_dzo/tz_emails структурные клоны", "overlap": "85%", "fix": "shared/runner_base.py::process_agent_emails"},
+        {"id": "DU-03", "files": ["shared/migrations/001_create_jobs.sql", "shared/migrations/001_init.sql"], "title": "два SQL-файла с номером 001_", "difference": "один с триггером, другой с COMMENT", "fix": "оставить 001_init.sql, удалить 001_create_jobs.sql"},
+        {"id": "DU-04", "title": "FORCE_REPROCESS в 3 runner-файлах", "fix": "→ MU-03"}
+      ]
+    },
+    "STUB_PLACEHOLDER": {
+      "severity": "MEDIUM",
+      "items": [
+        {"id": "ST-01", "file": "agent21_tender_inspector/tools.py", "lines": "29,40,48", "title": "bare pass в Pydantic-моделях"},
+        {"id": "ST-02", "file": "agent1_dzo_inspector/agent.py:6, agent2_tz_inspector/agent.py:6", "title": "from langchain.agents import create_agent — нет в публичном API", "risk": "ImportError в production"},
+        {"id": "ST-03", "file": "tests/conftest.py", "title": "MagicMock langchain скрывает API-несоответствия", "risk": "false positive в тестах"}
+      ]
+    },
+    "SECURITY": {
+      "severity": "HIGH",
+      "items": [
+        {"id": "SE-01", "file": "config.py", "lines": "67-70", "title": "print() с GITHUB_TOKEN event в stderr"},
+        {"id": "SE-02", "file": "ui/config.py", "lines": "14-16", "title": "API_KEY в module-level AUTH_HEADERS"},
+        {"id": "SE-03", "file": "api/rate_limit.py", "lines": "20", "title": "rate limit только по IP"}
+      ]
+    },
+    "CODE_QUALITY": {
+      "severity": "LOW",
+      "items": [
+        {"id": "CQ-01", "file": "health_check.py", "title": "23 вызова print() вместо logger"},
+        {"id": "CQ-02", "files": "multiple", "count": 11, "title": "broad except Exception без re-raise"},
+        {"id": "CQ-03", "title": "нет circuit breaker для LLM-вызовов"},
+        {"id": "CQ-04", "file": "agent1/2 agent.py + runner.py", "title": "логгер дважды инициализируется"}
+      ]
+    }
+  }
+}
