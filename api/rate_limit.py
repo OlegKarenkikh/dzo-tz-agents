@@ -2,28 +2,32 @@
 Rate limiting middleware для FastAPI.
 
 Использует slowapi (обёртка над limits/ratelimit).
-Зависимость: pip install slowapi
 
-Лимиты по умолчанию (переопределяются через .env):
-  RATE_LIMIT_PROCESS  — POST /api/v1/process/*   (дорогие LLM-вызовы)
-  RATE_LIMIT_DEFAULT  — все остальные защищённые эндпоинты
-
-Ключ идентификации клиента: IP-адрес (X-Forwarded-For за nginx).
-Для аутентифицированных клиентов можно заменить на API-ключ:
-  key_func=lambda req: req.headers.get("X-API-Key") or get_remote_address(req)
+FIX SE-03: key_func с приоритетом X-API-Key → IP.
+При наличии X-API-Key лимит считается по хешу ключа,
+иначе — по IP-адресу.
 """
+import hashlib
 import os
 
+from fastapi import Request
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
-# Лимиты: «N/period», где period = second | minute | hour | day
 _PROCESS_LIMIT = os.getenv("RATE_LIMIT_PROCESS", "20/minute")
 _DEFAULT_LIMIT = os.getenv("RATE_LIMIT_DEFAULT", "120/minute")
 
-limiter = Limiter(key_func=get_remote_address)
 
-# Лимит для тяжёлых LLM-эндпоинтов (process/*)
+def _rate_key(request: Request) -> str:
+    """FIX SE-03: rate limit по хешу API-ключа (если есть) или по IP."""
+    api_key = request.headers.get("X-API-Key", "")
+    if api_key:
+        # Не храним ключ целиком — только его хеш (первые 16 сим. SHA-256)
+        return "apikey:" + hashlib.sha256(api_key.encode()).hexdigest()[:16]
+    return get_remote_address(request)
+
+
+limiter = Limiter(key_func=_rate_key)
+
 PROCESS_RATE_LIMIT = _PROCESS_LIMIT
-# Лимит для остальных защищённых эндпоинтов; применять явно на роуты
 DEFAULT_RATE_LIMIT = _DEFAULT_LIMIT
