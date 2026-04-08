@@ -1,4 +1,5 @@
 import json
+import re
 from datetime import datetime
 from html import escape as html_escape
 
@@ -9,6 +10,72 @@ from shared.agent_tooling import invoke_agent_as_tool
 from shared.logger import setup_logger
 
 logger = setup_logger("agent_dzo")
+
+
+def _is_daily_rate_limit_error(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return "ratelimitreached" in msg and "per 86400s" in msg
+
+
+def _build_tz_fallback_for_rate_limit(tz_text: str, exc: Exception, target_agent: str) -> dict:
+    # Мягкий эвристический fallback: даём пользователю полезный минимум,
+    # даже если делегированный агент недоступен по суточной квоте провайдера.
+    text = (tz_text or "").lower()
+    section_hints = {
+        "цель": ["цель", "назначение", "цели закупки"],
+        "требования": ["требован", "характеристик", "параметр"],
+        "количество": ["колич", "единиц", "шт", "комплект"],
+        "сроки": ["срок", "дата поставки", "в течение"],
+        "место": ["место поставки", "адрес поставки"],
+        "исполнитель": ["квалификац", "исполнител", "опыт"],
+        "критерии": ["критер", "оценк заяв"],
+        "приложения": ["приложен", "форма", "таблица"],
+    }
+    found_sections = [
+        name for name, kws in section_hints.items()
+        if any(k in text for k in kws)
+    ]
+
+    retry_after = None
+    m = re.search(r"wait\s+(\d+)\s+seconds", str(exc), re.IGNORECASE)
+    if m:
+        try:
+            retry_after = int(m.group(1))
+        except ValueError:
+            retry_after = None
+
+    recommendations = [
+        "Делегированный анализ ТЗ временно недоступен из-за суточной квоты модели.",
+        "Повторите анализ после сброса квоты или переключите LLM backend/модель.",
+    ]
+    if len(found_sections) < 4:
+        recommendations.append(
+            "По эвристической оценке в ТЗ найдено мало структурных разделов; нужна ручная проверка полноты."
+        )
+
+    summary = (
+        "Делегированный анализ ТЗ временно недоступен (лимит модели по квоте). "
+        f"Эвристически распознано разделов: {len(found_sections)}/8."
+    )
+    if retry_after is not None:
+        summary += f" Повтор возможен ориентировочно через {retry_after} сек."
+
+    return {
+        "target_agent": target_agent,
+        "overall_status": "Ограничено квотой модели",
+        "critical_issues": [
+            "Не удалось выполнить полноценный делегированный анализ ТЗ из-за RateLimitReached.",
+        ],
+        "recommendations": recommendations,
+        "summary": summary,
+        "email_html": "",
+        "raw_output": "",
+        "fallback": {
+            "reason": "rate_limit",
+            "retry_after_sec": retry_after,
+            "detected_sections": found_sections,
+        },
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -430,6 +497,10 @@ def analyze_tz_with_agent(
         }, ensure_ascii=False)
     except Exception as e:
         logger.error("❌ analyze_tz_with_agent: ошибка %s", e)
+        if _is_daily_rate_limit_error(e):
+            return json.dumps({
+                "tzAgentAnalysis": _build_tz_fallback_for_rate_limit(tz_text, e, target_agent),
+            }, ensure_ascii=False)
         return json.dumps({
             "tzAgentAnalysis": {
                 "target_agent": target_agent,
