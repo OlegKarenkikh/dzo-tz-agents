@@ -406,7 +406,7 @@ curl -H "X-API-Key: your-secret-key" http://localhost:8000/api/v1/stats
 | `document_list_error` | `dict` | Ошибка построения списка документов |
 
 Примечание по `decision`:
-- `tool_calls_missing` — все модели из fallback-цепочки вернули ответ без обязательных tool-вызовов.
+- `tool_calls_missing` — все модели из fallback-цепочки вернули ответ без обязательных tool-вызовов (универсально для любого агента API-пайплайна).
 
 ---
 
