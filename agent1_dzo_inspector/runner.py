@@ -16,6 +16,10 @@ from shared.telegram_notify import notify  # noqa: E402
 class DzoEmailRunner(BaseEmailRunner):
     """Конкретный runner для агента ДЗО — реализует BaseEmailRunner."""
 
+    def __init__(self) -> None:
+        self._has_tz: bool = False
+        self._has_spec: bool = False
+
     @property
     def agent_id(self) -> str:
         return "dzo"
@@ -142,8 +146,8 @@ class DzoEmailRunner(BaseEmailRunner):
 
     def db_result_fields(self, mail: dict, artifacts: dict) -> dict:
         return {
-            "has_tz": getattr(self, "_has_tz", False),
-            "has_spec": getattr(self, "_has_spec", False),
+            "has_tz": self._has_tz,
+            "has_spec": self._has_spec,
             "attachments": len(mail.get("attachments", [])),
         }
 
