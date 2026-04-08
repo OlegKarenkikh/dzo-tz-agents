@@ -1,5 +1,4 @@
 import json
-import os
 from typing import Any
 
 # FIX ST-02: create_agent не существует в langchain.agents.
@@ -124,8 +123,7 @@ def create_tz_agent(model_name: str | None = None) -> AgentRunner:
     """
     llm = build_llm(temperature=0.2, model_name_override=model_name)
     tools = [generate_json_report, generate_corrected_tz, generate_email_to_dzo]
-    debug_mode = os.getenv("AGENT_DEBUG", "0") in {"1", "true", "True"}
-    logger.info("Создание агента ТЗ (debug=%s, модель=%s)", debug_mode, getattr(llm, 'model_name', '?'))
+    logger.info("Создание агента ТЗ (модель=%s)", getattr(llm, 'model_name', '?'))
 
     # langgraph >= 0.2: create_react_agent(model, tools, prompt=system_str)
     graph_agent = create_react_agent(

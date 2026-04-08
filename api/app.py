@@ -497,7 +497,7 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
             decision = ""
             artifacts: dict = {}
 
-            for step in result.get("intermediate_steps", []):
+            for step_idx, step in enumerate(result.get("intermediate_steps", []), start=1):
                 try:
                     obs = json.loads(step[1]) if isinstance(step[1], str) else step[1]
                     if not isinstance(obs, dict):
@@ -508,7 +508,7 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
 
                     if obs.get("emailHtml"):
                         if "email_html" in artifacts:
-                            logger.warning("[%s] email_html перезаписывается (шаг %d)", job_id, len(artifacts))
+                            logger.warning("[%s] email_html перезаписывается (шаг %d)", job_id, step_idx)
                         artifacts["email_html"] = obs["emailHtml"]
                     if obs.get("tezisFormHtml"):
                         artifacts["tezis_form_html"] = obs["tezisFormHtml"]

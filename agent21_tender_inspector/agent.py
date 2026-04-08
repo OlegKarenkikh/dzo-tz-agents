@@ -1,5 +1,4 @@
 import json
-import os
 from typing import Any
 
 # FIX ST-02 (agent21): langchain.agents.create_agent не существует.
@@ -124,10 +123,8 @@ def create_tender_agent(model_name: str | None = None) -> AgentRunner:
     """
     llm = build_llm(temperature=0.1, model_name_override=model_name)
     tools = [generate_document_list]
-    debug_mode = os.getenv("AGENT_DEBUG", "0") in {"1", "true", "True"}
     logger.info(
-        "Создание агента Тендер (debug=%s, модель=%s)",
-        debug_mode,
+        "Создание агента Тендер (модель=%s)",
         getattr(llm, "model_name", "?"),
     )
 

@@ -1,5 +1,6 @@
 import os
 import sys
+import types
 from unittest.mock import MagicMock
 
 os.environ["OPENAI_API_KEY"] = "sk-test"
@@ -12,12 +13,11 @@ def _make_fake_graph() -> MagicMock:
     Returns a fake graph agent for tests.
 
     AgentRunner.invoke() expects result["messages"] — list of objects with .content.
-    We delete tool_call_id entirely so hasattr() returns False and AgentRunner
-    does not mistake ai_msg for a ToolMessage (MagicMock creates any attr on access).
+    We use SimpleNamespace (not MagicMock) for ai_msg so that hasattr(msg, "tool_call_id")
+    correctly returns False — MagicMock creates any attribute on access, making hasattr
+    always True even after `del`.
     """
-    ai_msg = MagicMock()
-    ai_msg.content = "ok"
-    del ai_msg.tool_call_id  # prevent hasattr() returning True on MagicMock
+    ai_msg = types.SimpleNamespace(content="ok")
 
     fake_graph = MagicMock()
     fake_graph.invoke = MagicMock(return_value={"messages": [ai_msg]})
