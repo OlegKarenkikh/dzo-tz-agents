@@ -295,9 +295,45 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
     if not job:
         return
 
+    processing_log: dict = {
+        "started_at": datetime.now(UTC).isoformat(),
+        "agent": agent_type,
+        "events": [],
+    }
+
+    def _log_event(stage: str, message: str, **details) -> None:
+        processing_log["events"].append({
+            "ts": datetime.now(UTC).isoformat(),
+            "stage": stage,
+            "message": message,
+            "details": details,
+        })
+
+    def _flush_running_log() -> None:
+        # Публикуем промежуточный лог, чтобы UI мог показывать прогресс во время обработки.
+        update_job(
+            job_id,
+            status="running",
+            result={
+                "processing_log": processing_log,
+                "request_payload": request.model_dump(),
+            },
+        )
+
     update_job(job_id, status="running")
     ts = datetime.now(UTC).isoformat()
     logger.info("[%s] Запуск агента %s", job_id, agent_type.upper())
+
+    _log_event(
+        "received",
+        "Получен запрос на обработку",
+        sender=request.sender_email,
+        subject=request.subject,
+        text_chars=len(request.text or ""),
+        attachments_count=len(request.attachments or []),
+        attachment_names=[a.filename for a in (request.attachments or [])],
+    )
+    _flush_running_log()
 
     with JobTimer(agent_type):
         try:
@@ -315,6 +351,19 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                     attachment_texts.append("---- " + att.filename + " ----\n" + text)
                 except Exception as e:
                     logger.warning("[%s] Ошибка извлечения %s: %s", job_id, att.filename, e)
+                    _log_event(
+                        "extract_attachment_error",
+                        "Ошибка извлечения текста вложения",
+                        filename=att.filename,
+                        error=str(e),
+                    )
+
+            _log_event(
+                "extract_attachments_done",
+                "Извлечение текста из вложений завершено",
+                extracted_count=len(attachment_texts),
+            )
+            _flush_running_log()
 
             parts: list[str] = []
             if request.sender_email:
@@ -326,6 +375,13 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
             if attachment_texts:
                 parts.append("\n-- ВЛОЖЕНИЯ --\n" + "\n\n".join(attachment_texts))
             chat_input = "\n".join(parts) if parts else "(пустой запрос)"
+
+            _log_event(
+                "prepare_input",
+                "Сформирован input для агента",
+                input_chars=len(chat_input),
+            )
+            _flush_running_log()
 
             if agent_type not in AGENT_REGISTRY:
                 raise ValueError("Неизвестный агент: " + agent_type)
@@ -398,6 +454,13 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                     fallback_chain = [_best] + [m for m in fallback_chain if m != _best]
 
             logger.info("[%s] Fallback-цепочка: %s", job_id, " → ".join(fallback_chain))
+            _log_event(
+                "routing",
+                "Определена цепочка моделей",
+                fallback_chain=fallback_chain,
+                llm_backend=LLM_BACKEND,
+            )
+            _flush_running_log()
 
             result: dict = {}
             last_exc: BaseException | None = None
@@ -405,6 +468,14 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
             for model_idx, model_name in enumerate(fallback_chain):
                 attempt_log = f"модель {model_name} ({model_idx + 1}/{len(fallback_chain)})"
                 logger.info("[%s] Запуск с %s", job_id, attempt_log)
+                _log_event(
+                    "model_attempt",
+                    "Запуск обработки на модели",
+                    model=model_name,
+                    attempt=model_idx + 1,
+                    total=len(fallback_chain),
+                )
+                _flush_running_log()
 
                 for retry in range(max(1, AGENT_MAX_RETRIES)):
                     try:
@@ -434,6 +505,12 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                         else:
                             result = agent.invoke({"input": chat_input})
 
+                        _log_event(
+                            "model_result",
+                            "Модель вернула ответ",
+                            model=model_name,
+                            intermediate_steps=len(result.get("intermediate_steps", []) or []),
+                        )
                         last_exc = None
                         break
 
@@ -459,15 +536,35 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
 
                         if is_auth_error:
                             logger.error("[%s] Ошибка аутентификации на модели %s: %s", job_id, model_name, exc)
+                            _log_event(
+                                "model_auth_error",
+                                "Ошибка аутентификации модели",
+                                model=model_name,
+                                error=str(exc),
+                            )
                             raise
 
                         if not is_rate_limit and not is_token_limit:
+                            _log_event(
+                                "model_error",
+                                "Критическая ошибка модели",
+                                model=model_name,
+                                error=str(exc),
+                            )
                             raise
 
                         last_exc = exc
                         reason = "429 RateLimit" if is_rate_limit else "413 TokenLimit"
                         logger.warning("[%s] %s на %s (попытка %d/%d)",
                                        job_id, reason, model_name, retry + 1, max(1, AGENT_MAX_RETRIES))
+                        _log_event(
+                            "model_retry",
+                            "Требуется повтор/переключение модели",
+                            model=model_name,
+                            reason=reason,
+                            retry=retry + 1,
+                        )
+                        _flush_running_log()
                         if is_token_limit:
                             break
                         if retry + 1 < max(1, AGENT_MAX_RETRIES):
@@ -499,9 +596,25 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
 
             for step_idx, step in enumerate(result.get("intermediate_steps", []), start=1):
                 try:
+                    tool_name = "tool"
+                    if isinstance(step, (list, tuple)) and len(step) > 0:
+                        raw_name = step[0]
+                        if isinstance(raw_name, str):
+                            tool_name = raw_name
+                        else:
+                            tool_name = getattr(raw_name, "name", type(raw_name).__name__)
+
                     obs = json.loads(step[1]) if isinstance(step[1], str) else step[1]
                     if not isinstance(obs, dict):
                         continue
+
+                    _log_event(
+                        "tool_result",
+                        "Получен результат tool-вызова",
+                        step=step_idx,
+                        tool=tool_name,
+                        keys=sorted(list(obs.keys()))[:20],
+                    )
 
                     if obs.get("decision"):
                         decision = obs["decision"]
@@ -546,6 +659,12 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
 
                 except Exception as _step_err:
                     logger.warning("[%s] step parse error: %s", job_id, _step_err)
+                    _log_event(
+                        "step_parse_error",
+                        "Ошибка разбора intermediate шага",
+                        step=step_idx,
+                        error=str(_step_err),
+                    )
 
             if not decision:
                 logger.warning(
@@ -560,12 +679,21 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
             if decision:
                 DECISIONS_TOTAL.labels(agent=agent_type, decision=decision).inc()
 
+            processing_log["completed_at"] = datetime.now(UTC).isoformat()
+            _log_event(
+                "completed",
+                "Обработка завершена",
+                decision=decision,
+                artifacts=sorted(list(artifacts.keys())),
+            )
+
             update_job(
                 job_id, status="done", decision=decision,
                 result={
                     "output": result.get("output", ""),
                     "decision": decision,
                     "request_payload": request.model_dump(),
+                    "processing_log": processing_log,
                     **artifacts,
                 },
             )
@@ -574,7 +702,17 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
             logger.info("[%s] Завершено. Решение: %s", job_id, decision)
 
         except Exception as e:
-            update_job(job_id, status="error", error=str(e))
+            _log_event("failed", "Обработка завершилась ошибкой", error=str(e))
+            processing_log["failed_at"] = datetime.now(UTC).isoformat()
+            update_job(
+                job_id,
+                status="error",
+                error=str(e),
+                result={
+                    "request_payload": request.model_dump(),
+                    "processing_log": processing_log,
+                },
+            )
             with _run_log_lock:
                 _run_log.append({"agent": agent_type, "ts": ts, "status": "error",
                                   "job_id": job_id, "error": str(e)})
