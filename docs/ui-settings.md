@@ -79,7 +79,7 @@
 |---|---|---|
 | `UI_API_URL` | `http://localhost:8000` | URL бэкенда |
 | `UI_API_KEY` | пусто | Ключ доступа к API |
-| `UI_AUTO_REFRESH_SEC` | `30` | Интервал авто-обновления дашборда |
+| `UI_AUTO_REFRESH_SEC` | `30` | Deprecated: не используется — авто-обновление дашборда удалено, данные обновляются вручную |
 | `LLM_BACKEND` | `openai` | Бэкенд LLM для отображения в UI |
 | `FORCE_REPROCESS` | `false` | Обход дедупликации |
 | `AGENT_TOOL_ENABLED` | `true` | Разрешить межагентные вызовы |

@@ -1,3 +1,4 @@
+import html
 import json
 from datetime import UTC, datetime
 
@@ -113,7 +114,7 @@ class DzoEmailRunner(BaseEmailRunner):
             email_html += (
                 "<hr><div style='font-family:Arial'>"
                 "<p><strong>Результат анализа технического задания:</strong></p>"
-                f"<p>{tz_summary}</p>"
+                f"<p>{html.escape(tz_summary)}</p>"
                 "</div>"
             )
         return decision, {

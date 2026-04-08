@@ -1,13 +1,13 @@
 import json
-import logging
 import re
 from datetime import UTC, datetime
 
 from langchain.tools import tool
 
 from shared.agent_tooling import invoke_agent_as_tool
+from shared.logger import setup_logger
 
-logger = logging.getLogger("agent_tender")
+logger = setup_logger("agent_tender")
 
 # --------------------------------------------------------------------------- #
 #  Вспомогательные функции парсинга                                            #

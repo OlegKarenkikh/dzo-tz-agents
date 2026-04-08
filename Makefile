@@ -1,4 +1,3 @@
-.PHONY: help install test lint fmt build up down logs clean api ui api-ui monitoring monitoring-down
 .PHONY: help install test lint fmt build up down logs clean api ui api-ui dzo-only tz-only tender-only test-agent-dzo test-agent-tz test-agent-tender monitoring monitoring-down
 
 help: ## Показать доступные команды

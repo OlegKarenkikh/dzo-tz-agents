@@ -320,8 +320,16 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
             "details": details,
         })
 
+    _last_flush_ts: list[float] = [0.0]
+    _flush_min_interval = 1.0  # секунды: не чаще одного UPDATE в секунду
+
     def _flush_running_log() -> None:
         # Публикуем промежуточный лог, чтобы UI мог показывать прогресс во время обработки.
+        # Троттлинг: не более одного UPDATE в секунду, чтобы снизить нагрузку на БД.
+        now = time.monotonic()
+        if now - _last_flush_ts[0] < _flush_min_interval:
+            return
+        _last_flush_ts[0] = now
         update_job(
             job_id,
             status="running",
@@ -543,7 +551,10 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                                 model=model_name,
                                 reason=unusable_reason,
                                 retry=retry + 1,
-                                intermediate_steps=len(result.get("intermediate_steps", []) or []),
+                                intermediate_steps=len(
+                                    (result.get("intermediate_steps", []) or [])
+                                    if isinstance(result, dict) else []
+                                ),
                             )
                             _flush_running_log()
                             break
@@ -753,7 +764,17 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                 result={
                     "output": result.get("output", ""),
                     "decision": decision,
-                    "request_payload": request.model_dump(),
+                    "request_payload": {
+                        **{k: v for k, v in request.model_dump().items() if k != "attachments"},
+                        "attachments": [
+                            {
+                                "filename": a.filename,
+                                "mime_type": a.mime_type,
+                                "size_bytes": len(a.content_base64) * 3 // 4,
+                            }
+                            for a in (request.attachments or [])
+                        ],
+                    },
                     "processing_log": processing_log,
                     **artifacts,
                 },
