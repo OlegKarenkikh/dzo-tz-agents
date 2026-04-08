@@ -1,4 +1,4 @@
-"""Фабрика LLM — единая точка создания ChatOpenAI для всех агентов.
+"""LLM factory — единая точка создания ChatOpenAI для всех агентов.
 
 Поддерживаемые бэкенды (LLM_BACKEND):
   openai        — OpenAI API (по умолчанию)
@@ -35,7 +35,7 @@ _GITHUB_MODELS_PRIORITY: list[str] = [
     "Meta-Llama-3.1-8B-Instruct",
 ]
 
-# FIX RC-03: единый RLock для всех 4 кешей LLM
+# RC-03 fix: единый RLock для всех 4 кешей — защищает от concurrent read-modify-write
 _llm_cache_lock = threading.RLock()
 
 _MAX_OUTPUT_TOKENS_CACHE: dict[str, int] = {}
@@ -49,13 +49,12 @@ _LOCAL_MODELS_CACHE: dict[str, list] = {}
 
 
 def estimate_tokens(text: str) -> int:
-    """Грубая оценка числа токенов в строке (1 токен ≈ 4 символа)."""
+    """Грубая оценка числа токенов (1 токен ≈ 4 символа)."""
     return max(1, len(text) // 4)
 
 
 def probe_max_input_tokens(api_key: str, model_name: str) -> int:
-    """Определить суммарный лимит входных токенов модели через 413-ответ API."""
-    # FIX RC-03: проверяем кеш под локом
+    """RC-03: чтение и запись кеша под RLock."""
     with _llm_cache_lock:
         if model_name in _MAX_INPUT_TOKENS_CACHE:
             return _MAX_INPUT_TOKENS_CACHE[model_name]
@@ -80,7 +79,7 @@ def probe_max_input_tokens(api_key: str, model_name: str) -> int:
                 limit = int(m.group(1))
                 with _llm_cache_lock:
                     _MAX_INPUT_TOKENS_CACHE[model_name] = limit
-                logger.info("📐 Модель %s: max_input_tokens = %d (из 413 ответа API)", model_name, limit)
+                logger.info("📐 Модель %s: max_input_tokens = %d", model_name, limit)
                 return limit
     except Exception as exc:
         logger.warning(
@@ -94,8 +93,7 @@ def probe_max_input_tokens(api_key: str, model_name: str) -> int:
 
 
 def probe_max_output_tokens(api_key: str, model_name: str) -> int:
-    """Определить реальный лимит output-токенов модели через API."""
-    # FIX RC-03: проверяем кеш под локом
+    """RC-03: чтение и запись кеша под RLock."""
     with _llm_cache_lock:
         if model_name in _MAX_OUTPUT_TOKENS_CACHE:
             return _MAX_OUTPUT_TOKENS_CACHE[model_name]
@@ -120,7 +118,7 @@ def probe_max_output_tokens(api_key: str, model_name: str) -> int:
                 limit = int(m.group(1))
                 with _llm_cache_lock:
                     _MAX_OUTPUT_TOKENS_CACHE[model_name] = limit
-                logger.info("📐 Модель %s: max_output_tokens = %d (из ответа API)", model_name, limit)
+                logger.info("📐 Модель %s: max_output_tokens = %d", model_name, limit)
                 return limit
             m2 = re.search(r"(\d{3,6})\s+completion tokens", resp.text)
             if m2:
@@ -141,7 +139,6 @@ def probe_max_output_tokens(api_key: str, model_name: str) -> int:
 
 
 def fetch_github_chat_models(api_key: str) -> list[str]:
-    """Получить список chat-completion моделей из GitHub Models API."""
     try:
         resp = httpx.get(
             f"{_GITHUB_MODELS_BASE_URL}/models",
@@ -164,7 +161,6 @@ def fetch_github_chat_models(api_key: str) -> list[str]:
 
 
 def build_github_fallback_chain(api_key: str, primary: str) -> list[str]:
-    """Построить упорядоченную цепочку fallback-моделей."""
     available = set(fetch_github_chat_models(api_key))
     chain: list[str] = [primary]
     for m in _GITHUB_MODELS_PRIORITY:
@@ -181,7 +177,6 @@ _LOCAL_BACKENDS = LOCAL_BACKENDS
 
 
 def resolve_local_base_url() -> str:
-    """Return base URL for the local backend, falling back to common defaults."""
     if OPENAI_API_BASE:
         return OPENAI_API_BASE.rstrip("/")
     defaults = {
@@ -200,9 +195,8 @@ def _model_ids_from_raw(raw: list) -> list[str]:
 
 
 def fetch_local_models(base_url: str | None = None) -> list[str]:
-    """Fetch available model names from a local OpenAI-compatible /v1/models endpoint."""
     url = (base_url or resolve_local_base_url()).rstrip("/")
-    # FIX RC-03: проверяем и читаем кеш под локом
+    # RC-03: чтение кеша под замком
     with _llm_cache_lock:
         if url in _LOCAL_MODELS_CACHE:
             try:
@@ -210,7 +204,6 @@ def fetch_local_models(base_url: str | None = None) -> list[str]:
             except Exception as exc:
                 logger.warning("Некорректные данные в кеше моделей для %s, сброс: %s", url, exc)
                 del _LOCAL_MODELS_CACHE[url]
-
     headers: dict[str, str] = {}
     if OPENAI_API_KEY and OPENAI_API_KEY != "not-needed":
         headers["Authorization"] = f"Bearer {OPENAI_API_KEY}"
@@ -229,27 +222,24 @@ def fetch_local_models(base_url: str | None = None) -> list[str]:
 
 
 def probe_local_max_context(base_url: str, model_name: str) -> int:
-    """Probe max context window for a local model via /v1/models endpoint metadata."""
+    """RC-03: чтение/запись кеша под RLock."""
     normalized_url = base_url.rstrip("/")
     cache_key = (normalized_url, model_name)
-
-    # FIX RC-03: проверяем кеш под локом
     with _llm_cache_lock:
         if cache_key in _LOCAL_MAX_CTX_CACHE:
             return _LOCAL_MAX_CTX_CACHE[cache_key]
 
     try:
         with _llm_cache_lock:
-            already_cached = normalized_url in _LOCAL_MODELS_CACHE
+            has_models_cache = normalized_url in _LOCAL_MODELS_CACHE
 
-        if not already_cached:
+        if not has_models_cache:
             _auth_headers: dict[str, str] = {}
             if OPENAI_API_KEY and OPENAI_API_KEY != "not-needed":
                 _auth_headers["Authorization"] = f"Bearer {OPENAI_API_KEY}"
             resp = httpx.get(f"{normalized_url}/models", timeout=10, headers=_auth_headers)
             resp.raise_for_status()
             data = resp.json()
-
             models: list[dict] = []
             if isinstance(data, list):
                 models = [m for m in data if isinstance(m, dict)]
@@ -263,7 +253,6 @@ def probe_local_max_context(base_url: str, model_name: str) -> int:
                     models = [m for m in raw_iter if isinstance(m, dict)]
                 except TypeError:
                     models = []
-
             with _llm_cache_lock:
                 _LOCAL_MODELS_CACHE[normalized_url] = models
 
@@ -299,7 +288,6 @@ def probe_local_max_context(base_url: str, model_name: str) -> int:
 
 
 def build_local_fallback_chain(primary: str, base_url: str | None = None) -> list[str]:
-    """Build an ordered fallback chain for local backends."""
     chain: list[str] = [primary]
     for m in FALLBACK_MODELS:
         if m not in chain:
@@ -321,7 +309,6 @@ _effective_openai_key = effective_openai_key
 
 
 def build_fallback_chain(primary: str) -> list[str]:
-    """Build an ordered fallback chain for ANY backend."""
     if LLM_BACKEND == "github_models":
         api_key = effective_openai_key() or GITHUB_TOKEN or ""
         return build_github_fallback_chain(api_key, primary)
@@ -335,9 +322,7 @@ def build_fallback_chain(primary: str) -> list[str]:
 
 
 def build_llm(temperature: float = 0.2, model_name_override: str | None = None) -> ChatOpenAI:
-    """Создать ChatOpenAI-инстанс в соответствии с LLM_BACKEND."""
     model = model_name_override or MODEL_NAME
-
     if LLM_BACKEND == "github_models":
         api_key = effective_openai_key() or GITHUB_TOKEN
         if not api_key:
