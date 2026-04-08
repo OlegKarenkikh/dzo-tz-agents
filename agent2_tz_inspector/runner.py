@@ -54,6 +54,8 @@ class TzEmailRunner(BaseEmailRunner):
         for step_idx, step in enumerate(steps, start=1):
             try:
                 obs = json.loads(step[1]) if isinstance(step[1], str) else step[1]
+                if not isinstance(obs, dict):
+                    continue
                 if obs.get("emailHtml"):
                     email_html = obs["emailHtml"]
                     decision = obs.get("decision", decision)

@@ -322,9 +322,9 @@ def get_history(
         except Exception as e:
             logger.error("get_history ошибка: %s", e)
             return []
-    # RC-04: snapshot под замком
+    # RC-04: snapshot copies под замком, чтобы конкурентный update_job не затронул итерацию
     with _memory_lock:
-        rows = list(_memory_store.values())
+        rows = [dict(r) for r in _memory_store.values()]
     if agent:
         rows = [r for r in rows if r.get("agent") == agent]
     if decision:
@@ -372,9 +372,9 @@ def count_history(
         except Exception as e:
             logger.error("count_history ошибка: %s", e)
             return 0
-    # RC-04: snapshot под замком
+    # RC-04: snapshot copies под замком, чтобы конкурентный update_job не затронул итерацию
     with _memory_lock:
-        rows = list(_memory_store.values())
+        rows = [dict(r) for r in _memory_store.values()]
     if agent:
         rows = [r for r in rows if r.get("agent") == agent]
     if decision:
@@ -407,9 +407,9 @@ def get_stats() -> dict[str, int]:
         except Exception as e:
             logger.error("get_stats ошибка: %s", e)
             return {}
-    # RC-04: snapshot под замком
+    # RC-04: snapshot copies под замком, чтобы конкурентный update_job не затронул итерацию
     with _memory_lock:
-        rows = list(_memory_store.values())
+        rows = [dict(r) for r in _memory_store.values()]
     today = datetime.now(UTC).date().isoformat()
     return {
         "total":     len(rows),
