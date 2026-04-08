@@ -579,6 +579,7 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
             last_exc: BaseException | None = None
             no_tool_calls_exhausted = False
             token_limit_exhausted = False
+            rate_limit_exhausted = False
 
             for model_idx, model_name in enumerate(fallback_chain):
                 attempt_log = f"модель {model_name} ({model_idx + 1}/{len(fallback_chain)})"
@@ -814,6 +815,15 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                         error=str(last_exc),
                     )
                     _flush_running_log()
+                elif "429" in str(last_exc) and "rate" in str(last_exc).lower():
+                    rate_limit_exhausted = True
+                    _log_event(
+                        "model_rate_limit_exhausted",
+                        "Модель(и) исчерпали лимит запросов (429)",
+                        fallback_chain=fallback_chain,
+                        error=str(last_exc),
+                    )
+                    _flush_running_log()
                 else:
                     raise last_exc
 
@@ -920,6 +930,13 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                         "message": "Все попытки обработки завершились ошибкой token limit (413)",
                     }
                     logger.warning("[%s] Завершено с технической ошибкой: TokenLimitExhausted", job_id)
+                elif rate_limit_exhausted:
+                    decision = "rate_limit_exhausted"
+                    artifacts["model_error"] = {
+                        "code": "RateLimitExhausted",
+                        "message": "Все попытки обработки завершились ошибкой rate limit (429)",
+                    }
+                    logger.warning("[%s] Завершено с технической ошибкой: RateLimitExhausted", job_id)
                 else:
                     logger.warning(
                         "[%s] decision не установлен агентом — intermediate_steps пусты или нет decision",
@@ -995,7 +1012,8 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                 _run_log.append({"agent": agent_type, "ts": ts, "status": "error",
                                   "job_id": job_id, "error": str(e)})
             logger.error("[%s] Ошибка: %s", job_id, e)
-            raise
+            # Фоновая задача уже записала статус/ошибку в БД, повторный raise лишь шумит traceback в ASGI логах.
+            return
 
 
 def _detect_agent_type(request: ProcessRequest) -> str:

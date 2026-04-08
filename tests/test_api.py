@@ -3,6 +3,7 @@
 Используется TestClient из fastapi.testclient.
 """
 import os
+import time
 
 import pytest
 from fastapi.testclient import TestClient
@@ -338,6 +339,45 @@ class TestTokenLimitClassifier:
 
     def test_non_token_error_returns_false(self):
         assert not _is_token_limit_error_text("Rate limit reached 429")
+
+
+class TestRateLimitHandling:
+    def test_rate_limit_exhausted_is_saved_as_decision(self, client, monkeypatch):
+        import api.app as api_module
+
+        class _RateLimitedAgent:
+            def invoke(self, _: dict):
+                raise Exception("429 rate limit reached")
+
+        monkeypatch.setattr(api_module, "AGENT_MAX_RETRIES", 1)
+        monkeypatch.setattr(api_module, "AGENT_RATE_LIMIT_BACKOFF", 0)
+        monkeypatch.setattr(
+            "agent1_dzo_inspector.agent.create_dzo_agent",
+            lambda model_name=None: _RateLimitedAgent(),
+        )
+
+        resp = client.post(
+            "/api/v1/process/dzo",
+            json={"text": "Тест на 429", "subject": "rate-limit", "force": True},
+            headers=HEADERS,
+        )
+        assert resp.status_code == 200
+        job_id = resp.json()["job"]["job_id"]
+
+        deadline = time.time() + 3
+        job = None
+        while time.time() < deadline:
+            job_resp = client.get(f"/api/v1/jobs/{job_id}", headers=HEADERS)
+            assert job_resp.status_code == 200
+            job = job_resp.json()
+            if job["status"] in {"done", "error"}:
+                break
+            time.sleep(0.05)
+
+        assert job is not None
+        assert job["status"] == "done"
+        assert job["result"]["decision"] == "rate_limit_exhausted"
+        assert job["result"]["model_error"]["code"] == "RateLimitExhausted"
 
 
 class TestDeduplicate:
