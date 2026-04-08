@@ -55,7 +55,7 @@ def get_langfuse_callback():
         return None
     try:
         from langfuse.callback import CallbackHandler
-        kwargs: dict[str, str] = {"public_key": pk, "secret_key": sk}
+        kwargs: dict[str, Any] = {"public_key": pk, "secret_key": sk}
         host = os.getenv("LANGFUSE_HOST")
         if host:
             kwargs["host"] = host
