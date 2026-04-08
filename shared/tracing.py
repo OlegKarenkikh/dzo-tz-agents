@@ -55,7 +55,11 @@ def get_langfuse_callback():
         return None
     try:
         from langfuse.callback import CallbackHandler
-        return CallbackHandler(public_key=pk, secret_key=sk)
+        kwargs: dict[str, str] = {"public_key": pk, "secret_key": sk}
+        host = os.getenv("LANGFUSE_HOST")
+        if host:
+            kwargs["host"] = host
+        return CallbackHandler(**kwargs)
     except ImportError:
         logger.debug("langfuse не установлен, трейсинг отключён")
         return None
@@ -101,6 +105,7 @@ def log_agent_steps(
                         "raw": _truncate(str(step)),
                     }
                 )
+                logger.debug("[%s] step=%d invalid structure: %s", job_id, i + 1, type(step).__name__)
                 continue
 
             action, observation = step[0], step[1]
@@ -179,6 +184,8 @@ def log_agent_steps(
                 step_record["raw"] = None if observation is None else _truncate(str(observation))
 
             trace.append(step_record)
+            logger.debug("[%s] step=%d tool=%s decision=%s latency_ms=%.3f",
+                         job_id, i + 1, tool_name, decision, latency_ms)
         except Exception as exc:
             logger.debug("[%s] Ошибка сериализации шага %d: %s", job_id, i + 1, exc)
             trace.append({
