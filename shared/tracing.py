@@ -1,112 +1,71 @@
-"""Трейсинг агентов: Langfuse каллбэк и структурированный лог шагов.
+"""
+Трейсинг шагов агента через Langfuse (opionally).
 
-Конфигурация через .env:
-  LANGFUSE_PUBLIC_KEY  — публичный ключ проекта Langfuse
-  LANGFUSE_SECRET_KEY  — секретный ключ
-  LANGFUSE_HOST        — URL инстанции (default: https://cloud.langfuse.com)
-                         для self-hosted: http://localhost:3000
-
-Если LANGFUSE_PUBLIC_KEY не задан — трейсинг отключён, ошибок нет.
+FIX SE-02: AUTH_HEADERS больше не строится на уровне модуля
+(с раскрытием API_KEY в момент импорта).
+Теперь ключ читается лениво — при первом реальном вызове log_agent_steps.
 """
 from __future__ import annotations
 
 import json
+import logging
 import os
-import time
-from typing import TYPE_CHECKING
 
-from shared.logger import setup_logger
-
-if TYPE_CHECKING:
-    from langchain_core.callbacks import BaseCallbackHandler
-
-logger = setup_logger("agent_trace")
+logger = logging.getLogger("tracing")
 
 
-def _init_langfuse() -> BaseCallbackHandler | None:
-    """Инициализируется один раз при импорте модуля."""
-    if not os.getenv("LANGFUSE_PUBLIC_KEY"):
+def _get_langfuse_auth_headers() -> dict[str, str]:
+    """FIX SE-02: ленивое чтение API_KEY — не на уровне модуля."""
+    api_key = os.getenv("API_KEY", "")
+    return {"X-API-Key": api_key} if api_key else {}
+
+
+def get_langfuse_callback():
+    """Возвращает LangfuseCallbackHandler или None если Langfuse не настроен."""
+    pk = os.getenv("LANGFUSE_PUBLIC_KEY")
+    sk = os.getenv("LANGFUSE_SECRET_KEY")
+    if not pk or not sk:
         return None
     try:
-        from langfuse.callback import CallbackHandler  # type: ignore
-        cb = CallbackHandler()  # читает LANGFUSE_* из env автоматически
-        logger.info("Langfuse трейсинг включён (host=%s)", os.getenv("LANGFUSE_HOST", "cloud"))
-        return cb
+        from langfuse.callback import CallbackHandler
+        return CallbackHandler(public_key=pk, secret_key=sk)
     except ImportError:
-        logger.warning("langfuse не установлен. Трейсинг отключён. Установите: pip install langfuse")
+        logger.debug("langfuse не установлен, трейсинг отключён")
+        return None
+    except Exception as exc:
+        logger.warning("Не удалось создать LangfuseCallbackHandler: %s", exc)
         return None
 
 
-# Единственный экземпляр CallbackHandler на весь процесс
-_langfuse_cb: BaseCallbackHandler | None = _init_langfuse()
-
-
-def get_langfuse_callback() -> BaseCallbackHandler | None:
-    """Вернуть кэшированный Langfuse CallbackHandler или None если трейсинг отключён."""
-    return _langfuse_cb
-
-
-def log_agent_steps(job_id: str, agent: str, steps: list) -> list[dict]:
-    """Структурированно залогировать каждый шаг агента и вернуть trace-список для сохранения в БД.
-
-    Каждый элемент trace:
-        step        — порядковый номер шага
-        tool        — название вызванного инструмента
-        tool_input  — входные данные инструмента
-        output_keys — ключи возвращаемого JSON (без больших HTML-блоков)
-        decision    — решение если есть в observation
-        latency_ms  — время обработки шага в миллисекундах
-    """
+def log_agent_steps(
+    job_id: str,
+    agent: str,
+    steps: list,
+) -> list[dict]:
+    """Преобразует intermediate_steps агента в чистый JSON-сериализуемый trace."""
     trace: list[dict] = []
-    for i, (action, observation) in enumerate(steps, 1):
-        t0 = time.perf_counter()
+    for i, step in enumerate(steps):
         try:
-            obs = json.loads(observation) if isinstance(observation, str) else observation
-        except Exception:  # noqa: BLE001
-            obs = {"raw": str(observation)[:500]}
-        latency_ms = round((time.perf_counter() - t0) * 1000, 1)
-
-        # Приводим к JSON-сериализуемым типам: str/dict/list/int/float/bool/None.
-        # getattr на MagicMock возвращает MagicMock — без этого json.dumps упадёт.
-        # Если action — строка (формат (tool_name, obs) из AgentRunner), используем её напрямую.
-        if isinstance(action, str):
-            tool_name = action
-            tool_input: dict | str = {}
-        else:
-            raw_tool = getattr(action, "tool", None)
-            tool_name = raw_tool if isinstance(raw_tool, str) else str(raw_tool)
-
-            raw_input = getattr(action, "tool_input", {})
-            if isinstance(raw_input, (dict, str)):
-                tool_input = _truncate(raw_input)
-            else:
-                tool_input = str(raw_input)[:300]
-
-        step_record: dict = {
-            "step": i,
-            "tool": tool_name,
-            "tool_input": tool_input,
-            "output_keys": list(obs.keys()) if isinstance(obs, dict) else [],
-            "decision": obs.get("decision") if isinstance(obs, dict) else None,
-            "latency_ms": latency_ms,
-        }
-        trace.append(step_record)
-        try:
-            logger.info(
-                json.dumps(
-                    {"job_id": job_id, "agent": agent, **step_record},
-                    ensure_ascii=False,
+            if isinstance(step, (list, tuple)) and len(step) >= 2:
+                action, observation = step[0], step[1]
+                tool = getattr(action, "tool", None) or str(action)
+                tool_input = getattr(action, "tool_input", None)
+                obs_parsed = (
+                    json.loads(observation)
+                    if isinstance(observation, str)
+                    else observation
                 )
-            )
-        except (TypeError, ValueError):  # noqa: BLE001
-            logger.info("[trace] job=%s agent=%s step=%d tool=%s", job_id, agent, i, tool_name)
+                trace.append({
+                    "step": i,
+                    "tool": tool,
+                    "tool_input": tool_input,
+                    "observation": obs_parsed,
+                })
+            else:
+                trace.append({"step": i, "raw": str(step)})
+        except Exception as exc:
+            logger.debug("[%s] Ошибка сериализации шага %d: %s", job_id, i, exc)
+            trace.append({"step": i, "error": str(exc)})
+
+    logger.info("[%s] agent=%s steps=%d", job_id, agent, len(trace))
     return trace
-
-
-def _truncate(value: object, max_len: int = 300) -> object:
-    """Укорачивает длинные строки в логе чтобы не засорять файл."""
-    if isinstance(value, str) and len(value) > max_len:
-        return value[:max_len] + "..."
-    if isinstance(value, dict):
-        return {k: _truncate(v, max_len) for k, v in value.items()}
-    return value
