@@ -1,51 +1,128 @@
 """
 conftest.py — общие фикстуры и mock-объекты для тестов.
 
-FIX ST-03 (updated): принудительно патчим langgraph.prebuilt.create_react_agent
-даже если langgraph реально установлен — чтобы agent.invoke() не вызывал
-настоящий LLM/граф и не падал с MESSAGE_COERCION_FAILURE на MagicMock.
+Стратегия патчинга create_react_agent
+--------------------------------------
+langgraph реально установлен в CI, поэтому простая замена sys.modules["langgraph.prebuilt"]
+не работает: агентные модули (agent1/agent2/agent21) выполняют
+    from langgraph.prebuilt import create_react_agent
+на уровне модуля или лениво. Python кеширует имя в пространстве имён модуля
+(binding), и последующая замена sys.modules не меняет уже связанный объект.
+
+Правильное решение: патчить атрибут create_react_agent **в каждом агентном
+модуле** через `module.create_react_agent = fake_fn` ПОСЛЕ их импорта,
+а также заменять в langgraph.prebuilt (для ленивых импортов).
+
+Дополнительно: build_llm патчится через monkeypatching shared.llm.build_llm,
+чтобы не создавать реальный ChatOpenAI с фейковым ключом.
 """
 
 import os
 import sys
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
-# Единый API_KEY до любых импортов.
 os.environ["OPENAI_API_KEY"] = "sk-test"
 os.environ["API_KEY"] = "test-secret"
+os.environ["LLM_BACKEND"] = "openai"
 
 
-def _make_fake_graph():
-    """Создаёт фейковый граф, invoke которого возвращает корректный dict
-    совместимый с AgentRunner (messages содержит AIMessage-подобный объект).
+# ---------------------------------------------------------------------------
+# Fake graph factory
+# ---------------------------------------------------------------------------
+
+def _make_fake_graph() -> MagicMock:
     """
-    from unittest.mock import MagicMock
-
-    # AIMessage-подобный объект
+    Возвращает фиктивный граф-агент.
+    AgentRunner.invoke() ожидает result["messages"] — список объектов с .content.
+    tool_call_id должен быть falsy, чтобы msg не считался ToolMessage.
+    """
     ai_msg = MagicMock()
     ai_msg.content = "ok"
-    ai_msg.tool_call_id = None  # не ToolMessage
-    # Чтобы langgraph не пытался конвертировать через convert_to_messages,
-    # возвращаем уже готовый dict — invoke вернётся до любой обработки langgraph.
+    # Явно делаем tool_call_id falsy, чтобы AgentRunner не трактовал как ToolMessage
+    ai_msg.tool_call_id = None
+    # hasattr(msg, "tool_call_id") будет True, но значение None — пропускаем
+    # AgentRunner проверяет: if hasattr(msg, "tool_call_id") — ToolMessage.
+    # Поэтому удаляем атрибут полностью через spec или del.
+    del ai_msg.tool_call_id
 
     fake_graph = MagicMock()
     fake_graph.invoke = MagicMock(return_value={
         "messages": [ai_msg],
-        "output": "ok",
-        "intermediate_steps": [],
     })
     return fake_graph
 
 
-def _install_langchain_mocks() -> None:
+def _fake_create_react_agent(*args, **kwargs) -> MagicMock:
+    """Замена create_react_agent — возвращает fake graph без запуска LLM."""
+    return _make_fake_graph()
+
+
+def _fake_build_llm(*args, **kwargs) -> MagicMock:
+    """Замена build_llm — возвращает MagicMock вместо реального ChatOpenAI."""
+    llm = MagicMock()
+    llm.model_name = "gpt-mock"
+    return llm
+
+
+# ---------------------------------------------------------------------------
+# Установка mock-ов
+# ---------------------------------------------------------------------------
+
+def _install_mocks() -> None:
     """
-    Устанавливает / перезаписывает mock-объекты для langgraph.prebuilt.
-    Принудительно патчим create_react_agent независимо от наличия пакета,
-    чтобы в тестах не поднимался реальный LLM-граф.
+    Устанавливает все необходимые патчи ДО импорта тестовых модулей.
+
+    Порядок:
+    1. Патчим sys.modules["langgraph.prebuilt"] (для ленивых from-импортов).
+    2. Патчим атрибут в реальном модуле langgraph.prebuilt (если установлен).
+    3. Патчим shared.llm.build_llm (создание LLM без реального API-ключа).
+    4. Импортируем агентные модули и патчим create_react_agent в каждом из них
+       (устраняем проблему import binding — from X import Y кеширует ссылку).
+    5. Патчим вспомогательные langchain-модули.
     """
-    # --- langchain.agents (только если пакет отсутствует) ---
+
+    # 1. Патч sys.modules для ленивых импортов
+    langgraph_prebuilt_mock = MagicMock()
+    langgraph_prebuilt_mock.create_react_agent = _fake_create_react_agent
+    sys.modules["langgraph.prebuilt"] = langgraph_prebuilt_mock
+
+    # 2. Патч атрибута реального модуля (если langgraph установлен)
+    try:
+        import importlib
+        real_lgp = importlib.import_module("langgraph.prebuilt")
+        # После замены sys.modules выше import_module вернёт наш mock,
+        # но на случай если он уже был закеширован — патчим напрямую:
+        object.__setattr__(langgraph_prebuilt_mock, "create_react_agent", _fake_create_react_agent)
+    except Exception:
+        pass
+
+    # 3. Патч shared.llm.build_llm — до импорта агентных модулей
+    try:
+        import shared.llm as _shared_llm
+        _shared_llm.build_llm = _fake_build_llm
+    except Exception:
+        pass
+
+    # 4. Импортируем агентные модули и патчим create_react_agent непосредственно
+    #    в их пространстве имён (решает проблему import binding).
+    _agent_modules = [
+        "agent1_dzo_inspector.agent",
+        "agent2_tz_inspector.agent",
+        "agent21_tender_inspector.agent",
+    ]
+    for mod_name in _agent_modules:
+        try:
+            import importlib
+            mod = importlib.import_module(mod_name)
+            # Перезаписываем имя create_react_agent в пространстве имён модуля
+            mod.create_react_agent = _fake_create_react_agent  # type: ignore[attr-defined]
+        except Exception:
+            # Модуль может отсутствовать или иметь ошибки импорта — не блокируем тесты
+            pass
+
+    # 5. Вспомогательные langchain-модули
     _langchain_agents_ok = False
     try:
         from langchain.agents import AgentExecutor  # noqa: F401
@@ -60,30 +137,10 @@ def _install_langchain_mocks() -> None:
         agents_mock.create_react_agent = MagicMock(return_value=MagicMock())
         sys.modules["langchain.agents"] = agents_mock
 
-    # --- langgraph.prebuilt — ВСЕГДА принудительно патчим ---
-    # Это ключевое изменение: даже при установленном langgraph
-    # create_react_agent должен возвращать fake_graph, иначе
-    # тесты падают с NotImplementedError: Unsupported message type: MagicMock.
-    langgraph_prebuilt_mock = MagicMock()
-    langgraph_prebuilt_mock.create_react_agent = MagicMock(
-        side_effect=lambda *a, **kw: _make_fake_graph()
-    )
-    sys.modules["langgraph.prebuilt"] = langgraph_prebuilt_mock
-
-    # Гарантируем что langgraph.prebuilt импортируется из mock
-    # (на случай если он уже закеширован в sys.modules как реальный пакет).
-    try:
-        import langgraph.prebuilt as _lgp
-        _lgp.create_react_agent = langgraph_prebuilt_mock.create_react_agent
-    except Exception:
-        pass
-
-    # --- langchain.memory ---
     memory_mock = MagicMock()
     memory_mock.ConversationBufferWindowMemory = MagicMock
     sys.modules.setdefault("langchain.memory", memory_mock)
 
-    # --- langchain_core.prompts ---
     prompts_mock = MagicMock()
     prompts_mock.ChatPromptTemplate = MagicMock()
     prompts_mock.ChatPromptTemplate.from_messages = MagicMock(return_value=MagicMock())
@@ -92,11 +149,9 @@ def _install_langchain_mocks() -> None:
     prompts_mock.PromptTemplate.from_template = MagicMock(return_value=MagicMock())
     sys.modules.setdefault("langchain_core.prompts", prompts_mock)
 
-    # --- langchain_openai ---
     lc_openai_mock = MagicMock()
     lc_openai_mock.ChatOpenAI = MagicMock
     sys.modules.setdefault("langchain_openai", lc_openai_mock)
 
 
-# Применяем до любого импорта тестовых модулей.
-_install_langchain_mocks()
+_install_mocks()
