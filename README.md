@@ -74,6 +74,7 @@ pip install -e ".[ui,dev]"    # редактируемый режим
 make api                      # FastAPI  → http://localhost:8000/docs
 make ui                       # Streamlit → http://localhost:8501
 make dzo-only                 # Только агент ДЗО
+make tender-only              # Только агент Тендер
 ```
 
 ### GitHub Codespaces
@@ -134,7 +135,7 @@ make monitoring    # Prometheus + Grafana + Alertmanager
 | `TELEGRAM_CHAT_ID` | ➞ | Chat ID Telegram |
 | `CORS_ORIGINS` | ➞ | Допустимые origins (default: `localhost:8501`) |
 | `ENABLE_DOCS` | ➞ | `false` — скрыть Swagger в продакшене |
-| `AGENT_MODE` | ➞ | `dzo` \| `tz` \| `both` (default) |
+| `AGENT_MODE` | ➞ | `dzo` \| `tz` \| `tender` \| `both` (default) |
 | `POLL_INTERVAL_SEC` | ➞ | Интервал IMAP-опроса (default: 300) |
 | `FORCE_REPROCESS` | ➞ | `true` — глобальный обход дедупликации для IMAP-демонов |
 | `AGENT_TOOL_ENABLED` | ➞ | `true/false` — разрешить межагентные tool-вызовы |
