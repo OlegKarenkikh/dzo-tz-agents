@@ -6,6 +6,7 @@ Fallback: если DATABASE_URL не задан — хранит в памяти
 import json
 import logging
 import os
+import threading
 from contextlib import contextmanager
 from datetime import UTC, datetime, date as _date
 from uuid import uuid4
@@ -15,7 +16,10 @@ logger = logging.getLogger("database")
 DATABASE_URL = os.getenv("DATABASE_URL", "")
 
 _memory_store: dict[str, dict] = {}
+_memory_lock = threading.RLock()  # FIX RC-04: защита _memory_store от concurrent mutation
+
 _pool = None
+_pool_lock = threading.Lock()  # FIX RC-01: защита от double-init ThreadedConnectionPool
 
 
 def _to_date(value) -> _date | None:
@@ -33,15 +37,9 @@ def _to_date(value) -> _date | None:
 
 
 def _filter_by_dates(rows: list[dict], date_from: str | None, date_to: str | None) -> list[dict]:
-    """Filter in-memory rows by date_from / date_to using proper date comparison.
-
-    If a provided date string cannot be parsed, returns an empty list to match
-    PostgreSQL behaviour (where an invalid date causes an error / 0 results)
-    rather than silently disabling the filter.
-    """
+    """Filter in-memory rows by date_from / date_to using proper date comparison."""
     date_from_obj = _to_date(date_from) if date_from else None
     date_to_obj = _to_date(date_to) if date_to else None
-    # Treat unparseable date values as an error → return nothing.
     if date_from and date_from_obj is None:
         return []
     if date_to and date_to_obj is None:
@@ -64,11 +62,14 @@ def _pg_available() -> bool:
 
 
 def _get_pool():
+    """FIX RC-01: double-checked locking — безопасная инициализация пула."""
     global _pool
-    if _pool is None:
-        import psycopg2.pool
-        _pool = psycopg2.pool.ThreadedConnectionPool(2, 10, DATABASE_URL)
-        logger.info("Пул psycopg2-соединений инициализирован (min=2, max=10).")
+    if _pool is None:              # fast path без блокировки
+        with _pool_lock:
+            if _pool is None:      # double-checked locking
+                import psycopg2.pool
+                _pool = psycopg2.pool.ThreadedConnectionPool(2, 10, DATABASE_URL)
+                logger.info("Пул psycopg2-соединений инициализирован (min=2, max=10).")
     return _pool
 
 
@@ -107,7 +108,7 @@ def init_db():
     Добавляет колонку trace если она ещё не существует (идемпотентная миграция).
     """
     if not _pg_available():
-        logger.info("ПостгреСЖЛ не настроен, используется in-memory хранилище.")
+        logger.info("PostgreSQL не настроен, используется in-memory хранилище.")
         return
     try:
         with _get_conn() as conn:
@@ -131,14 +132,13 @@ def init_db():
                 CREATE INDEX IF NOT EXISTS idx_jobs_created_at ON jobs(created_at DESC);
                 CREATE INDEX IF NOT EXISTS idx_jobs_decision   ON jobs(decision);
                 CREATE INDEX IF NOT EXISTS idx_jobs_sender     ON jobs(sender);
-                -- Идемпотентная миграция: добавить trace-колонку в существующую таблицу
                 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS trace JSONB;
             """)
             conn.commit()
             cur.close()
         logger.info("Таблица jobs готова (включая trace-колонку).")
     except Exception as e:
-        logger.error(f"init_db ошибка: {e}")
+        logger.error("init_db ошибка: %s", e)
 
 
 def _now_utc() -> str:
@@ -150,11 +150,7 @@ def find_duplicate_job(
     sender: str,
     subject: str,
 ) -> dict | None:
-    """Ищет последнее завершённое задание с тем же (agent, sender, subject).
-
-    Возвращает dict задания если дубль найден, иначе None.
-    Учитываются только задания со статусом 'done'.
-    """
+    """Ищет последнее завершённое задание с тем же (agent, sender, subject)."""
     if not sender and not subject:
         return None
     if _pg_available():
@@ -175,16 +171,17 @@ def find_duplicate_job(
                 cur.close()
             return dict(row) if row else None
         except Exception as e:
-            logger.error(f"find_duplicate_job ошибка: {e}")
+            logger.error("find_duplicate_job ошибка: %s", e)
             return None
-    # In-memory fallback
-    rows = [
-        r for r in _memory_store.values()
-        if r.get("agent") == agent
-        and r.get("sender") == sender
-        and r.get("subject") == subject
-        and r.get("status") == "done"
-    ]
+    # FIX RC-04: in-memory fallback с блокировкой
+    with _memory_lock:
+        rows = [
+            r for r in _memory_store.values()
+            if r.get("agent") == agent
+            and r.get("sender") == sender
+            and r.get("subject") == subject
+            and r.get("status") == "done"
+        ]
     if not rows:
         return None
     return max(rows, key=lambda r: r.get("created_at", ""))
@@ -217,9 +214,11 @@ def create_job(agent: str, sender: str = "", subject: str = "") -> str:
                 conn.commit()
                 cur.close()
         except Exception as e:
-            logger.error(f"create_job ошибка: {e}")
+            logger.error("create_job ошибка: %s", e)
     else:
-        _memory_store[job_id] = record
+        # FIX RC-04: защита _memory_store
+        with _memory_lock:
+            _memory_store[job_id] = record
     return job_id
 
 
@@ -251,17 +250,19 @@ def update_job(
                 conn.commit()
                 cur.close()
         except Exception as e:
-            logger.error(f"update_job ошибка: {e}")
+            logger.error("update_job ошибка: %s", e)
     else:
-        if job_id in _memory_store:
-            _memory_store[job_id].update({
-                "status":     status,
-                "decision":   decision,
-                "result":     result,
-                "trace":      trace,
-                "error":      error,
-                "updated_at": _now_utc(),
-            })
+        # FIX RC-04: защита _memory_store
+        with _memory_lock:
+            if job_id in _memory_store:
+                _memory_store[job_id].update({
+                    "status":     status,
+                    "decision":   decision,
+                    "result":     result,
+                    "trace":      trace,
+                    "error":      error,
+                    "updated_at": _now_utc(),
+                })
 
 
 def get_job(job_id: str) -> dict | None:
@@ -275,9 +276,11 @@ def get_job(job_id: str) -> dict | None:
                 cur.close()
             return dict(row) if row else None
         except Exception as e:
-            logger.error(f"get_job ошибка: {e}")
+            logger.error("get_job ошибка: %s", e)
             return None
-    return _memory_store.get(job_id)
+    # FIX RC-04
+    with _memory_lock:
+        return dict(_memory_store[job_id]) if job_id in _memory_store else None
 
 
 def get_history(
@@ -321,10 +324,11 @@ def get_history(
                 cur.close()
             return [dict(r) for r in rows]
         except Exception as e:
-            logger.error(f"get_history ошибка: {e}")
+            logger.error("get_history ошибка: %s", e)
             return []
-    # In-memory fallback
-    rows = list(_memory_store.values())
+    # FIX RC-04: snapshot под блокировкой
+    with _memory_lock:
+        rows = list(_memory_store.values())
     if agent:
         rows = [r for r in rows if r.get("agent") == agent]
     if decision:
@@ -343,7 +347,6 @@ def count_history(
     date_from: str | None = None,
     date_to: str | None = None,
 ) -> int:
-    """Быстрый подсчёт количества записей с фильтрами (SELECT COUNT(*))."""
     if _pg_available():
         try:
             with _get_conn() as conn:
@@ -365,8 +368,6 @@ def count_history(
                     if date_to:
                         filters.append("created_at < (%s::date + interval '1 day')")
                         params.append(date_to)
-                    # NB: filter clauses are all hardcoded literals — no external
-                    # input enters the SQL template; values are parameterised via %s.
                     where = ("WHERE " + " AND ".join(filters)) if filters else ""
                     cur.execute(f"SELECT COUNT(*) FROM jobs {where}", params)
                     total = cur.fetchone()[0]
@@ -374,8 +375,9 @@ def count_history(
         except Exception as e:
             logger.error("count_history ошибка: %s", e)
             return 0
-    # In-memory fallback
-    rows = list(_memory_store.values())
+    # FIX RC-04
+    with _memory_lock:
+        rows = list(_memory_store.values())
     if agent:
         rows = [r for r in rows if r.get("agent") == agent]
     if decision:
@@ -406,10 +408,11 @@ def get_stats() -> dict[str, int]:
                 cur.close()
             return row
         except Exception as e:
-            logger.error(f"get_stats ошибка: {e}")
+            logger.error("get_stats ошибка: %s", e)
             return {}
-    # In-memory fallback
-    rows = list(_memory_store.values())
+    # FIX RC-04
+    with _memory_lock:
+        rows = list(_memory_store.values())
     today = datetime.now(UTC).date().isoformat()
     return {
         "total":     len(rows),
@@ -432,10 +435,11 @@ def delete_job(job_id: str) -> bool:
                 cur.close()
             return deleted > 0
         except Exception as e:
-            logger.error(f"delete_job ошибка: {e}")
+            logger.error("delete_job ошибка: %s", e)
             return False
-    # In-memory fallback
-    if job_id in _memory_store:
-        del _memory_store[job_id]
-        return True
+    # FIX RC-04
+    with _memory_lock:
+        if job_id in _memory_store:
+            del _memory_store[job_id]
+            return True
     return False
