@@ -36,6 +36,11 @@ agent3_<name>_inspector/
 ```
 
 > **Правило:** номер 3, 4, 5... сохраняет порядок в `docker-compose.yml` и `AGENT_MODE`.
+>
+> **Важно для межагентных вызовов:** соблюдайте naming-convention
+> `agentN_<id>_inspector` и фабрику `create_<id>_agent` в `agent.py`.
+> Тогда агент автоматически попадёт в межагентный реестр и будет доступен
+> для `invoke_peer_agent` из других агентов.
 
 ---
 
@@ -52,6 +57,7 @@ from langchain_openai import ChatOpenAI
 
 from agent3_<name>_inspector.tools import (
     # импортируйте ваши инструменты
+    invoke_peer_agent,
     generate_validation_report,
     generate_response_email,
 )
@@ -118,6 +124,7 @@ def _build_llm() -> ChatOpenAI:
 def create_<name>_agent() -> AgentExecutor:
     llm = _build_llm()
     tools = [
+        invoke_peer_agent,
         generate_validation_report,
         generate_response_email,
         # добавьте свои
@@ -355,6 +362,14 @@ AGENT_REGISTRY = {
 - агент автоматически попадёт в селектор на странице тестирования UI;
 - универсальный запуск через `POST /api/v1/process/{agent}` начнёт принимать новый ID без добавления отдельного route;
 - `POST /api/v1/process/auto` и `POST /api/v1/resolve-agent` начнут учитывать его профиль `auto_detect`.
+
+### 7.3 Межагентные вызовы (по умолчанию)
+
+- Встроенный bridge `shared/agent_tooling.py` автоматически обнаруживает новых агентов
+    по naming-convention и добавляет их в реестр вызовов.
+- Политика по умолчанию: `all_except_self` (любой агент может вызвать любой другой).
+- Чтобы ограничить маршруты, задайте `AGENT_TOOL_PERMISSIONS`.
+- Для явного переопределения import path используйте `AGENT_TOOL_REGISTRY`.
 
 ---
 

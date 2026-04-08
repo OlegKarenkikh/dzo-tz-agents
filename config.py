@@ -1,5 +1,6 @@
 import logging
 import os
+import json
 
 from dotenv import load_dotenv
 
@@ -94,3 +95,23 @@ AGENT_RATE_LIMIT_BACKOFF = _safe_float("AGENT_RATE_LIMIT_BACKOFF", 3.0)
 FALLBACK_MODELS: list[str] = [
     m.strip() for m in os.getenv("FALLBACK_MODELS", "").split(",") if m.strip()
 ]
+
+
+def _safe_json_dict(name: str, default: dict) -> dict:
+    raw = os.getenv(name)
+    if raw is None or not raw.strip():
+        return default
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError:
+        _logger.warning("Некорректный JSON для %s, используется значение по умолчанию", name)
+        return default
+    if not isinstance(value, dict):
+        _logger.warning("%s должен быть JSON-объектом, используется значение по умолчанию", name)
+        return default
+    return value
+
+
+AGENT_TOOL_ENABLED: bool = os.getenv("AGENT_TOOL_ENABLED", "true").lower() == "true"
+AGENT_TOOL_REGISTRY: dict = _safe_json_dict("AGENT_TOOL_REGISTRY", {})
+AGENT_TOOL_PERMISSIONS: dict = _safe_json_dict("AGENT_TOOL_PERMISSIONS", {})

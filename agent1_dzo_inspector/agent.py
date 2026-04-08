@@ -6,12 +6,14 @@ from typing import Any
 from langgraph.prebuilt import create_react_agent
 
 from agent1_dzo_inspector.tools import (
+    analyze_tz_with_agent,
     generate_corrected_application,
     generate_escalation,
     generate_info_request,
     generate_response_email,
     generate_tezis_form,
     generate_validation_report,
+    invoke_peer_agent,
 )
 from shared.llm import build_llm
 from shared.logger import setup_logger
@@ -56,6 +58,10 @@ SLA (ОБЯЗАТЕЛЬНЫЕ СРОКИ)
 ИНСТРУКЦИИ
 ═══════════════════════════════════════════
 ШАГ 1 — Проверь вложения (чек-лист №1)
+ШАГ 1.1 — Если найдено ТЗ (или текст ТЗ в теле/вложении), вызови analyze_tz_with_agent.
+         Результат анализа ТЗ обязательно включи в итоговое резюме и письмо.
+ШАГ 1.2 — При необходимости дополнительной проверки можно вызвать invoke_peer_agent
+         для любого доступного агента (например, tender для перечня документов).
 ШАГ 2 — Проверь реквизиты (чек-листы №2 и №3) — ищи И в теле письма, И во вложениях
 ШАГ 3 — Прими решение:
   • «Заявка полная» → вызови generate_tezis_form
@@ -127,6 +133,8 @@ def create_dzo_agent(model_name: str | None = None) -> AgentRunner:
     """
     llm = build_llm(temperature=0.2, model_name_override=model_name)
     tools = [
+        invoke_peer_agent,
+        analyze_tz_with_agent,
         generate_validation_report,
         generate_tezis_form,
         generate_info_request,

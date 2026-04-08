@@ -5,6 +5,7 @@ from html import escape as html_escape
 from langchain.tools import tool
 from pydantic import BaseModel, ConfigDict, Field
 
+from shared.agent_tooling import invoke_agent_as_tool
 from shared.logger import setup_logger
 
 logger = setup_logger("agent_dzo")
@@ -103,6 +104,24 @@ class CorrectedApplicationInput(BaseModel):
     model_config = ConfigDict(strict=True)
 
     fields: list[CorrectedField] = Field(default_factory=list)
+
+
+class TzAgentAnalysisInput(BaseModel):
+    model_config = ConfigDict(strict=True)
+
+    tz_text: str = Field(description="Извлечённый текст ТЗ для анализа")
+    email_subject: str = ""
+    source_sender: str = ""
+    target_agent: str = Field(default="tz", description="ID целевого агента из AGENT_TOOL_REGISTRY")
+
+
+class PeerAgentInvokeInput(BaseModel):
+    model_config = ConfigDict(strict=True)
+
+    target_agent: str = Field(description="ID целевого агента (например: tz, tender)")
+    query_text: str = Field(description="Краткий структурированный запрос для целевого агента")
+    subject: str = ""
+    sender: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -348,3 +367,112 @@ def generate_corrected_application(
     except Exception as e:
         logger.error("❌ generate_corrected_application: ошибка %s", e)
         return json.dumps({"error": str(e)})
+
+
+@tool(args_schema=TzAgentAnalysisInput)
+def analyze_tz_with_agent(
+    tz_text: str,
+    email_subject: str = "",
+    source_sender: str = "",
+    target_agent: str = "tz",
+) -> str:
+    """
+    Делегирует анализ ТЗ другому агенту и возвращает компактный результат.
+    Используй, когда в заявке ДЗО обнаружен файл/текст ТЗ.
+    """
+    try:
+        logger.debug("🔁 analyze_tz_with_agent: source=dzo target=%s", target_agent)
+        delegated_input = (
+            "INCOMING TECHNICAL SPECIFICATION\n"
+            "===========================================\n"
+            f"От: {source_sender}\n"
+            f"Тема: {email_subject}\n\n"
+            "-- ТЕКСТ ТЗ --\n"
+            f"{tz_text}"
+        )
+        delegated_result = invoke_agent_as_tool(
+            source_agent="dzo",
+            target_agent=target_agent,
+            chat_input=delegated_input,
+            metadata={"delegated_by": "dzo", "tool": "analyze_tz_with_agent"},
+        )
+
+        overall_status = "Не определён"
+        critical_issues: list[str] = []
+        recommendations: list[str] = []
+        email_html = ""
+
+        for obs in delegated_result.get("observations", []):
+            if obs.get("overall_status"):
+                overall_status = str(obs.get("overall_status"))
+                critical_issues = [str(x) for x in obs.get("critical_issues", [])]
+                recommendations = [str(x) for x in obs.get("recommendations", [])]
+            if obs.get("emailHtml") and not email_html:
+                email_html = str(obs.get("emailHtml"))
+
+        summary = (
+            f"Агент ТЗ: {overall_status}. "
+            f"Критичных замечаний: {len(critical_issues)}. "
+            f"Рекомендаций: {len(recommendations)}."
+        )
+
+        logger.info("✅ analyze_tz_with_agent: получен результат (%s)", overall_status)
+        return json.dumps({
+            "tzAgentAnalysis": {
+                "target_agent": target_agent,
+                "overall_status": overall_status,
+                "critical_issues": critical_issues,
+                "recommendations": recommendations,
+                "summary": summary,
+                "email_html": email_html,
+                "raw_output": delegated_result.get("output", ""),
+            }
+        }, ensure_ascii=False)
+    except Exception as e:
+        logger.error("❌ analyze_tz_with_agent: ошибка %s", e)
+        return json.dumps({
+            "tzAgentAnalysis": {
+                "target_agent": target_agent,
+                "overall_status": "Ошибка анализа",
+                "critical_issues": [],
+                "recommendations": [],
+                "summary": f"Не удалось выполнить анализ ТЗ: {e}",
+                "email_html": "",
+                "raw_output": "",
+            }
+        }, ensure_ascii=False)
+
+
+@tool(args_schema=PeerAgentInvokeInput)
+def invoke_peer_agent(
+    target_agent: str,
+    query_text: str,
+    subject: str = "",
+    sender: str = "",
+) -> str:
+    """Универсальный вызов другого агента как инструмента."""
+    try:
+        logger.debug("🔁 invoke_peer_agent: source=dzo target=%s", target_agent)
+        result = invoke_agent_as_tool(
+            source_agent="dzo",
+            target_agent=target_agent,
+            chat_input=query_text,
+            metadata={"delegated_by": "dzo", "subject": subject, "sender": sender},
+        )
+        return json.dumps({
+            "peerAgentResult": {
+                "target_agent": target_agent,
+                "output": result.get("output", ""),
+                "observations": result.get("observations", []),
+            }
+        }, ensure_ascii=False)
+    except Exception as e:
+        logger.error("❌ invoke_peer_agent(dzo): ошибка %s", e)
+        return json.dumps({
+            "peerAgentResult": {
+                "target_agent": target_agent,
+                "output": "",
+                "observations": [],
+                "error": str(e),
+            }
+        }, ensure_ascii=False)

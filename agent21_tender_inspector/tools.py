@@ -5,6 +5,8 @@ from datetime import UTC, datetime
 
 from langchain.tools import tool
 
+from shared.agent_tooling import invoke_agent_as_tool
+
 logger = logging.getLogger("agent_tender")
 
 # --------------------------------------------------------------------------- #
@@ -170,3 +172,60 @@ def generate_document_list(query: str) -> str:
     except Exception as e:
         logger.error("❌ generate_document_list: ошибка %s", e)
         return json.dumps({"error": str(e)}, ensure_ascii=False)
+
+
+@tool
+def invoke_peer_agent(query: str) -> str:
+    """
+    Универсальный вызов другого агента как инструмента.
+
+    Ожидает JSON:
+    {"target_agent":"dzo|tz|tender|...","query_text":"...","subject":"...","sender":"..."}
+    """
+    try:
+        d = _parse_query(query, "invoke_peer_agent")
+        if not isinstance(d, dict):
+            return json.dumps({"error": "query должен быть JSON-объектом"}, ensure_ascii=False)
+
+        target_agent = str(d.get("target_agent", "")).strip()
+        query_text = str(d.get("query_text", "")).strip()
+        if not target_agent or not query_text:
+            return json.dumps(
+                {"error": "Обязательные поля: target_agent, query_text"},
+                ensure_ascii=False,
+            )
+
+        result = invoke_agent_as_tool(
+            source_agent="tender",
+            target_agent=target_agent,
+            chat_input=query_text,
+            metadata={
+                "delegated_by": "tender",
+                "subject": str(d.get("subject", "")),
+                "sender": str(d.get("sender", "")),
+            },
+        )
+
+        return json.dumps(
+            {
+                "peerAgentResult": {
+                    "target_agent": target_agent,
+                    "output": result.get("output", ""),
+                    "observations": result.get("observations", []),
+                }
+            },
+            ensure_ascii=False,
+        )
+    except Exception as e:
+        logger.error("❌ invoke_peer_agent(tender): ошибка %s", e)
+        return json.dumps(
+            {
+                "peerAgentResult": {
+                    "target_agent": "",
+                    "output": "",
+                    "observations": [],
+                    "error": str(e),
+                }
+            },
+            ensure_ascii=False,
+        )

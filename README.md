@@ -137,6 +137,13 @@ make monitoring    # Prometheus + Grafana + Alertmanager
 | `AGENT_MODE` | ➞ | `dzo` \| `tz` \| `both` (default) |
 | `POLL_INTERVAL_SEC` | ➞ | Интервал IMAP-опроса (default: 300) |
 | `FORCE_REPROCESS` | ➞ | `true` — глобальный обход дедупликации для IMAP-демонов |
+| `AGENT_TOOL_ENABLED` | ➞ | `true/false` — разрешить межагентные tool-вызовы |
+| `AGENT_TOOL_REGISTRY` | ➞ | JSON-реестр фабрик агентов: `{"dzo":"...:create_dzo_agent"}` |
+| `AGENT_TOOL_PERMISSIONS` | ➞ | JSON-matrix маршрутов: `{"dzo":["tz"],"tz":["dzo"]}` |
+
+По умолчанию межагентные вызовы работают по политике `all_except_self`: каждый агент может
+вызвать любой другой агент из реестра. `AGENT_TOOL_PERMISSIONS` используйте только если нужно
+ограничить маршруты.
 
 ## API эндпоинты
 

@@ -5,6 +5,7 @@ from html import escape as html_escape
 from langchain.tools import tool
 from pydantic import BaseModel, ConfigDict, Field
 
+from shared.agent_tooling import invoke_agent_as_tool
 from shared.logger import setup_logger
 
 logger = setup_logger("agent_tz")
@@ -77,6 +78,15 @@ class EmailToDzoInput(BaseModel):
     issues: list[str] = Field(default_factory=list)
     recommendations: list[str] = Field(default_factory=list)
     has_corrected_tz: bool = False
+
+
+class PeerAgentInvokeInput(BaseModel):
+    model_config = ConfigDict(strict=True)
+
+    target_agent: str = Field(description="ID целевого агента (например: dzo, tender)")
+    query_text: str = Field(description="Краткий структурированный запрос для целевого агента")
+    subject: str = ""
+    sender: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -244,3 +254,38 @@ def generate_email_to_dzo(
     except Exception as e:
         logger.error("❌ generate_email_to_dzo: ошибка %s", e)
         return json.dumps({"error": str(e)})
+
+
+@tool(args_schema=PeerAgentInvokeInput)
+def invoke_peer_agent(
+    target_agent: str,
+    query_text: str,
+    subject: str = "",
+    sender: str = "",
+) -> str:
+    """Универсальный вызов другого агента как инструмента."""
+    try:
+        logger.debug("🔁 invoke_peer_agent: source=tz target=%s", target_agent)
+        result = invoke_agent_as_tool(
+            source_agent="tz",
+            target_agent=target_agent,
+            chat_input=query_text,
+            metadata={"delegated_by": "tz", "subject": subject, "sender": sender},
+        )
+        return json.dumps({
+            "peerAgentResult": {
+                "target_agent": target_agent,
+                "output": result.get("output", ""),
+                "observations": result.get("observations", []),
+            }
+        }, ensure_ascii=False)
+    except Exception as e:
+        logger.error("❌ invoke_peer_agent(tz): ошибка %s", e)
+        return json.dumps({
+            "peerAgentResult": {
+                "target_agent": target_agent,
+                "output": "",
+                "observations": [],
+                "error": str(e),
+            }
+        }, ensure_ascii=False)

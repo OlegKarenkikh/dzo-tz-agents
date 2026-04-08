@@ -76,6 +76,7 @@ class DzoEmailRunner(BaseEmailRunner):
 
     def parse_steps(self, steps: list, result: dict, job_id: str) -> tuple[str, dict, str]:
         email_html = corrected_html = tezis_html = escalation_html = ""
+        tz_agent_analysis: dict = {}
         decision = "Требуется доработка"
         reply_subject = ""
         for step_idx, step in enumerate(steps, start=1):
@@ -94,6 +95,8 @@ class DzoEmailRunner(BaseEmailRunner):
                 if obs.get("escalationHtml"):
                     escalation_html = obs["escalationHtml"]
                     decision = obs.get("decision", decision)
+                if obs.get("tzAgentAnalysis"):
+                    tz_agent_analysis = obs.get("tzAgentAnalysis") or {}
             except (json.JSONDecodeError, TypeError, KeyError, IndexError) as exc:
                 _runner_logger.warning(
                     "[%s] parse_steps: ошибка разбора шага %d: %s",
@@ -104,11 +107,21 @@ class DzoEmailRunner(BaseEmailRunner):
                 f"<div style='font-family:Arial'>"
                 f"{result.get('output', '').replace(chr(10), '<br>')}</div>"
             )
+
+        tz_summary = (tz_agent_analysis or {}).get("summary", "")
+        if tz_summary:
+            email_html += (
+                "<hr><div style='font-family:Arial'>"
+                "<p><strong>Результат анализа технического задания:</strong></p>"
+                f"<p>{tz_summary}</p>"
+                "</div>"
+            )
         return decision, {
             "email_html": email_html,
             "corrected_html": corrected_html,
             "tezis_html": tezis_html,
             "escalation_html": escalation_html,
+            "tz_agent_analysis": tz_agent_analysis,
         }, reply_subject
 
     def send_reply(
@@ -153,10 +166,13 @@ class DzoEmailRunner(BaseEmailRunner):
             notify(f"ℹ️ Запрошены данные от {sender}", level="info")
 
     def db_result_fields(self, mail: dict, artifacts: dict) -> dict:
+        tz_agent_analysis = artifacts.get("tz_agent_analysis") or {}
         return {
             "has_tz": self._has_tz,
             "has_spec": self._has_spec,
             "attachments": len(mail.get("attachments", [])),
+            "tz_agent_overall_status": tz_agent_analysis.get("overall_status", ""),
+            "tz_agent_critical_issues": len(tz_agent_analysis.get("critical_issues", []) or []),
         }
 
 
