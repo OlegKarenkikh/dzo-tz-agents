@@ -295,9 +295,9 @@ def _is_result_usable_for_agent(agent_type: str, model_result: dict) -> tuple[bo
     if not isinstance(model_result, dict):
         return False, "InvalidResultType"
     steps = model_result.get("intermediate_steps", []) or []
-    # Для tool-ориентированных агентов пустые steps означают, что модель не выполнила
-    # обязательные tool-вызовы (часто встречается у несовместимых/ограниченных моделей).
-    if agent_type in {"dzo", "tz", "tender"} and len(steps) == 0:
+    # Универсальная защита: для любого агента API-пайплайна ожидаем хотя бы один
+    # tool-вызов. Пустые steps обычно означают деградацию модели/несовместимость.
+    if len(steps) == 0:
         return False, "NoToolCalls"
     return True, ""
 
