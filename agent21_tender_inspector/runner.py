@@ -165,7 +165,7 @@ def process_single_document(
             dup = db.find_duplicate_job("tender", "", source)
             if dup:
                 logger.info("[dedup] Пропускаем дубль: '%s' (ранее обработано %s)",
-                            source, dup["created_at"][:10])
+                            source, str(dup["created_at"])[:10])
                 return dup.get("result") or {}
         file_data, filename = _download_document(source)
         eff_url_dir = output_dir or TENDER_OUTPUT_DIR or os.getcwd()
@@ -205,7 +205,7 @@ def process_single_document(
             dup = db.find_duplicate_job("tender", "", dedup_subject)
             if dup:
                 logger.info("[dedup] Пропускаем дубль: '%s' (ранее обработано %s)",
-                            dedup_subject, dup["created_at"][:10])
+                            dedup_subject, str(dup["created_at"])[:10])
                 return dup.get("result") or {}
 
     job_id = db.create_job("tender", sender="", subject=dedup_subject)

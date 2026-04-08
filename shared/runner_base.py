@@ -144,11 +144,17 @@ class BaseEmailRunner(ABC):
             if not force_reprocess:
                 dup = db.find_duplicate_job(self.agent_id, sender, subject)
                 if dup:
+                    created_at = dup.get("created_at")
+                    created_at_display = (
+                        created_at.date().isoformat()
+                        if hasattr(created_at, "date")
+                        else str(created_at)[:10]
+                    )
                     logger.info(
                         "[dedup] Пропускаем дубль: '%s' от %s "
                         "(ранее обработано %s, решение: %s)",
                         subject, sender,
-                        dup["created_at"][:10], dup.get("decision", "?"),
+                        created_at_display, dup.get("decision", "?"),
                     )
                     continue
 
