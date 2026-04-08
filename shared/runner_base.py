@@ -137,7 +137,6 @@ class BaseEmailRunner(ABC):
         force_reprocess = getattr(config, "FORCE_REPROCESS", False)
 
         for mail in emails:
-            agent = self.create_agent()
             sender = mail["from"]
             subject = mail["subject"]
             logger.info("Обрабатываю: '%s' от %s", subject, sender)
@@ -166,6 +165,8 @@ class BaseEmailRunner(ABC):
                     attachment_texts.append(f"---- Файл: {att['filename']} ----\n{text}")
 
                 chat_input = self.build_chat_input(mail, attachment_texts)
+
+                agent = self.create_agent()
 
                 lf_cb = get_langfuse_callback()
                 callbacks = [lf_cb] if lf_cb is not None else []

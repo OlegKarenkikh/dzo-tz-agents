@@ -8,8 +8,11 @@ load_dotenv()
 import config  # noqa: E402
 from agent2_tz_inspector.agent import create_tz_agent  # noqa: E402
 from shared.email_sender import send_email  # noqa: E402
+from shared.logger import setup_logger  # noqa: E402
 from shared.runner_base import BaseEmailRunner  # noqa: E402
 from shared.telegram_notify import notify  # noqa: E402
+
+_runner_logger = setup_logger("agent_tz_runner")
 
 
 class TzEmailRunner(BaseEmailRunner):
@@ -48,7 +51,7 @@ class TzEmailRunner(BaseEmailRunner):
         decision = "Требует доработки"
         reply_subject = ""
         json_report: dict = {}
-        for step in steps:
+        for step_idx, step in enumerate(steps):
             try:
                 obs = json.loads(step[1]) if isinstance(step[1], str) else step[1]
                 if obs.get("emailHtml"):
@@ -59,8 +62,11 @@ class TzEmailRunner(BaseEmailRunner):
                     corrected_tz_html = obs["html"]
                 if obs.get("overall_status"):
                     json_report = obs
-            except Exception:
-                pass
+            except (json.JSONDecodeError, TypeError, KeyError, IndexError) as exc:
+                _runner_logger.warning(
+                    "[%s] parse_steps: ошибка разбора шага %d: %s",
+                    job_id, step_idx, exc,
+                )
         if not email_html:
             email_html = (
                 "<div style='font-family:Arial'>"

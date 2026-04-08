@@ -88,8 +88,7 @@ def probe_max_input_tokens(api_key: str, model_name: str) -> int:
         )
 
     with _llm_cache_lock:
-        _MAX_INPUT_TOKENS_CACHE[model_name] = _DEFAULT_MAX_INPUT_TOKENS
-    return _DEFAULT_MAX_INPUT_TOKENS
+        return _MAX_INPUT_TOKENS_CACHE.setdefault(model_name, _DEFAULT_MAX_INPUT_TOKENS)
 
 
 def probe_max_output_tokens(api_key: str, model_name: str) -> int:
@@ -134,8 +133,7 @@ def probe_max_output_tokens(api_key: str, model_name: str) -> int:
         )
 
     with _llm_cache_lock:
-        _MAX_OUTPUT_TOKENS_CACHE[model_name] = _DEFAULT_MAX_OUTPUT_TOKENS
-    return _DEFAULT_MAX_OUTPUT_TOKENS
+        return _MAX_OUTPUT_TOKENS_CACHE.setdefault(model_name, _DEFAULT_MAX_OUTPUT_TOKENS)
 
 
 def fetch_github_chat_models(api_key: str) -> list[str]:
@@ -283,8 +281,7 @@ def probe_local_max_context(base_url: str, model_name: str) -> int:
         logger.debug("Не удалось определить контекст для %s: %s", model_name, exc)
 
     with _llm_cache_lock:
-        _LOCAL_MAX_CTX_CACHE[cache_key] = _DEFAULT_MAX_INPUT_TOKENS
-    return _DEFAULT_MAX_INPUT_TOKENS
+        return _LOCAL_MAX_CTX_CACHE.setdefault(cache_key, _DEFAULT_MAX_INPUT_TOKENS)
 
 
 def build_local_fallback_chain(primary: str, base_url: str | None = None) -> list[str]:

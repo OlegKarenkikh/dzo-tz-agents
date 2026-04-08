@@ -9,8 +9,11 @@ import config  # noqa: E402
 import shared.database as db  # noqa: E402
 from agent1_dzo_inspector.agent import create_dzo_agent  # noqa: E402
 from shared.email_sender import send_email  # noqa: E402
+from shared.logger import setup_logger  # noqa: E402
 from shared.runner_base import BaseEmailRunner  # noqa: E402
 from shared.telegram_notify import notify  # noqa: E402
+
+_runner_logger = setup_logger("agent_dzo_runner")
 
 
 class DzoEmailRunner(BaseEmailRunner):
@@ -75,7 +78,7 @@ class DzoEmailRunner(BaseEmailRunner):
         email_html = corrected_html = tezis_html = escalation_html = ""
         decision = "Требуется доработка"
         reply_subject = ""
-        for step in steps:
+        for step_idx, step in enumerate(steps):
             try:
                 obs = json.loads(step[1]) if isinstance(step[1], str) else step[1]
                 if obs.get("emailHtml"):
@@ -89,8 +92,11 @@ class DzoEmailRunner(BaseEmailRunner):
                 if obs.get("escalationHtml"):
                     escalation_html = obs["escalationHtml"]
                     decision = obs.get("decision", decision)
-            except Exception:
-                pass
+            except (json.JSONDecodeError, TypeError, KeyError, IndexError) as exc:
+                _runner_logger.warning(
+                    "[%s] parse_steps: ошибка разбора шага %d: %s",
+                    job_id, step_idx, exc,
+                )
         if not email_html and not escalation_html:
             email_html = (
                 f"<div style='font-family:Arial'>"
