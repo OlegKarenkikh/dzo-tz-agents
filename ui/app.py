@@ -147,6 +147,26 @@ def _status_icon(status: str) -> str:
     return icons.get(status, "❓")
 
 
+def _build_reprocess_payload(job: dict) -> tuple[dict, str | None]:
+    """Собрать payload для переобработки из сохранённого request_payload."""
+    result = job.get("result") or {}
+    request_payload = result.get("request_payload") if isinstance(result, dict) else None
+    if isinstance(request_payload, dict):
+        payload = dict(request_payload)
+        payload["force"] = True
+        return payload, None
+
+    # Fallback для старых записей, где request_payload ещё не сохранялся.
+    return {
+        "sender_email": job.get("sender", ""),
+        "subject": job.get("subject", ""),
+        "force": True,
+    }, (
+        "В этой записи нет исходного payload (старый формат). "
+        "Переобработка может быть неполной."
+    )
+
+
 def _show_artifacts(r: dict, expanded: bool = True, key_prefix: str = "") -> None:
     """Показать все артефакты из поля result."""
     _k = key_prefix or str(id(r))
@@ -344,20 +364,38 @@ if page == "📊 Дашборд":
                 key=f"run_dashboard_{aid}",
                 width='stretch',
             ):
-                result = _api_post(f"/api/v1/process/{aid}", {"text": "(ручной запуск)", "subject": "Тестовый запуск"})
+                demo_text = (
+                    "ТЕНДЕРНАЯ ДОКУМЕНТАЦИЯ: тестовый запуск интерфейса. "
+                    "Перечень документов: выписка ЕГРЮЛ, лицензия, банковская гарантия."
+                    if aid == "tender"
+                    else "Тестовый запуск интерфейса"
+                )
+                result = _api_post(
+                    f"/api/v1/process/{aid}",
+                    {"text": demo_text, "subject": "Тестовый запуск"},
+                )
                 if result and "job" in result:
                     st.success(f"Задание создано: `{result['job']['job_id']}`")
     with run_columns[-1]:
         if st.button("▶️ Запустить все", key="run_dashboard_all", width='stretch'):
             for agent in dashboard_agents:
                 aid = str(agent.get("id", "")).strip()
-                result = _api_post(f"/api/v1/process/{aid}", {"text": "(ручной запуск)", "subject": "Тестовый запуск"})
+                demo_text = (
+                    "ТЕНДЕРНАЯ ДОКУМЕНТАЦИЯ: тестовый запуск интерфейса. "
+                    "Перечень документов: выписка ЕГРЮЛ, лицензия, банковская гарантия."
+                    if aid == "tender"
+                    else "Тестовый запуск интерфейса"
+                )
+                result = _api_post(
+                    f"/api/v1/process/{aid}",
+                    {"text": demo_text, "subject": "Тестовый запуск"},
+                )
                 if result and "job" in result:
                     st.success(f"Задание создано: `{result['job']['job_id']}`")
 
     if st.button("🔄 Обновить", key="refresh_dashboard"):
         st.rerun()
-    st.caption(f"Страница обновляется каждые {AUTO_REFRESH_SEC} сек. при нажатии кнопки.")
+    st.caption("Данные обновляются вручную кнопкой «Обновить».")
 
 # ---------------------------------------------------------------------------
 # 🧪 ТЕСТИРОВАНИЕ АГЕНТОВ
@@ -823,11 +861,10 @@ elif page == "📋 История":
                 for jid in st.session_state.selected_jobs:
                     j_info = _api_get(f"/api/v1/jobs/{jid}")
                     if j_info:
-                        res = _api_post(f"/api/v1/process/{j_info['agent']}", {
-                            "sender_email": j_info.get("sender", ""),
-                            "subject": j_info.get("subject", ""),
-                            "force": True,
-                        })
+                        payload, warning = _build_reprocess_payload(j_info)
+                        if warning:
+                            st.warning(warning)
+                        res = _api_post(f"/api/v1/process/{j_info['agent']}", payload)
                         if res and "job" in res:
                             new_jobs.append(res["job"]["job_id"])
                 st.success(f"Запущено {len(new_jobs)} новых заданий.")
@@ -907,11 +944,10 @@ elif page == "📋 История":
                         unsafe_allow_html=True,
                     )
                 if c2.button("🔁 Переобработать", key=f"reproc_{item['job_id']}", width='stretch'):
-                    res = _api_post(f"/api/v1/process/{item['agent']}", {
-                        "sender_email": item.get("sender", ""),
-                        "subject": item.get("subject", ""),
-                        "force": True,
-                    })
+                    payload, warning = _build_reprocess_payload(item)
+                    if warning:
+                        st.warning(warning)
+                    res = _api_post(f"/api/v1/process/{item['agent']}", payload)
                     if res and "job" in res:
                         st.success(f"Создано новое задание: `{res['job']['job_id']}`")
                         time.sleep(0.5)

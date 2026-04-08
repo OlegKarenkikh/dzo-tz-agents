@@ -565,6 +565,7 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                 result={
                     "output": result.get("output", ""),
                     "decision": decision,
+                    "request_payload": request.model_dump(),
                     **artifacts,
                 },
             )

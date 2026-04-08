@@ -397,6 +397,7 @@ curl -H "X-API-Key: your-secret-key" http://localhost:8000/api/v1/stats
 | `output` | `str` | Текстовый вывод агента |
 | `decision` | `str` | Решение (например «Заявка полная») |
 | `email_html` | `str` | HTML-письмо для отправки |
+| `request_payload` | `dict` | Исходный payload запроса (для корректной переобработки из истории) |
 | `tz_agent_analysis` | `dict` | Результат делегированного анализа ТЗ |
 | `peer_agent_results` | `list[dict]` | Результаты вызовов других агентов |
 | `document_list` | `dict` | Структурированный список документов по тендеру |
