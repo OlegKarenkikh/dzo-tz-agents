@@ -460,14 +460,34 @@ elif page == "🧪 Тестирование":
 
     def _poll_job(job_id: str):
         bar = st.progress(0, text="Ожидаем результат...")
+        live_log = st.empty()
         for i in range(60):
             time.sleep(2)
             res = _api_get(f"/api/v1/jobs/{job_id}")
+            if res and isinstance(res, dict):
+                result_obj = res.get("result") if isinstance(res.get("result"), dict) else {}
+                processing_log = result_obj.get("processing_log") if isinstance(result_obj, dict) else None
+                events = processing_log.get("events", []) if isinstance(processing_log, dict) else []
+                if events:
+                    tail = events[-8:]
+                    tail_rows = [
+                        {
+                            "Время": str(ev.get("ts", ""))[:19].replace("T", " "),
+                            "Этап": ev.get("stage", ""),
+                            "Сообщение": ev.get("message", ""),
+                        }
+                        for ev in tail
+                    ]
+                    with live_log.container():
+                        st.caption("🧾 Живой журнал обработки (последние события)")
+                        st.dataframe(tail_rows, hide_index=True, width='stretch')
             bar.progress(min(int((i + 1) / 60 * 100), 99), text=f"Обработка... {(i+1)*2} сек.")
             if res and res["status"] in ("done", "error"):
                 bar.progress(100, text="Готово")
+                live_log.empty()
                 return res
         bar.empty()
+        live_log.empty()
         return None
 
     def _show_job_result(result):
