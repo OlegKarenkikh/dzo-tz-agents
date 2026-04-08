@@ -2,7 +2,9 @@ import json
 import os
 from typing import Any
 
-from langchain.agents import create_agent
+# FIX ST-02 (agent21): langchain.agents.create_agent не существует.
+# Переходим на langgraph.prebuilt.create_react_agent — единый API для всех агентов.
+from langgraph.prebuilt import create_react_agent
 
 from agent21_tender_inspector.tools import generate_document_list
 from shared.llm import build_llm
@@ -116,17 +118,23 @@ def create_tender_agent(model_name: str | None = None) -> AgentRunner:
 
     Args:
         model_name: явное имя модели (для fallback при 429); None = из env MODEL_NAME.
+
+    Note:
+        Использует langgraph.prebuilt.create_react_agent — единый API LangGraph.
     """
     llm = build_llm(temperature=0.1, model_name_override=model_name)
     tools = [generate_document_list]
-    debug_mode = os.getenv("AGENT_DEBUG", "1") not in {"0", "false", "False"}
-    logger.info("Создание агента Тендер (debug=%s, модель=%s)", debug_mode, llm.model_name)
+    debug_mode = os.getenv("AGENT_DEBUG", "0") in {"1", "true", "True"}
+    logger.info(
+        "Создание агента Тендер (debug=%s, модель=%s)",
+        debug_mode,
+        getattr(llm, "model_name", "?"),
+    )
 
-    graph_agent = create_agent(
+    graph_agent = create_react_agent(
         model=llm,
         tools=tools,
-        system_prompt=SYSTEM_PROMPT,
-        debug=debug_mode,
+        prompt=SYSTEM_PROMPT,
     )
     logger.debug("Агент Тендер успешно создан")
     return AgentRunner(graph_agent)
