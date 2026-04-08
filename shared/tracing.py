@@ -1,5 +1,5 @@
 """
-Трейсинг шагов агента через Langfuse (opionally).
+Трейсинг шагов агента через Langfuse (optionally).
 
 FIX SE-02: AUTH_HEADERS больше не строится на уровне модуля.
 Public API:
@@ -9,13 +9,15 @@ Public API:
 """
 from __future__ import annotations
 
+import functools
 import json
-import logging
 import os
 import time
 from typing import Any
 
-logger = logging.getLogger("agent_trace")
+from shared.logger import setup_logger
+
+logger = setup_logger("agent_trace")
 
 
 # ---------------------------------------------------------------------------
@@ -36,18 +38,17 @@ def _truncate(value: Any, max_len: int = 300) -> Any:
     return value
 
 
-def _get_langfuse_auth_headers() -> dict[str, str]:
-    """FIX SE-02: ленивое чтение API_KEY."""
-    api_key = os.getenv("API_KEY", "")
-    return {"X-API-Key": api_key} if api_key else {}
-
-
 # ---------------------------------------------------------------------------
 # Langfuse
 # ---------------------------------------------------------------------------
 
+@functools.lru_cache(maxsize=1)
 def get_langfuse_callback():
-    """Возвращает LangfuseCallbackHandler или None если Langfuse не настроен."""
+    """Возвращает LangfuseCallbackHandler или None если Langfuse не настроен.
+
+    Результат кешируется (singleton per process) — повторные вызовы возвращают
+    тот же экземпляр, что исключает дублирование callback-конфигурации.
+    """
     pk = os.getenv("LANGFUSE_PUBLIC_KEY")
     sk = os.getenv("LANGFUSE_SECRET_KEY")
     if not pk or not sk:

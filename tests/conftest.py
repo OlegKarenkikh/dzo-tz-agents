@@ -69,14 +69,14 @@ def _install_mocks() -> None:
     try:
         real_lgp = importlib.import_module("langgraph.prebuilt")
         real_lgp.create_react_agent = _fake_create_react_agent
-    except Exception:
+    except (ImportError, ModuleNotFoundError):
         pass
 
     # 2. Patch shared.llm.build_llm before agent modules are imported
     try:
         import shared.llm as _shared_llm
         _shared_llm.build_llm = _fake_build_llm
-    except Exception:
+    except (ImportError, ModuleNotFoundError):
         pass
 
     # 3. Import agent modules and overwrite create_react_agent in their namespaces
@@ -89,7 +89,7 @@ def _install_mocks() -> None:
         try:
             mod = importlib.import_module(mod_name)
             mod.create_react_agent = _fake_create_react_agent  # type: ignore[attr-defined]
-        except Exception:
+        except (ImportError, ModuleNotFoundError):
             pass
 
     # 4. Stub optional langchain helper modules if absent

@@ -34,6 +34,10 @@ class BaseEmailRunner(ABC):
       - build_chat_input()      — формирует строку входных данных для агента
       - parse_steps()           — извлекает артефакты из intermediate_steps
       - send_reply()            — отправляет итоговое письмо
+
+    Опциональные хуки (переопределять при необходимости):
+      - handle_no_attachments() — специальная обработка писем без вложений
+      - db_result_fields()      — контролирует набор полей, сохраняемых в БД
     """
 
     @property
@@ -70,10 +74,42 @@ class BaseEmailRunner(ABC):
         self,
         sender: str,
         subject: str,
+        reply_subject: str,
         decision: str,
         artifacts: dict,
     ) -> None:
+        """Отправляет ответное письмо.
+
+        Args:
+            sender:        адрес отправителя входящего письма
+            subject:       тема оригинального письма
+            reply_subject: тема, сгенерированная агентом (может быть пустой)
+            decision:      решение агента
+            artifacts:     артефакты из parse_steps
+        """
         ...
+
+    # ------------------------------------------------------------------
+    # Опциональные хуки
+    # ------------------------------------------------------------------
+
+    def handle_no_attachments(self, sender: str, subject: str, job_id: str) -> bool:
+        """Вызывается, когда в письме нет вложений.
+
+        Переопределите для агент-специфичного поведения.
+        Верните True, чтобы пропустить LLM-обработку для этого письма.
+        """
+        return False
+
+    def db_result_fields(self, mail: dict, artifacts: dict) -> dict:
+        """Возвращает dict для поля result при сохранении в БД.
+
+        Переопределите, чтобы контролировать, какие данные хранятся в БД.
+        """
+        return {
+            "attachments": len(mail.get("attachments", [])),
+            **{k: v for k, v in artifacts.items() if not isinstance(v, bytes)},
+        }
 
     # ------------------------------------------------------------------
     # Общая логика обработки
@@ -119,6 +155,11 @@ class BaseEmailRunner(ABC):
 
             job_id = db.create_job(self.agent_id, sender=sender, subject=subject)
             try:
+                if not mail.get("attachments"):
+                    if self.handle_no_attachments(sender, subject, job_id):
+                        EMAILS_PROCESSED.labels(agent=self.agent_id).inc()
+                        continue
+
                 attachment_texts: list[str] = []
                 for att in mail.get("attachments", []):
                     text = extract_text_from_attachment(att)
@@ -141,7 +182,7 @@ class BaseEmailRunner(ABC):
                 steps = result.get("intermediate_steps", [])
                 trace = log_agent_steps(job_id=job_id, agent=self.agent_id, steps=steps)
 
-                decision, artifacts, _reply_subject = self.parse_steps(steps, result, job_id)
+                decision, artifacts, reply_subject = self.parse_steps(steps, result, job_id)
 
                 # DA-05: предупреждаем о пустом decision
                 if not decision:
@@ -151,16 +192,13 @@ class BaseEmailRunner(ABC):
                     )
                     decision = "Требуется доработка"
 
-                self.send_reply(sender, subject, decision, artifacts)
+                self.send_reply(sender, subject, reply_subject, decision, artifacts)
 
                 db.update_job(
                     job_id,
                     status="done",
                     decision=decision,
-                    result={
-                        "attachments": len(mail.get("attachments", [])),
-                        **{k: v for k, v in artifacts.items() if not isinstance(v, bytes)},
-                    },
+                    result=self.db_result_fields(mail, artifacts),
                     trace=trace,
                 )
                 EMAILS_PROCESSED.labels(agent=self.agent_id).inc()

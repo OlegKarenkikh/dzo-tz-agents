@@ -125,8 +125,10 @@ def process_dzo_emails():
     return process_agent_emails("dzo", config.DZO_CONFIG, create_dzo_agent)
 ```
 
-### DU-03: Удалить 001_create_jobs.sql
-Оставить только `001_init.sql` (с триггером). Добавить `002_add_trace_column.sql` ✅
+### DU-03: Актуализировать описание миграций 001_init.sql / 001_create_jobs.sql
+Зафиксировать текущее состояние: схема живёт в `001_create_jobs.sql`,
+а `001_init.sql` является redirect-комментарием для обратной совместимости.
+`002_add_trace_column.sql` ✅
 
 ### MU-03 + DU-04: Централизовать FORCE_REPROCESS
 ```python
