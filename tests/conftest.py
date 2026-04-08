@@ -1,33 +1,51 @@
 """
 conftest.py — общие фикстуры и mock-объекты для тестов.
-Создаёт заглушки модулей langchain/langgraph для окружений без реального API ключа.
 
-FIX ST-03: mock покрывает реальный импорт langgraph.prebuilt.create_react_agent
-(после ST-02, где заменили несуществующий langchain.agents.create_agent).
+FIX ST-03 (updated): принудительно патчим langgraph.prebuilt.create_react_agent
+даже если langgraph реально установлен — чтобы agent.invoke() не вызывал
+настоящий LLM/граф и не падал с MESSAGE_COERCION_FAILURE на MagicMock.
 """
 
 import os
 import sys
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-# Устанавливаем единый API_KEY до любых импортов — один источник истины для всех тестов.
+# Единый API_KEY до любых импортов.
 os.environ["OPENAI_API_KEY"] = "sk-test"
 os.environ["API_KEY"] = "test-secret"
 
 
+def _make_fake_graph():
+    """Создаёт фейковый граф, invoke которого возвращает корректный dict
+    совместимый с AgentRunner (messages содержит AIMessage-подобный объект).
+    """
+    from unittest.mock import MagicMock
+
+    # AIMessage-подобный объект
+    ai_msg = MagicMock()
+    ai_msg.content = "ok"
+    ai_msg.tool_call_id = None  # не ToolMessage
+    # Чтобы langgraph не пытался конвертировать через convert_to_messages,
+    # возвращаем уже готовый dict — invoke вернётся до любой обработки langgraph.
+
+    fake_graph = MagicMock()
+    fake_graph.invoke = MagicMock(return_value={
+        "messages": [ai_msg],
+        "output": "ok",
+        "intermediate_steps": [],
+    })
+    return fake_graph
+
+
 def _install_langchain_mocks() -> None:
     """
-    Устанавливает mock-объекты для модулей langchain/langgraph.
-    Вызывается один раз при загрузке тестовой сессии.
-
-    FIX ST-03: добавлен mock для langgraph.prebuilt.create_react_agent,
-    чтобы тесты не падали при отсутствии реального LLM/API-ключа.
-    Также добавлена проверка наличия реального langgraph перед установкой mock:
-    если пакет доступен — mock не нужен.
+    Устанавливает / перезаписывает mock-объекты для langgraph.prebuilt.
+    Принудительно патчим create_react_agent независимо от наличия пакета,
+    чтобы в тестах не поднимался реальный LLM-граф.
     """
-    # --- langchain.agents ---
+    # --- langchain.agents (только если пакет отсутствует) ---
     _langchain_agents_ok = False
     try:
         from langchain.agents import AgentExecutor  # noqa: F401
@@ -42,23 +60,23 @@ def _install_langchain_mocks() -> None:
         agents_mock.create_react_agent = MagicMock(return_value=MagicMock())
         sys.modules["langchain.agents"] = agents_mock
 
-    # --- langgraph.prebuilt (FIX ST-03) ---
-    _langgraph_ok = False
-    try:
-        from langgraph.prebuilt import create_react_agent  # noqa: F401
-        _langgraph_ok = True
-    except ImportError:
-        pass
+    # --- langgraph.prebuilt — ВСЕГДА принудительно патчим ---
+    # Это ключевое изменение: даже при установленном langgraph
+    # create_react_agent должен возвращать fake_graph, иначе
+    # тесты падают с NotImplementedError: Unsupported message type: MagicMock.
+    langgraph_prebuilt_mock = MagicMock()
+    langgraph_prebuilt_mock.create_react_agent = MagicMock(
+        side_effect=lambda *a, **kw: _make_fake_graph()
+    )
+    sys.modules["langgraph.prebuilt"] = langgraph_prebuilt_mock
 
-    if not _langgraph_ok:
-        _fake_graph = MagicMock()
-        _fake_graph.invoke = MagicMock(return_value={
-            "messages": [],
-        })
-        langgraph_prebuilt_mock = MagicMock()
-        langgraph_prebuilt_mock.create_react_agent = MagicMock(return_value=_fake_graph)
-        sys.modules.setdefault("langgraph", MagicMock())
-        sys.modules["langgraph.prebuilt"] = langgraph_prebuilt_mock
+    # Гарантируем что langgraph.prebuilt импортируется из mock
+    # (на случай если он уже закеширован в sys.modules как реальный пакет).
+    try:
+        import langgraph.prebuilt as _lgp
+        _lgp.create_react_agent = langgraph_prebuilt_mock.create_react_agent
+    except Exception:
+        pass
 
     # --- langchain.memory ---
     memory_mock = MagicMock()
@@ -80,5 +98,5 @@ def _install_langchain_mocks() -> None:
     sys.modules.setdefault("langchain_openai", lc_openai_mock)
 
 
-# Устанавливаем mock-и до любого импорта тестовых модулей
+# Применяем до любого импорта тестовых модулей.
 _install_langchain_mocks()
