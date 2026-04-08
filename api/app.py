@@ -290,6 +290,17 @@ class PaginatedResponse(BaseModel):
 # не в event loop, поэтому blocking sleep не заблокирует uvicorn.
 # ---------------------------------------------------------------------------
 
+
+def _is_result_usable_for_agent(agent_type: str, model_result: dict) -> tuple[bool, str]:
+    if not isinstance(model_result, dict):
+        return False, "InvalidResultType"
+    steps = model_result.get("intermediate_steps", []) or []
+    # Для tool-ориентированных агентов пустые steps означают, что модель не выполнила
+    # обязательные tool-вызовы (часто встречается у несовместимых/ограниченных моделей).
+    if agent_type in {"dzo", "tz", "tender"} and len(steps) == 0:
+        return False, "NoToolCalls"
+    return True, ""
+
 def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -> None:
     job = db_get_job(job_id)
     if not job:
@@ -469,6 +480,7 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
 
             result: dict = {}
             last_exc: BaseException | None = None
+            no_tool_calls_exhausted = False
 
             for model_idx, model_name in enumerate(fallback_chain):
                 attempt_log = f"модель {model_name} ({model_idx + 1}/{len(fallback_chain)})"
@@ -509,6 +521,27 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                                     )
                         else:
                             result = agent.invoke({"input": chat_input})
+
+                        usable, unusable_reason = _is_result_usable_for_agent(agent_type, result)
+                        if not usable:
+                            last_exc = RuntimeError(unusable_reason)
+                            logger.warning(
+                                "[%s] Модель %s вернула невалидный результат для %s: %s",
+                                job_id,
+                                model_name,
+                                agent_type,
+                                unusable_reason,
+                            )
+                            _log_event(
+                                "model_retry",
+                                "Требуется повтор/переключение модели",
+                                model=model_name,
+                                reason=unusable_reason,
+                                retry=retry + 1,
+                                intermediate_steps=len(result.get("intermediate_steps", []) or []),
+                            )
+                            _flush_running_log()
+                            break
 
                         _log_event(
                             "model_result",
@@ -586,6 +619,7 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                     or "tokens_limit_reached" in _exc_str_sw
                     or "429" in _exc_str_sw
                     or "413" in _exc_str_sw
+                    or "NoToolCalls" in _exc_str_sw
                 )
                 if _switchable and model_idx + 1 < len(fallback_chain):
                     next_model = fallback_chain[model_idx + 1]
@@ -594,7 +628,16 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                     continue
 
             if last_exc is not None:
-                raise last_exc
+                if "NoToolCalls" in str(last_exc):
+                    no_tool_calls_exhausted = True
+                    _log_event(
+                        "model_no_tools_exhausted",
+                        "Модель(и) вернули ответ без обязательных tool-вызовов",
+                        fallback_chain=fallback_chain,
+                    )
+                    _flush_running_log()
+                else:
+                    raise last_exc
 
             decision = ""
             artifacts: dict = {}
@@ -672,11 +715,19 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                     )
 
             if not decision:
-                logger.warning(
-                    "[%s] decision не установлен агентом — intermediate_steps пусты или нет decision",
-                    job_id,
-                )
-                decision = "Неизвестно"
+                if no_tool_calls_exhausted:
+                    decision = "tool_calls_missing"
+                    artifacts["model_error"] = {
+                        "code": "NoToolCalls",
+                        "message": "Модель не выполнила обязательные tool-вызовы для данного агента",
+                    }
+                    logger.warning("[%s] Завершено с технической ошибкой: NoToolCalls", job_id)
+                else:
+                    logger.warning(
+                        "[%s] decision не установлен агентом — intermediate_steps пусты или нет decision",
+                        job_id,
+                    )
+                    decision = "Неизвестно"
 
             if artifacts:
                 logger.info("[%s] Артефакты: %s", job_id, ", ".join(artifacts.keys()))

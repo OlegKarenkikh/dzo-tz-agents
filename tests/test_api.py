@@ -8,7 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 # API_KEY устанавлен в conftest.py (значение: "test-secret")
-from api.app import app  # noqa: E402
+from api.app import _is_result_usable_for_agent, app  # noqa: E402
 from shared.database import _memory_store  # noqa: E402
 
 
@@ -252,6 +252,28 @@ class TestStatus:
         data = resp.json()
         assert "runs" in data
         assert "last_runs" in data
+
+
+class TestModelResultUsability:
+    def test_tool_agents_require_tool_steps(self):
+        ok, reason = _is_result_usable_for_agent("dzo", {"output": "ok", "intermediate_steps": []})
+        assert ok is False
+        assert reason == "NoToolCalls"
+
+    def test_tool_agents_accept_non_empty_steps(self):
+        ok, reason = _is_result_usable_for_agent("tz", {"output": "ok", "intermediate_steps": [["tool", "{}"]]})
+        assert ok is True
+        assert reason == ""
+
+    def test_non_tool_agent_may_have_empty_steps(self):
+        ok, reason = _is_result_usable_for_agent("custom", {"output": "ok", "intermediate_steps": []})
+        assert ok is True
+        assert reason == ""
+
+    def test_invalid_result_type_rejected(self):
+        ok, reason = _is_result_usable_for_agent("dzo", "not-a-dict")
+        assert ok is False
+        assert reason == "InvalidResultType"
 
 
 class TestDeduplicate:

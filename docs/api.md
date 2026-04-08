@@ -399,10 +399,14 @@ curl -H "X-API-Key: your-secret-key" http://localhost:8000/api/v1/stats
 | `email_html` | `str` | HTML-письмо для отправки |
 | `request_payload` | `dict` | Исходный payload запроса (для корректной переобработки из истории) |
 | `processing_log` | `dict` | Пошаговый журнал обработки (этапы, tool-вызовы, маршрутизация, итог) |
+| `model_error` | `dict` | Техническая причина деградации модели (например `NoToolCalls`) |
 | `tz_agent_analysis` | `dict` | Результат делегированного анализа ТЗ |
 | `peer_agent_results` | `list[dict]` | Результаты вызовов других агентов |
 | `document_list` | `dict` | Структурированный список документов по тендеру |
 | `document_list_error` | `dict` | Ошибка построения списка документов |
+
+Примечание по `decision`:
+- `tool_calls_missing` — все модели из fallback-цепочки вернули ответ без обязательных tool-вызовов.
 
 ---
 
