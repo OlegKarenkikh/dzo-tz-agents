@@ -301,6 +301,30 @@ def _is_result_usable_for_agent(agent_type: str, model_result: dict) -> tuple[bo
         return False, "NoToolCalls"
     return True, ""
 
+
+def _looks_like_tz_content(*, text: str, subject: str, attachment_names: list[str]) -> bool:
+    keywords = ("тз", "tz", "техзад", "technical specification", "техническое задание")
+    haystacks = [text or "", subject or "", " ".join(attachment_names or [])]
+    joined = "\n".join(haystacks).lower()
+    return any(k in joined for k in keywords)
+
+
+def _has_tz_agent_analysis_observation(model_result: dict) -> bool:
+    if not isinstance(model_result, dict):
+        return False
+    for step in model_result.get("intermediate_steps", []) or []:
+        if not isinstance(step, (list, tuple)) or len(step) < 2:
+            continue
+        obs = step[1]
+        if isinstance(obs, str):
+            try:
+                obs = json.loads(obs)
+            except json.JSONDecodeError:
+                continue
+        if isinstance(obs, dict) and isinstance(obs.get("tzAgentAnalysis"), dict):
+            return True
+    return False
+
 def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -> None:
     job = db_get_job(job_id)
     if not job:
@@ -358,6 +382,12 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
         attachment_names=[a.filename for a in (request.attachments or [])],
     )
     _flush_running_log()
+
+    _has_tz_signal = _looks_like_tz_content(
+        text=request.text or "",
+        subject=request.subject or "",
+        attachment_names=[a.filename for a in (request.attachments or [])],
+    )
 
     with JobTimer(agent_type):
         try:
@@ -444,6 +474,8 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
 
                 if _est_input > _chunking_threshold_tok:
                     from shared.chunked_analysis import analyze_document_in_chunks
+                    _before_chars = len(chat_input)
+                    _before_tokens = _est_input
                     logger.info(
                         "[%s] Документ ~%d токенов > порог %d — поблочный анализ",
                         job_id, _est_input, _chunking_threshold_tok,
@@ -454,6 +486,17 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                         )
                         if _summary:
                             chat_input = _summary
+                            _after_tokens = estimate_tokens(chat_input)
+                            _log_event(
+                                "chunking_applied",
+                                "Включён поблочный анализ документа",
+                                before_chars=_before_chars,
+                                after_chars=len(chat_input),
+                                before_tokens=_before_tokens,
+                                after_tokens=_after_tokens,
+                                model=_best_model,
+                            )
+                            _flush_running_log()
                         else:
                             logger.warning("[%s] Поблочный анализ не дал результата", job_id)
                     except Exception as _chunk_err:
@@ -497,6 +540,8 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
 
             for model_idx, model_name in enumerate(fallback_chain):
                 attempt_log = f"модель {model_name} ({model_idx + 1}/{len(fallback_chain)})"
+                soft_tz_retry_used = False
+                model_input = chat_input
                 logger.info("[%s] Запуск с %s", job_id, attempt_log)
                 _log_event(
                     "model_attempt",
@@ -525,7 +570,7 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
 
                         if AGENT_JOB_TIMEOUT_SEC > 0:
                             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
-                                future = ex.submit(agent.invoke, {"input": chat_input})
+                                future = ex.submit(agent.invoke, {"input": model_input})
                                 try:
                                     result = future.result(timeout=AGENT_JOB_TIMEOUT_SEC)
                                 except concurrent.futures.TimeoutError:
@@ -533,7 +578,7 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                                         f"Агент не завершился за {AGENT_JOB_TIMEOUT_SEC}с"
                                     )
                         else:
-                            result = agent.invoke({"input": chat_input})
+                            result = agent.invoke({"input": model_input})
 
                         usable, unusable_reason = _is_result_usable_for_agent(agent_type, result)
                         if not usable:
@@ -558,6 +603,26 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                             )
                             _flush_running_log()
                             break
+
+                        if agent_type == "dzo" and _has_tz_signal and not _has_tz_agent_analysis_observation(result):
+                            if not soft_tz_retry_used:
+                                soft_tz_retry_used = True
+                                model_input = (
+                                    f"{chat_input}\n\n"
+                                    "[СЛУЖЕБНОЕ УТОЧНЕНИЕ]\n"
+                                    "В заявке обнаружено ТЗ (текст/вложение). "
+                                    "Перед финальным решением сначала вызови analyze_tz_with_agent, "
+                                    "затем продолжи стандартные шаги ДЗО."
+                                )
+                                _log_event(
+                                    "model_retry",
+                                    "Мягкий повтор модели для выполнения рекомендуемого tool",
+                                    model=model_name,
+                                    reason="MissingRecommendedTool: analyze_tz_with_agent",
+                                    retry=retry + 1,
+                                )
+                                _flush_running_log()
+                                continue
 
                         _log_event(
                             "model_result",
@@ -744,6 +809,19 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                         job_id,
                     )
                     decision = "Неизвестно"
+
+            if agent_type == "dzo" and _has_tz_signal and not artifacts.get("tz_agent_analysis"):
+                artifacts["missing_recommended_tool"] = {
+                    "code": "MissingRecommendedTool",
+                    "tool": "analyze_tz_with_agent",
+                    "message": "Обнаружен ТЗ-контент, но делегированный анализ ТЗ не был вызван.",
+                }
+                _log_event(
+                    "postcheck_warning",
+                    "Рекомендуемый tool не был вызван",
+                    tool="analyze_tz_with_agent",
+                    tz_signal_detected=True,
+                )
 
             if artifacts:
                 logger.info("[%s] Артефакты: %s", job_id, ", ".join(artifacts.keys()))

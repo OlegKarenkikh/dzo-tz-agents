@@ -400,6 +400,7 @@ curl -H "X-API-Key: your-secret-key" http://localhost:8000/api/v1/stats
 | `request_payload` | `dict` | Исходный payload запроса (для корректной переобработки из истории) |
 | `processing_log` | `dict` | Пошаговый журнал обработки (этапы, tool-вызовы, маршрутизация, итог) |
 | `model_error` | `dict` | Техническая причина деградации модели (например `NoToolCalls`) |
+| `missing_recommended_tool` | `dict` | Мягкое предупреждение: рекомендуемый tool не вызван (например `analyze_tz_with_agent`) |
 | `tz_agent_analysis` | `dict` | Результат делегированного анализа ТЗ |
 | `peer_agent_results` | `list[dict]` | Результаты вызовов других агентов |
 | `document_list` | `dict` | Структурированный список документов по тендеру |
@@ -413,6 +414,10 @@ curl -H "X-API-Key: your-secret-key" http://localhost:8000/api/v1/stats
 - `tools_overhead_tokens` — заложенный budget под system/tool schema overhead.
 - `model_context_tokens` — карта лимитов контекста по моделям fallback-цепочки.
 - `chunking_threshold_tokens` — порог, после которого включается поблочный анализ.
+
+Дополнительные этапы `processing_log.events`:
+- `chunking_applied` — документ был преобразован в map-reduce резюме (поля `before_*` / `after_*`).
+- `postcheck_warning` — мягкое предупреждение о пропуске рекомендуемого tool.
 
 ---
 

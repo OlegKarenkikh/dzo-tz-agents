@@ -8,7 +8,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 # API_KEY устанавлен в conftest.py (значение: "test-secret")
-from api.app import _is_result_usable_for_agent, app  # noqa: E402
+from api.app import (  # noqa: E402
+    _has_tz_agent_analysis_observation,
+    _is_result_usable_for_agent,
+    _looks_like_tz_content,
+    app,
+)
 from shared.database import _memory_store  # noqa: E402
 
 
@@ -274,6 +279,50 @@ class TestModelResultUsability:
         ok, reason = _is_result_usable_for_agent("dzo", "not-a-dict")
         assert ok is False
         assert reason == "InvalidResultType"
+
+
+class TestDzoTzSignalHeuristics:
+    def test_detects_tz_signal_by_attachment_name(self):
+        assert _looks_like_tz_content(
+            text="",
+            subject="",
+            attachment_names=["ТЗ на ноутбук.docx"],
+        )
+
+    def test_detects_tz_signal_by_text_and_subject(self):
+        assert _looks_like_tz_content(
+            text="Во вложении technical specification",
+            subject="Проверка TZ",
+            attachment_names=[],
+        )
+
+    def test_no_tz_signal_for_unrelated_content(self):
+        assert not _looks_like_tz_content(
+            text="Счет на оплату",
+            subject="Коммерческое предложение",
+            attachment_names=["invoice.pdf"],
+        )
+
+    def test_observation_contains_tz_agent_analysis(self):
+        result = {
+            "intermediate_steps": [
+                ("generate_validation_report", {"decision": "Требуется доработка"}),
+                ("analyze_tz_with_agent", {"tzAgentAnalysis": {"overall_status": "ОК"}}),
+            ]
+        }
+        assert _has_tz_agent_analysis_observation(result)
+
+    def test_observation_handles_json_tool_output(self):
+        result = {
+            "intermediate_steps": [
+                ("analyze_tz_with_agent", '{"tzAgentAnalysis": {"overall_status": "ОК"}}'),
+            ]
+        }
+        assert _has_tz_agent_analysis_observation(result)
+
+    def test_observation_returns_false_when_missing(self):
+        result = {"intermediate_steps": [("tool", {"emailHtml": "<p>x</p>"})]}
+        assert not _has_tz_agent_analysis_observation(result)
 
 
 class TestDeduplicate:
