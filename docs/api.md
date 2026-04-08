@@ -418,6 +418,7 @@ curl -H "X-API-Key: your-secret-key" http://localhost:8000/api/v1/stats
 
 Дополнительные этапы `processing_log.events`:
 - `chunking_applied` — документ был преобразован в map-reduce резюме (поля `before_*` / `after_*`).
+- `token_limit_compaction` — после `413 TokenLimit` выполнено экстренное сжатие input и повтор на той же модели.
 - `postcheck_warning` — мягкое предупреждение о пропуске рекомендуемого tool.
 
 ---

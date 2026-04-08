@@ -50,8 +50,17 @@ _LOCAL_MODELS_CACHE: dict[str, list] = {}
 
 
 def estimate_tokens(text: str) -> int:
-    """Грубая оценка числа токенов (1 токен ≈ 4 символа)."""
-    return max(1, len(text) // 4)
+    """Консервативная оценка токенов для mixed ASCII/Unicode текста.
+
+    Для кириллицы и иных non-ASCII символов плотность токенов обычно выше,
+    чем 1 токен на 4 символа, поэтому считаем их как ~1 токен на 2 символа.
+    """
+    if not text:
+        return 1
+    ascii_chars = sum(1 for ch in text if ord(ch) < 128)
+    non_ascii_chars = len(text) - ascii_chars
+    est = (ascii_chars // 4) + (non_ascii_chars // 2)
+    return max(1, est)
 
 
 def _extract_max_tokens_from_error(error_text: str) -> int | None:

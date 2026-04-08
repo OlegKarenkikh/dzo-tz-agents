@@ -451,11 +451,25 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
             )
 
             fallback_chain = build_fallback_chain(MODEL_NAME)
+            _api_key = effective_openai_key() or GITHUB_TOKEN or "not-needed"
+
+            # Для tool-агентов на GitHub Models приоритетно используем модели,
+            # которые стабильно поддерживают tool-calling.
+            if LLM_BACKEND == "github_models":
+                _preferred_tool_models = {"gpt-4o", "gpt-4o-mini"}
+                _preferred = [m for m in fallback_chain if m in _preferred_tool_models]
+                if _preferred:
+                    _skipped_non_tool = [m for m in fallback_chain if m not in _preferred]
+                    fallback_chain = _preferred
+                    if _skipped_non_tool:
+                        logger.info(
+                            "[%s] Пропущены low-confidence tool-calling модели: %s",
+                            job_id,
+                            ", ".join(_skipped_non_tool),
+                        )
 
             if LLM_BACKEND == "github_models" or LLM_BACKEND in LOCAL_BACKENDS:
-                if LLM_BACKEND == "github_models":
-                    _api_key = effective_openai_key() or GITHUB_TOKEN or ""
-                else:
+                if LLM_BACKEND != "github_models":
                     _api_key = effective_openai_key() or "not-needed"
                 _TOOLS_OVERHEAD = 6000 if LLM_BACKEND == "github_models" else 3000
                 _est_input = estimate_tokens(chat_input)
@@ -541,6 +555,7 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
             for model_idx, model_name in enumerate(fallback_chain):
                 attempt_log = f"модель {model_name} ({model_idx + 1}/{len(fallback_chain)})"
                 soft_tz_retry_used = False
+                token_limit_compaction_used = False
                 model_input = chat_input
                 logger.info("[%s] Запуск с %s", job_id, attempt_log)
                 _log_event(
@@ -685,6 +700,39 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                         )
                         _flush_running_log()
                         if is_token_limit:
+                            if not token_limit_compaction_used:
+                                token_limit_compaction_used = True
+                                try:
+                                    from shared.chunked_analysis import analyze_document_in_chunks
+
+                                    _before_chars_413 = len(model_input)
+                                    _before_tokens_413 = estimate_tokens(model_input)
+
+                                    _summary_413 = analyze_document_in_chunks(
+                                        model_input,
+                                        _api_key,
+                                        model_name,
+                                        agent_type,
+                                    )
+                                    if _summary_413 and len(_summary_413) < len(model_input):
+                                        model_input = _summary_413
+                                        _log_event(
+                                            "token_limit_compaction",
+                                            "Экстренное сжатие input после 413",
+                                            model=model_name,
+                                            before_chars=_before_chars_413,
+                                            after_chars=len(model_input),
+                                            before_tokens=_before_tokens_413,
+                                            after_tokens=estimate_tokens(model_input),
+                                        )
+                                        _flush_running_log()
+                                        continue
+                                except Exception as _compact_err:
+                                    logger.warning(
+                                        "[%s] Экстренное сжатие после 413 не удалось: %s",
+                                        job_id,
+                                        _compact_err,
+                                    )
                             break
                         if retry + 1 < max(1, AGENT_MAX_RETRIES):
                             time.sleep(AGENT_RATE_LIMIT_BACKOFF)

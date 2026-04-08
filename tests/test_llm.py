@@ -6,6 +6,26 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 
+class TestEstimateTokens:
+    def test_ascii_estimate(self):
+        import shared.llm as llm_module
+
+        assert llm_module.estimate_tokens("x" * 40) == 10
+
+    def test_cyrillic_is_more_conservative(self):
+        import shared.llm as llm_module
+
+        ascii_est = llm_module.estimate_tokens("x" * 20)
+        cyr_est = llm_module.estimate_tokens("т" * 20)
+        assert cyr_est > ascii_est
+        assert cyr_est == 10
+
+    def test_empty_text_minimum_one(self):
+        import shared.llm as llm_module
+
+        assert llm_module.estimate_tokens("") == 1
+
+
 class TestGithubModelsApiKeyPriority:
     """Проверяет приоритет API-ключей для LLM_BACKEND=github_models."""
 
