@@ -190,11 +190,12 @@ def log_agent_steps(
             logger.debug("[%s] Ошибка сериализации шага %d: %s", job_id, i + 1, exc)
             trace.append({
                 "step": i + 1,
-                "tool": None,
-                "tool_input": None,
+                "tool": "unknown",
+                "tool_input": {},
                 "decision": None,
-                "output_keys": [],
+                "output_keys": ["raw"],
                 "latency_ms": round((time.monotonic() - step_t0) * 1000, 3),
+                "raw": _truncate(str(step)),
                 "error": str(exc),
             })
 

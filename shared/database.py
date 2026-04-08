@@ -168,18 +168,18 @@ def find_duplicate_job(agent: str, sender: str, subject: str) -> dict | None:
         except Exception as e:
             logger.error("find_duplicate_job ошибка: %s", e)
             return None
-    # RC-04: in-memory fallback под замком
+    # RC-04: копируем записи и вычисляем max под замком, чтобы конкурентный
+    # update_job() не мутировал кандидатов до или во время выбора
     with _memory_lock:
-        rows = [
-            r for r in _memory_store.values()
+        candidates = [
+            dict(r) for r in _memory_store.values()
             if r.get("agent") == agent
             and r.get("sender") == sender
             and r.get("subject") == subject
             and r.get("status") == "done"
         ]
-    if not rows:
-        return None
-    return max(rows, key=lambda r: r.get("created_at", ""))
+        result = max(candidates, key=lambda r: r.get("created_at", "")) if candidates else None
+    return result
 
 
 def create_job(agent: str, sender: str = "", subject: str = "") -> str:
