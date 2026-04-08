@@ -1,112 +1,205 @@
-"""Трейсинг агентов: Langfuse каллбэк и структурированный лог шагов.
+"""
+Трейсинг шагов агента через Langfuse (optionally).
 
-Конфигурация через .env:
-  LANGFUSE_PUBLIC_KEY  — публичный ключ проекта Langfuse
-  LANGFUSE_SECRET_KEY  — секретный ключ
-  LANGFUSE_HOST        — URL инстанции (default: https://cloud.langfuse.com)
-                         для self-hosted: http://localhost:3000
-
-Если LANGFUSE_PUBLIC_KEY не задан — трейсинг отключён, ошибок нет.
+FIX SE-02: AUTH_HEADERS больше не строится на уровне модуля.
+Public API:
+  get_langfuse_callback() -> CallbackHandler | None
+  log_agent_steps(job_id, agent, steps) -> list[dict]
+  _truncate(value, max_len=300) -> value  (экспортируется для тестов)
 """
 from __future__ import annotations
 
+import functools
 import json
 import os
 import time
-from typing import TYPE_CHECKING
+from typing import Any
 
 from shared.logger import setup_logger
-
-if TYPE_CHECKING:
-    from langchain_core.callbacks import BaseCallbackHandler
 
 logger = setup_logger("agent_trace")
 
 
-def _init_langfuse() -> BaseCallbackHandler | None:
-    """Инициализируется один раз при импорте модуля."""
-    if not os.getenv("LANGFUSE_PUBLIC_KEY"):
-        return None
-    try:
-        from langfuse.callback import CallbackHandler  # type: ignore
-        cb = CallbackHandler()  # читает LANGFUSE_* из env автоматически
-        logger.info("Langfuse трейсинг включён (host=%s)", os.getenv("LANGFUSE_HOST", "cloud"))
-        return cb
-    except ImportError:
-        logger.warning("langfuse не установлен. Трейсинг отключён. Установите: pip install langfuse")
-        return None
+# ---------------------------------------------------------------------------
+# helpers
+# ---------------------------------------------------------------------------
 
-
-# Единственный экземпляр CallbackHandler на весь процесс
-_langfuse_cb: BaseCallbackHandler | None = _init_langfuse()
-
-
-def get_langfuse_callback() -> BaseCallbackHandler | None:
-    """Вернуть кэшированный Langfuse CallbackHandler или None если трейсинг отключён."""
-    return _langfuse_cb
-
-
-def log_agent_steps(job_id: str, agent: str, steps: list) -> list[dict]:
-    """Структурированно залогировать каждый шаг агента и вернуть trace-список для сохранения в БД.
-
-    Каждый элемент trace:
-        step        — порядковый номер шага
-        tool        — название вызванного инструмента
-        tool_input  — входные данные инструмента
-        output_keys — ключи возвращаемого JSON (без больших HTML-блоков)
-        decision    — решение если есть в observation
-        latency_ms  — время обработки шага в миллисекундах
+def _truncate(value: Any, max_len: int = 300) -> Any:
+    """Обрезает строку до max_len символов (добавляет '...').
+    Для dict рекурсивно обрезает строковые значения, включая вложенные словари.
+    Нестроковые/несловарные значения возвращаются без изменений.
     """
-    trace: list[dict] = []
-    for i, (action, observation) in enumerate(steps, 1):
-        t0 = time.perf_counter()
-        try:
-            obs = json.loads(observation) if isinstance(observation, str) else observation
-        except Exception:  # noqa: BLE001
-            obs = {"raw": str(observation)[:500]}
-        latency_ms = round((time.perf_counter() - t0) * 1000, 1)
-
-        # Приводим к JSON-сериализуемым типам: str/dict/list/int/float/bool/None.
-        # getattr на MagicMock возвращает MagicMock — без этого json.dumps упадёт.
-        # Если action — строка (формат (tool_name, obs) из AgentRunner), используем её напрямую.
-        if isinstance(action, str):
-            tool_name = action
-            tool_input: dict | str = {}
-        else:
-            raw_tool = getattr(action, "tool", None)
-            tool_name = raw_tool if isinstance(raw_tool, str) else str(raw_tool)
-
-            raw_input = getattr(action, "tool_input", {})
-            if isinstance(raw_input, (dict, str)):
-                tool_input = _truncate(raw_input)
-            else:
-                tool_input = str(raw_input)[:300]
-
-        step_record: dict = {
-            "step": i,
-            "tool": tool_name,
-            "tool_input": tool_input,
-            "output_keys": list(obs.keys()) if isinstance(obs, dict) else [],
-            "decision": obs.get("decision") if isinstance(obs, dict) else None,
-            "latency_ms": latency_ms,
-        }
-        trace.append(step_record)
-        try:
-            logger.info(
-                json.dumps(
-                    {"job_id": job_id, "agent": agent, **step_record},
-                    ensure_ascii=False,
-                )
-            )
-        except (TypeError, ValueError):  # noqa: BLE001
-            logger.info("[trace] job=%s agent=%s step=%d tool=%s", job_id, agent, i, tool_name)
-    return trace
-
-
-def _truncate(value: object, max_len: int = 300) -> object:
-    """Укорачивает длинные строки в логе чтобы не засорять файл."""
-    if isinstance(value, str) and len(value) > max_len:
-        return value[:max_len] + "..."
+    if isinstance(value, str):
+        if len(value) > max_len:
+            return value[:max_len] + "..."
+        return value
     if isinstance(value, dict):
         return {k: _truncate(v, max_len) for k, v in value.items()}
     return value
+
+
+# ---------------------------------------------------------------------------
+# Langfuse
+# ---------------------------------------------------------------------------
+
+@functools.lru_cache(maxsize=1)
+def get_langfuse_callback():
+    """Возвращает LangfuseCallbackHandler или None если Langfuse не настроен.
+
+    Результат кешируется (singleton per process) — повторные вызовы возвращают
+    тот же экземпляр, что исключает дублирование callback-конфигурации.
+    """
+    pk = os.getenv("LANGFUSE_PUBLIC_KEY")
+    sk = os.getenv("LANGFUSE_SECRET_KEY")
+    if not pk or not sk:
+        return None
+    try:
+        from langfuse.callback import CallbackHandler
+        kwargs: dict[str, Any] = {"public_key": pk, "secret_key": sk}
+        host = os.getenv("LANGFUSE_HOST")
+        if host:
+            kwargs["host"] = host
+        return CallbackHandler(**kwargs)
+    except ImportError:
+        logger.debug("langfuse не установлен, трейсинг отключён")
+        return None
+    except Exception as exc:
+        logger.warning("Не удалось создать LangfuseCallbackHandler: %s", exc)
+        return None
+
+
+# ---------------------------------------------------------------------------
+# log_agent_steps
+# ---------------------------------------------------------------------------
+
+def log_agent_steps(
+    job_id: str,
+    agent: str,
+    steps: list,
+) -> list[dict]:
+    """Преобразует intermediate_steps агента в JSON-сериализуемый trace.
+
+    Каждый элемент trace:
+      step       — 1-based номер шага
+      tool       — имя инструмента (str)
+      tool_input — входные данные (truncated, str если action — строка)
+      decision   — значение поля 'decision' из observation (или None)
+      output_keys — список ключей observation (или ['raw'] при невалидном JSON)
+      latency_ms — float (0.0, реальное значение при наличии timestamps)
+    """
+    trace: list[dict] = []
+    _t0 = time.monotonic()
+
+    for i, step in enumerate(steps):
+        step_t0 = time.monotonic()
+        try:
+            if not (isinstance(step, (list, tuple)) and len(step) >= 2):
+                trace.append(
+                    {
+                        "step": i + 1,
+                        "tool": "unknown",
+                        "tool_input": {},
+                        "decision": None,
+                        "output_keys": ["raw"],
+                        "latency_ms": 0.0,
+                        "raw": _truncate(str(step)),
+                    }
+                )
+                logger.debug("[%s] step=%d invalid structure: %s", job_id, i + 1, type(step).__name__)
+                continue
+
+            action, observation = step[0], step[1]
+
+            # --- извлекаем tool и tool_input ---
+            if isinstance(action, str):
+                # tender-runner передаёт имя инструмента строкой
+                tool_name: str = action
+                tool_input: Any = {}
+            else:
+                # AgentAction / MagicMock — безопасно через getattr
+                try:
+                    tool_name = str(getattr(action, "tool", None) or action)
+                except Exception:
+                    tool_name = "unknown"
+                try:
+                    raw_input = getattr(action, "tool_input", None)
+                    tool_input = raw_input
+                except Exception:
+                    tool_input = None
+
+            # --- truncate tool_input ---
+            if isinstance(tool_input, str):
+                tool_input_stored: Any = _truncate(tool_input)
+            elif isinstance(tool_input, dict):
+                tool_input_stored = _truncate(tool_input)
+            elif tool_input is None:
+                tool_input_stored = {}
+            else:
+                try:
+                    tool_input_stored = _truncate(str(tool_input))
+                except Exception:
+                    tool_input_stored = {}
+
+            # --- разбираем observation ---
+            obs_dict: dict | None = None
+            output_keys: list[str]
+            decision: str | None = None
+
+            if isinstance(observation, dict):
+                obs_dict = observation
+            elif isinstance(observation, str):
+                try:
+                    parsed = json.loads(observation)
+                    if isinstance(parsed, dict):
+                        obs_dict = parsed
+                    else:
+                        obs_dict = None
+                except (json.JSONDecodeError, ValueError):
+                    obs_dict = None
+            else:
+                # прочие типы — пытаемся конвертировать
+                try:
+                    obs_dict = dict(observation) if observation is not None else None
+                except Exception:
+                    obs_dict = None
+
+            if obs_dict is not None:
+                output_keys = list(obs_dict.keys())
+                decision = obs_dict.get("decision") or None
+            else:
+                output_keys = ["raw"]
+                decision = None
+
+            latency_ms = round((time.monotonic() - step_t0) * 1000, 3)
+
+            step_record = {
+                "step": i + 1,
+                "tool": tool_name,
+                "tool_input": tool_input_stored,
+                "decision": decision,
+                "output_keys": output_keys,
+                "latency_ms": latency_ms,
+            }
+            if obs_dict is None:
+                step_record["raw"] = None if observation is None else _truncate(str(observation))
+
+            trace.append(step_record)
+            logger.debug("[%s] step=%d tool=%s decision=%s latency_ms=%.3f",
+                         job_id, i + 1, tool_name, decision, latency_ms)
+        except Exception as exc:
+            logger.debug("[%s] Ошибка сериализации шага %d: %s", job_id, i + 1, exc)
+            trace.append({
+                "step": i + 1,
+                "tool": "unknown",
+                "tool_input": {},
+                "decision": None,
+                "output_keys": ["raw"],
+                "latency_ms": round((time.monotonic() - step_t0) * 1000, 3),
+                "raw": _truncate(str(step)),
+                "error": str(exc),
+            })
+
+    logger.info("[%s] agent=%s steps=%d elapsed_ms=%.1f",
+                job_id, agent, len(trace),
+                round((time.monotonic() - _t0) * 1000, 1))
+    return trace

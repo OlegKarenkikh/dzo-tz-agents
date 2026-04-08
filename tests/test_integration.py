@@ -85,8 +85,8 @@ class TestDzoPipeline:
     @patch.dict("os.environ", os_environ_patch)
     @patch("agent1_dzo_inspector.runner.send_email")
     @patch("agent1_dzo_inspector.runner.notify")
-    @patch("agent1_dzo_inspector.runner.extract_text_from_attachment")
-    @patch("agent1_dzo_inspector.runner.fetch_unseen_emails")
+    @patch("shared.runner_base.extract_text_from_attachment")
+    @patch("shared.runner_base.fetch_unseen_emails")
     @patch("agent1_dzo_inspector.runner.create_dzo_agent")
     def test_full_pipeline_approved(self, mock_create_agent, mock_fetch, mock_extract, mock_notify, mock_send):
         mock_fetch.return_value = [SAMPLE_DZO_EMAIL]
@@ -107,8 +107,8 @@ class TestDzoPipeline:
     @patch.dict("os.environ", os_environ_patch)
     @patch("agent1_dzo_inspector.runner.send_email")
     @patch("agent1_dzo_inspector.runner.notify")
-    @patch("agent1_dzo_inspector.runner.extract_text_from_attachment")
-    @patch("agent1_dzo_inspector.runner.fetch_unseen_emails")
+    @patch("shared.runner_base.extract_text_from_attachment")
+    @patch("shared.runner_base.fetch_unseen_emails")
     @patch("agent1_dzo_inspector.runner.create_dzo_agent")
     def test_pipeline_requires_revision(self, mock_create_agent, mock_fetch, mock_extract, mock_notify, mock_send):
         mock_fetch.return_value = [SAMPLE_DZO_EMAIL]
@@ -125,8 +125,8 @@ class TestDzoPipeline:
     @patch("agent1_dzo_inspector.runner.config")
     @patch("agent1_dzo_inspector.runner.send_email")
     @patch("agent1_dzo_inspector.runner.notify")
-    @patch("agent1_dzo_inspector.runner.extract_text_from_attachment")
-    @patch("agent1_dzo_inspector.runner.fetch_unseen_emails")
+    @patch("shared.runner_base.extract_text_from_attachment")
+    @patch("shared.runner_base.fetch_unseen_emails")
     @patch("agent1_dzo_inspector.runner.create_dzo_agent")
     def test_pipeline_escalation_sends_to_manager(
         self, mock_create_agent, mock_fetch, mock_extract, mock_notify, mock_send, mock_config
@@ -151,7 +151,7 @@ class TestDzoPipeline:
     @patch.dict("os.environ", os_environ_patch)
     @patch("agent1_dzo_inspector.runner.send_email")
     @patch("agent1_dzo_inspector.runner.notify")
-    @patch("agent1_dzo_inspector.runner.fetch_unseen_emails")
+    @patch("shared.runner_base.fetch_unseen_emails")
     def test_no_emails_does_nothing(self, mock_fetch, mock_notify, mock_send):
         mock_fetch.return_value = []
         from agent1_dzo_inspector.runner import process_dzo_emails
@@ -161,7 +161,7 @@ class TestDzoPipeline:
     @patch.dict("os.environ", os_environ_patch)
     @patch("agent1_dzo_inspector.runner.send_email")
     @patch("agent1_dzo_inspector.runner.notify")
-    @patch("agent1_dzo_inspector.runner.fetch_unseen_emails")
+    @patch("shared.runner_base.fetch_unseen_emails")
     def test_email_without_attachments_requests_resend(self, mock_fetch, mock_notify, mock_send):
         no_att_email = dict(SAMPLE_DZO_EMAIL)
         no_att_email["attachments"] = []
@@ -176,8 +176,8 @@ class TestTzPipeline:
     @patch.dict("os.environ", os_environ_patch)
     @patch("agent2_tz_inspector.runner.send_email")
     @patch("agent2_tz_inspector.runner.notify")
-    @patch("agent2_tz_inspector.runner.extract_text_from_attachment")
-    @patch("agent2_tz_inspector.runner.fetch_unseen_emails")
+    @patch("shared.runner_base.extract_text_from_attachment")
+    @patch("shared.runner_base.fetch_unseen_emails")
     @patch("agent2_tz_inspector.runner.create_tz_agent")
     def test_tz_pipeline_compliant(self, mock_create_agent, mock_fetch, mock_extract, mock_notify, mock_send):
         mock_fetch.return_value = [SAMPLE_TZ_EMAIL]
@@ -194,7 +194,7 @@ class TestTzPipeline:
     @patch.dict("os.environ", os_environ_patch)
     @patch("agent2_tz_inspector.runner.send_email")
     @patch("agent2_tz_inspector.runner.notify")
-    @patch("agent2_tz_inspector.runner.fetch_unseen_emails")
+    @patch("shared.runner_base.fetch_unseen_emails")
     def test_tz_no_emails(self, mock_fetch, mock_notify, mock_send):
         mock_fetch.return_value = []
         from agent2_tz_inspector.runner import process_tz_emails
@@ -204,8 +204,8 @@ class TestTzPipeline:
     @patch.dict("os.environ", os_environ_patch)
     @patch("agent2_tz_inspector.runner.send_email")
     @patch("agent2_tz_inspector.runner.notify")
-    @patch("agent2_tz_inspector.runner.extract_text_from_attachment")
-    @patch("agent2_tz_inspector.runner.fetch_unseen_emails")
+    @patch("shared.runner_base.extract_text_from_attachment")
+    @patch("shared.runner_base.fetch_unseen_emails")
     @patch("agent2_tz_inspector.runner.create_tz_agent")
     def test_tz_extract_called_for_each_attachment(
         self, mock_create_agent, mock_fetch, mock_extract, mock_notify, mock_send

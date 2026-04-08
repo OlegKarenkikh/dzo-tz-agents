@@ -26,6 +26,7 @@ import json
 import logging
 import math
 import os
+import threading
 import time
 from collections import deque
 from contextlib import asynccontextmanager
@@ -41,8 +42,6 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
-# load_dotenv() must run before first-party imports so that RATE_LIMIT_*
-# and other env-vars are available when api.rate_limit / config are imported.
 load_dotenv()
 
 from api.metrics import (  # noqa: E402
@@ -74,11 +73,6 @@ from shared.database import (  # noqa: E402
     update_job,
 )
 
-# ---------------------------------------------------------------------------
-# Логирование — настраивается как fallback при прямом запуске модуля.
-# Если uvicorn/gunicorn уже настроили root-логгер, basicConfig не вызываем,
-# чтобы не переопределять их форматирование и обработчики.
-# ---------------------------------------------------------------------------
 if not logging.getLogger().handlers:
     logging.basicConfig(
         level=logging.INFO,
@@ -99,26 +93,15 @@ CORS_ORIGINS = [
 ]
 
 
-# ---------------------------------------------------------------------------
-# Lifespan — заменяет deprecated @app.on_event("startup") / "shutdown".
-# Совместимо с FastAPI >= 0.93 и Starlette >= 0.27.
-# ---------------------------------------------------------------------------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # --- startup ---
     if not _get_api_key():
         logger.warning("АПИ-ключ не задан! Установите переменную окружения API_KEY.")
     init_db()
-    # NOTE: _run_log хранится в памяти одного процесса.
-    # При использовании нескольких воркеров Gunicorn/uvicorn каждый воркер
-    # ведёт свой независимый лог. Для консолидированного хранилища используйте
-    # shared.database (персистит job-события в PostgreSQL, а без БД использует
-    # in-memory fallback в рамках процесса).
-    logger.info("API запущен. Модель: %s, бэкенд: %s", os.getenv("MODEL_NAME", "gpt-4o"), os.getenv("LLM_BACKEND", "openai"))
+    logger.info("АПИ запущен. Модель: %s, бэкенд: %s", os.getenv("MODEL_NAME", "gpt-4o"), os.getenv("LLM_BACKEND", "openai"))
     yield
-    # --- shutdown ---
     close_db()
-    logger.info("API остановлен.")
+    logger.info("АПИ остановлен.")
 
 
 app = FastAPI(
@@ -131,15 +114,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Rate limiting — slowapi поверх стандартного ASGI middleware.
-# Лимиты задаются через RATE_LIMIT_PROCESS / RATE_LIMIT_DEFAULT в .env.
-# Ответ при превышении: HTTP 429 Too Many Requests.
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
-
 app.include_router(metrics_router)
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
@@ -149,13 +127,13 @@ app.add_middleware(
 )
 
 _start_time = datetime.now(UTC)
+
+# FIX RC-02: _run_log + дедикированный lock
 _run_log: deque[dict] = deque(maxlen=500)
+_run_log_lock = threading.Lock()
 
 _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
-# ---------------------------------------------------------------------------
-# Реестр агентов.
-# ---------------------------------------------------------------------------
 AGENT_REGISTRY: dict[str, dict] = {
     "dzo": {
         "name": "Инспектор ДЗО",
@@ -176,9 +154,9 @@ AGENT_REGISTRY: dict[str, dict] = {
             "priority": 80,
             "keywords": [
                 "техническое задание", "техзадание", "технического задания",
-                "terms of reference", "tor", "тз №", "тз к", "тз",
-                "требования к поставке", "требования к услуге",
-                "требования к работе", "технические требования",
+                "terms of reference", "tor", "тз №", "тз к",
+                "требования к поставке", "технические требования",
+                "тз",
             ],
         },
     },
@@ -203,14 +181,12 @@ AGENT_REGISTRY: dict[str, dict] = {
 
 
 def _fallback_agent_id() -> str:
-    """Возвращает fallback-агента: dzo, иначе первый из реестра."""
     if "dzo" in AGENT_REGISTRY:
         return "dzo"
     return next(iter(AGENT_REGISTRY.keys()), "dzo")
 
 
 def _resolve_agent(request: "ProcessRequest") -> tuple[str, str | None]:
-    """Определяет агента по реестру AGENT_REGISTRY и его auto_detect-профилям."""
     combined = (
         request.text[:2000] + " "
         + request.subject + " "
@@ -251,15 +227,8 @@ def _require_api_key(key: str | None = Depends(_api_key_header)) -> str:
     return key
 
 
-# ---------------------------------------------------------------------------
-# Модели данных
-# ---------------------------------------------------------------------------
-
-# 7 MB base64 ≈ 5.25 MB decoded; generous ceiling for a single attachment.
 _MAX_BASE64_CHARS = 7_000_000
-# Approximate cap on combined field-value size (not the raw HTTP body size,
-# which also includes JSON keys, quotes, braces, etc.).
-_MAX_REQUEST_BYTES = 10_000_000  # 10 MB
+_MAX_REQUEST_BYTES = 10_000_000
 
 
 class AttachmentData(BaseModel):
@@ -274,26 +243,13 @@ class ProcessRequest(BaseModel):
     sender_email: str = Field(default="", description="Email отправителя", max_length=1000)
     subject: str = Field(default="", description="Тема письма", max_length=10_000)
     attachments: list[AttachmentData] = Field(default_factory=list, description="Вложения в base64")
-    force: bool = Field(
-        default=False,
-        description="Обработать заново, даже если дубликат уже есть",
-    )
+    force: bool = Field(default=False, description="Обработать заново, даже если дубликат уже есть")
 
     @model_validator(mode="after")
     def check_total_payload_size(self) -> "ProcessRequest":
-        """Reject requests whose approximate combined field-value size exceeds the cap."""
-        total = (
-            len(self.text)
-            + len(self.filename)
-            + len(self.sender_email)
-            + len(self.subject)
-        )
+        total = len(self.text) + len(self.filename) + len(self.sender_email) + len(self.subject)
         for att in self.attachments:
-            total += (
-                len(att.content_base64)
-                + len(att.filename)
-                + len(att.mime_type)
-            )
+            total += len(att.content_base64) + len(att.filename) + len(att.mime_type)
         if total > _MAX_REQUEST_BYTES:
             raise ValueError(
                 f"Суммарный размер полей запроса (~{total} байт) "
@@ -329,6 +285,9 @@ class PaginatedResponse(BaseModel):
 
 # ---------------------------------------------------------------------------
 # Фоновая обработка
+# FIX MU-01: функция остаётся синхронной (BackgroundTask запускает в thread-пуле);
+# time.sleep() здесь безопасен --- BackgroundTask Starlette выполняется в threadpool,
+# не в event loop, поэтому blocking sleep не заблокирует uvicorn.
 # ---------------------------------------------------------------------------
 
 def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -> None:
@@ -371,7 +330,6 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
             if agent_type not in AGENT_REGISTRY:
                 raise ValueError("Неизвестный агент: " + agent_type)
 
-            # ── Построить цепочку fallback-моделей ──────────────────────────
             from shared.llm import (
                 LOCAL_BACKENDS,
                 effective_openai_key,
@@ -406,26 +364,19 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                 if _est_input > _chunking_threshold_tok:
                     from shared.chunked_analysis import analyze_document_in_chunks
                     logger.info(
-                        "[%s] Документ ~%d токенов > порог %d — запуск поблочного анализа "
-                        "(model=%s, context=%d)",
+                        "[%s] Документ ~%d токенов > порог %d — поблочный анализ",
                         job_id, _est_input, _chunking_threshold_tok,
-                        _best_model, _best_ctx,
                     )
                     try:
-                        _original_len = len(chat_input)
                         _summary = analyze_document_in_chunks(
                             chat_input, _api_key, _best_model, agent_type
                         )
                         if _summary:
                             chat_input = _summary
-                            logger.info(
-                                "[%s] Поблочный анализ: %d → %d символов резюме (~%d токенов)",
-                                job_id, _original_len, len(chat_input), estimate_tokens(chat_input),
-                            )
                         else:
-                            logger.warning("[%s] Поблочный анализ не дал результата — используем исходный текст", job_id)
+                            logger.warning("[%s] Поблочный анализ не дал результата", job_id)
                     except Exception as _chunk_err:
-                        logger.warning("[%s] Поблочный анализ упал: %s — используем исходный текст", job_id, _chunk_err)
+                        logger.warning("[%s] Поблочный анализ упал: %s", job_id, _chunk_err)
 
                 _est_input = estimate_tokens(chat_input)
                 _filtered = [
@@ -435,31 +386,19 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                 if _filtered:
                     _skipped = [m for m in fallback_chain if m not in _filtered]
                     if _skipped:
-                        logger.warning(
-                            "[%s] Пропущены модели с малым контекстом "
-                            "(вход ~%d + overhead %d = %d токенов): %s",
-                            job_id, _est_input, _TOOLS_OVERHEAD,
-                            _est_input + _TOOLS_OVERHEAD, ", ".join(_skipped),
-                        )
+                        logger.warning("[%s] Пропущены модели с малым контекстом: %s", job_id, ", ".join(_skipped))
                     fallback_chain = _filtered
                 else:
                     _best = max(fallback_chain, key=lambda m: _get_ctx(m) or 0)
                     _best_ctx2 = _get_ctx(_best) or 0
                     _max_input_chars = max(1, _best_ctx2 - _TOOLS_OVERHEAD) * 4
                     if len(chat_input) > _max_input_chars:
-                        logger.warning(
-                            "[%s] Финальная обрезка: %d → %d символов (модель %s, ctx %d)",
-                            job_id, len(chat_input), _max_input_chars, _best, _best_ctx2,
-                        )
+                        logger.warning("[%s] Финальная обрезка: %d → %d симв.", job_id, len(chat_input), _max_input_chars)
                         chat_input = chat_input[:_max_input_chars]
                     fallback_chain = [_best] + [m for m in fallback_chain if m != _best]
 
-            logger.info(
-                "[%s] Fallback-цепочка моделей: %s",
-                job_id, " → ".join(fallback_chain),
-            )
+            logger.info("[%s] Fallback-цепочка: %s", job_id, " → ".join(fallback_chain))
 
-            # ── Перебор моделей при 429/413 ─────────────────────────────────
             result: dict = {}
             last_exc: BaseException | None = None
 
@@ -490,8 +429,7 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                                     result = future.result(timeout=AGENT_JOB_TIMEOUT_SEC)
                                 except concurrent.futures.TimeoutError:
                                     raise TimeoutError(
-                                        f"Агент не завершился за {AGENT_JOB_TIMEOUT_SEC}с — "
-                                        f"превышен AGENT_JOB_TIMEOUT_SEC"
+                                        f"Агент не завершился за {AGENT_JOB_TIMEOUT_SEC}с"
                                     )
                         else:
                             result = agent.invoke({"input": chat_input})
@@ -520,17 +458,7 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                         )
 
                         if is_auth_error:
-                            error_msg = str(exc)
-                            logger.error(
-                                "[%s] Ошибка аутентификации на модели %s: %s",
-                                job_id, model_name, error_msg,
-                            )
-                            if "ollama" in error_msg.lower() or "invalid_request_error" in error_msg.lower():
-                                logger.error(
-                                    "[%s] Похоже, API key не настроен правильно. "
-                                    "Убедитесь, что OPENAI_API_KEY или GITHUB_TOKEN установлены.",
-                                    job_id,
-                                )
+                            logger.error("[%s] Ошибка аутентификации на модели %s: %s", job_id, model_name, exc)
                             raise
 
                         if not is_rate_limit and not is_token_limit:
@@ -538,16 +466,9 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
 
                         last_exc = exc
                         reason = "429 RateLimit" if is_rate_limit else "413 TokenLimit"
-                        logger.warning(
-                            "[%s] %s на %s (попытка %d/%d)",
-                            job_id, reason, model_name, retry + 1, max(1, AGENT_MAX_RETRIES),
-                        )
+                        logger.warning("[%s] %s на %s (попытка %d/%d)",
+                                       job_id, reason, model_name, retry + 1, max(1, AGENT_MAX_RETRIES))
                         if is_token_limit:
-                            logger.warning(
-                                "[%s] 413 TokenLimit — пропускаем ретраи, "
-                                "переключаемся на следующую модель",
-                                job_id,
-                            )
                             break
                         if retry + 1 < max(1, AGENT_MAX_RETRIES):
                             time.sleep(AGENT_RATE_LIMIT_BACKOFF)
@@ -566,10 +487,7 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                 )
                 if _switchable and model_idx + 1 < len(fallback_chain):
                     next_model = fallback_chain[model_idx + 1]
-                    logger.warning(
-                        "[%s] Переключение модели: %s → %s",
-                        job_id, model_name, next_model,
-                    )
+                    logger.warning("[%s] Переключение модели: %s → %s", job_id, model_name, next_model)
                     time.sleep(AGENT_RATE_LIMIT_BACKOFF)
                     continue
 
@@ -579,7 +497,7 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
             decision = ""
             artifacts: dict = {}
 
-            for step in result.get("intermediate_steps", []):
+            for step_idx, step in enumerate(result.get("intermediate_steps", []), start=1):
                 try:
                     obs = json.loads(step[1]) if isinstance(step[1], str) else step[1]
                     if not isinstance(obs, dict):
@@ -589,6 +507,8 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                         decision = obs["decision"]
 
                     if obs.get("emailHtml"):
+                        if "email_html" in artifacts:
+                            logger.warning("[%s] email_html перезаписывается (шаг %d)", job_id, step_idx)
                         artifacts["email_html"] = obs["emailHtml"]
                     if obs.get("tezisFormHtml"):
                         artifacts["tezis_form_html"] = obs["tezisFormHtml"]
@@ -620,14 +540,18 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                             artifacts["document_list_error"] = obs
                             decision = "tool_error"
 
-                except Exception:
-                    pass
+                except Exception as _step_err:
+                    logger.warning("[%s] step parse error: %s", job_id, _step_err)
+
+            if not decision:
+                logger.warning(
+                    "[%s] decision не установлен агентом — intermediate_steps пусты или нет decision",
+                    job_id,
+                )
+                decision = "Неизвестно"
 
             if artifacts:
-                logger.info(
-                    "[%s] Артефакты сохранены: %s",
-                    job_id, ", ".join(artifacts.keys()),
-                )
+                logger.info("[%s] Артефакты: %s", job_id, ", ".join(artifacts.keys()))
 
             if decision:
                 DECISIONS_TOTAL.labels(agent=agent_type, decision=decision).inc()
@@ -640,20 +564,21 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                     **artifacts,
                 },
             )
-            _run_log.append({"agent": agent_type, "ts": ts, "status": "ok", "job_id": job_id})
-            logger.info("[%s] Завершено. Решение: %s", job_id, decision or "нет")
+            with _run_log_lock:
+                _run_log.append({"agent": agent_type, "ts": ts, "status": "ok", "job_id": job_id})
+            logger.info("[%s] Завершено. Решение: %s", job_id, decision)
 
         except Exception as e:
             update_job(job_id, status="error", error=str(e))
-            _run_log.append({"agent": agent_type, "ts": ts, "status": "error",
-                             "job_id": job_id, "error": str(e)})
+            with _run_log_lock:
+                _run_log.append({"agent": agent_type, "ts": ts, "status": "error",
+                                  "job_id": job_id, "error": str(e)})
             logger.error("[%s] Ошибка: %s", job_id, e)
             raise
 
 
 def _detect_agent_type(request: ProcessRequest) -> str:
-    """Определяет тип агента по auto_detect-профилям зарегистрированных агентов."""
-    agent_type, _matched_keyword = _resolve_agent(request)
+    agent_type, _ = _resolve_agent(request)
     return agent_type
 
 
@@ -667,10 +592,8 @@ def _check_and_process(
     if not request.force:
         dup = find_duplicate_job(agent_type, request.sender_email, request.subject)
         if dup:
-            logger.info(
-                "[dedup] Дубликат для %s/%r/%r -> задание %s",
-                agent_type, request.sender_email, request.subject, dup["job_id"],
-            )
+            logger.info("[dedup] Дубликат для %s/%r/%r -> %s",
+                        agent_type, request.sender_email, request.subject, dup["job_id"])
             return {
                 "duplicate": True,
                 "existing_job_id": dup["job_id"],
@@ -687,10 +610,6 @@ def _check_and_process(
     return {"duplicate": False, "existing_job_id": None, "job": job, "message": ""}
 
 
-# ---------------------------------------------------------------------------
-# Middleware
-# ---------------------------------------------------------------------------
-
 @app.middleware("http")
 async def _log_and_measure(request: Request, call_next):
     start = time.time()
@@ -699,17 +618,11 @@ async def _log_and_measure(request: Request, call_next):
     path = request.url.path
     if path != "/metrics":
         API_LATENCY.labels(method=request.method, endpoint=path).observe(duration)
-        API_REQUESTS.labels(
-            method=request.method, endpoint=path,
-            status_code=str(response.status_code),
-        ).inc()
+        API_REQUESTS.labels(method=request.method, endpoint=path,
+                            status_code=str(response.status_code)).inc()
     logger.info("%s %s [%s] %.3fs", request.method, path, response.status_code, duration)
     return response
 
-
-# ---------------------------------------------------------------------------
-# Публичные эндпоинты
-# ---------------------------------------------------------------------------
 
 @app.get("/health", summary="Статус сервиса")
 def health():
@@ -725,13 +638,13 @@ def health():
 
 @app.get("/status", summary="Последние запуски")
 def status(limit: int = Query(default=10, ge=1, le=100)):
-    log_list = list(_run_log)
+    with _run_log_lock:
+        log_list = list(_run_log)
     return {"runs": len(log_list), "last_runs": log_list[-limit:]}
 
 
 @app.get("/agents", summary="Список агентов")
 def list_agents():
-    # Публичный контракт /agents: не раскрываем внутренние auto_detect-настройки.
     return {
         "agents": [
             {
@@ -744,10 +657,6 @@ def list_agents():
         ]
     }
 
-
-# ---------------------------------------------------------------------------
-# Защищённые эндпоинты
-# ---------------------------------------------------------------------------
 
 @app.get("/api/v1/check-duplicate", summary="Проверить дубликат")
 @limiter.limit(DEFAULT_RATE_LIMIT)
@@ -763,9 +672,7 @@ def check_duplicate(
     dup = find_duplicate_job(agent, sender, subject)
     if dup:
         return DuplicateResponse(
-            duplicate=True,
-            existing_job_id=dup["job_id"],
-            job=dup,
+            duplicate=True, existing_job_id=dup["job_id"], job=dup,
             message="Обработано " + str(dup["created_at"])[:10] + ", решение: " + str(dup.get("decision", "--")),
         )
     return DuplicateResponse(duplicate=False, message="Дубликатов не найдено")
@@ -773,69 +680,43 @@ def check_duplicate(
 
 @app.post("/api/v1/process/dzo", summary="Обработать заявку ДЗО")
 @limiter.limit(PROCESS_RATE_LIMIT)
-def process_dzo(
-    body: ProcessRequest,
-    background_tasks: BackgroundTasks,
-    request: Request,
-    _: str = Depends(_require_api_key),
-):
+def process_dzo(body: ProcessRequest, background_tasks: BackgroundTasks,
+               request: Request, _: str = Depends(_require_api_key)):
     return _check_and_process("dzo", body, background_tasks)
 
 
 @app.post("/api/v1/process/tz", summary="Обработать ТЗ")
 @limiter.limit(PROCESS_RATE_LIMIT)
-def process_tz(
-    body: ProcessRequest,
-    background_tasks: BackgroundTasks,
-    request: Request,
-    _: str = Depends(_require_api_key),
-):
+def process_tz(body: ProcessRequest, background_tasks: BackgroundTasks,
+              request: Request, _: str = Depends(_require_api_key)):
     return _check_and_process("tz", body, background_tasks)
 
 
 @app.post("/api/v1/process/tender", summary="Парсинг тендерной документации")
 @limiter.limit(PROCESS_RATE_LIMIT)
-def process_tender(
-    body: ProcessRequest,
-    background_tasks: BackgroundTasks,
-    request: Request,
-    _: str = Depends(_require_api_key),
-):
-    """Извлекает список документов, требуемых от участника закупки."""
+def process_tender(body: ProcessRequest, background_tasks: BackgroundTasks,
+                  request: Request, _: str = Depends(_require_api_key)):
     return _check_and_process("tender", body, background_tasks)
 
 
 @app.post("/api/v1/process/auto", summary="Автоопределение типа")
 @limiter.limit(PROCESS_RATE_LIMIT)
-def process_auto(
-    body: ProcessRequest,
-    background_tasks: BackgroundTasks,
-    request: Request,
-    _: str = Depends(_require_api_key),
-):
+def process_auto(body: ProcessRequest, background_tasks: BackgroundTasks,
+                request: Request, _: str = Depends(_require_api_key)):
     agent_type = _detect_agent_type(body)
     return _check_and_process(agent_type, body, background_tasks)
 
 
 @app.post("/api/v1/process/{agent}", summary="Обработать документ указанным агентом")
 @limiter.limit(PROCESS_RATE_LIMIT)
-def process_agent(
-    body: ProcessRequest,
-    background_tasks: BackgroundTasks,
-    request: Request,
-    agent: str = Path(..., description="ID агента из GET /agents"),
-    _: str = Depends(_require_api_key),
-):
+def process_agent(body: ProcessRequest, background_tasks: BackgroundTasks, request: Request,
+                 agent: str = Path(...), _: str = Depends(_require_api_key)):
     return _check_and_process(agent, body, background_tasks)
 
 
 @app.post("/api/v1/resolve-agent", summary="Определить агента по содержимому")
 @limiter.limit(DEFAULT_RATE_LIMIT)
-def resolve_agent(
-    body: ProcessRequest,
-    request: Request,
-    _: str = Depends(_require_api_key),
-):
+def resolve_agent(body: ProcessRequest, request: Request, _: str = Depends(_require_api_key)):
     agent_type, matched_keyword = _resolve_agent(body)
     return {
         "agent": agent_type,
@@ -861,10 +742,8 @@ def list_jobs(
     items = items[:per_page]
     total = db_count_history(agent=agent, status=status)
     pages = math.ceil(total / per_page) if per_page else 1
-    return PaginatedResponse(
-        total=total, page=page, per_page=per_page,
-        pages=pages, has_next=has_next, items=items,
-    )
+    return PaginatedResponse(total=total, page=page, per_page=per_page,
+                             pages=pages, has_next=has_next, items=items)
 
 
 @app.get("/api/v1/jobs/{job_id}", response_model=JobResponse, summary="Статус задания")
@@ -905,15 +784,11 @@ def history(
     )
     has_next = len(items) > per_page
     items = items[:per_page]
-    total = db_count_history(
-        agent=agent, status=status, decision=decision,
-        date_from=date_from, date_to=date_to,
-    )
+    total = db_count_history(agent=agent, status=status, decision=decision,
+                             date_from=date_from, date_to=date_to)
     pages = math.ceil(total / per_page) if per_page else 1
-    return PaginatedResponse(
-        total=total, page=page, per_page=per_page,
-        pages=pages, has_next=has_next, items=items,
-    )
+    return PaginatedResponse(total=total, page=page, per_page=per_page,
+                             pages=pages, has_next=has_next, items=items)
 
 
 @app.get("/api/v1/stats", summary="Аггрегированная статистика")

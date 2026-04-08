@@ -1,8 +1,9 @@
 import json
-import os
 from typing import Any
 
-from langchain.agents import create_agent
+# FIX ST-02: create_agent не существует в langchain.agents.
+# Используем langgraph.prebuilt.create_react_agent — официальный API LangGraph.
+from langgraph.prebuilt import create_react_agent
 
 from agent1_dzo_inspector.tools import (
     generate_corrected_application,
@@ -93,8 +94,6 @@ class AgentRunner:
                 if isinstance(output, list):
                     output = "\n".join(str(x) for x in output)
 
-        # Извлекаем результаты вызовов инструментов из ToolMessage-сообщений.
-        # LangGraph хранит их в history messages, а не в отдельном поле steps.
         for msg in messages:
             if hasattr(msg, "tool_call_id"):  # ToolMessage
                 name = getattr(msg, "name", None) or "tool"
@@ -120,6 +119,11 @@ def create_dzo_agent(model_name: str | None = None) -> AgentRunner:
 
     Args:
         model_name: явное имя модели (для fallback при 429); None = из env MODEL_NAME.
+
+    Note:
+        Использует langgraph.prebuilt.create_react_agent (ReAct + tool-calling).
+        system_prompt передаётся как строка — langgraph принимает его напрямую
+        через параметр `prompt` или как системное сообщение в messages.
     """
     llm = build_llm(temperature=0.2, model_name_override=model_name)
     tools = [
@@ -130,10 +134,13 @@ def create_dzo_agent(model_name: str | None = None) -> AgentRunner:
         generate_response_email,
         generate_corrected_application,
     ]
-    graph_agent = create_agent(
+    logger.info("Создание агента ДЗО (модель=%s)", getattr(llm, 'model_name', '?'))
+
+    # langgraph >= 0.2: create_react_agent(model, tools, prompt=system_str)
+    graph_agent = create_react_agent(
         model=llm,
         tools=tools,
-        system_prompt=SYSTEM_PROMPT,
-        debug=os.getenv("AGENT_DEBUG", "0") in {"1", "true", "True"},
+        prompt=SYSTEM_PROMPT,
     )
+    logger.debug("Агент ДЗО успешно создан")
     return AgentRunner(graph_agent)
