@@ -10,20 +10,16 @@ FIX DU-02: process_emails для DZO и TZ являются структурны
 """
 from __future__ import annotations
 
-import json
-import logging
-from datetime import UTC, datetime
 from typing import Callable
 
+import shared.database as db
 from api.metrics import EMAILS_ERRORS, EMAILS_PROCESSED, JobTimer, POLL_CYCLES
 from config import FORCE_REPROCESS
 from shared.email_client import fetch_unseen_emails
-from shared.email_sender import send_email
 from shared.file_extractor import extract_text_from_attachment
 from shared.logger import setup_logger
 from shared.telegram_notify import notify
 from shared.tracing import get_langfuse_callback, log_agent_steps
-import shared.database as db
 
 
 def process_emails_base(
@@ -46,6 +42,7 @@ def process_emails_base(
     """Общая логика IMAP-поллинга + LLM-вызова + отправки ответа.
 
     Каждый агент передаёт callback-функции для агент-специфичных действий.
+    smtp_from используется в send_reply_fn — передаётся как аргумент.
     """
     logger = setup_logger(f"agent_{agent_name}")
     logger.info("Проверяю входящие письма (%s)...", agent_label)

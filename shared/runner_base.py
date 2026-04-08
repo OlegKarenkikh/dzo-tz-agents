@@ -11,15 +11,14 @@ FIX DU-01, DU-02: устраняет 90% идентичного кода в proc
 """
 from __future__ import annotations
 
-import logging
 from abc import ABC, abstractmethod
-from datetime import UTC, datetime
 from typing import Any
 
 import config
 import shared.database as db
 from api.metrics import EMAILS_ERRORS, EMAILS_PROCESSED, JobTimer, POLL_CYCLES
 from shared.email_client import fetch_unseen_emails
+from shared.file_extractor import extract_text_from_attachment
 from shared.logger import setup_logger
 from shared.telegram_notify import notify
 from shared.tracing import get_langfuse_callback, log_agent_steps
@@ -120,7 +119,6 @@ class BaseEmailRunner(ABC):
 
             job_id = db.create_job(self.agent_id, sender=sender, subject=subject)
             try:
-                from shared.file_extractor import extract_text_from_attachment
                 attachment_texts: list[str] = []
                 for att in mail.get("attachments", []):
                     text = extract_text_from_attachment(att)
@@ -143,7 +141,7 @@ class BaseEmailRunner(ABC):
                 steps = result.get("intermediate_steps", [])
                 trace = log_agent_steps(job_id=job_id, agent=self.agent_id, steps=steps)
 
-                decision, artifacts, reply_subject = self.parse_steps(steps, result, job_id)
+                decision, artifacts, _reply_subject = self.parse_steps(steps, result, job_id)
 
                 # DA-05: предупреждаем о пустом decision
                 if not decision:
