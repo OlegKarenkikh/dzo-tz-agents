@@ -156,6 +156,7 @@ AGENT_REGISTRY: dict[str, dict] = {
                 "техническое задание", "техзадание", "технического задания",
                 "terms of reference", "tor", "тз №", "тз к",
                 "требования к поставке", "технические требования",
+                "тз",
             ],
         },
     },
@@ -470,8 +471,6 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                         if is_token_limit:
                             break
                         if retry + 1 < max(1, AGENT_MAX_RETRIES):
-                            # BackgroundTask выполняется в thread-пуле Starlette,
-                            # поэтому blocking time.sleep() здесь безопасен.
                             time.sleep(AGENT_RATE_LIMIT_BACKOFF)
 
                 if last_exc is None:
@@ -499,7 +498,6 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
             artifacts: dict = {}
 
             for step in result.get("intermediate_steps", []):
-                # FIX DA-02: не глотаем ошибку разбора шага
                 try:
                     obs = json.loads(step[1]) if isinstance(step[1], str) else step[1]
                     if not isinstance(obs, dict):
@@ -508,7 +506,6 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                     if obs.get("decision"):
                         decision = obs["decision"]
 
-                    # FIX MU-02: предупреждаем, если ключ уже занят
                     if obs.get("emailHtml"):
                         if "email_html" in artifacts:
                             logger.warning("[%s] email_html перезаписывается (шаг %d)", job_id, len(artifacts))
@@ -544,10 +541,8 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                             decision = "tool_error"
 
                 except Exception as _step_err:
-                    # FIX DA-03: логируем вместо bare pass
                     logger.warning("[%s] step parse error: %s", job_id, _step_err)
 
-            # FIX DA-05: проверяем decision после цикла
             if not decision:
                 logger.warning(
                     "[%s] decision не установлен агентом — intermediate_steps пусты или нет decision",
@@ -569,14 +564,12 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                     **artifacts,
                 },
             )
-            # FIX RC-02: защищаем append блоком
             with _run_log_lock:
                 _run_log.append({"agent": agent_type, "ts": ts, "status": "ok", "job_id": job_id})
             logger.info("[%s] Завершено. Решение: %s", job_id, decision)
 
         except Exception as e:
             update_job(job_id, status="error", error=str(e))
-            # FIX RC-02
             with _run_log_lock:
                 _run_log.append({"agent": agent_type, "ts": ts, "status": "error",
                                   "job_id": job_id, "error": str(e)})
@@ -645,7 +638,6 @@ def health():
 
 @app.get("/status", summary="Последние запуски")
 def status(limit: int = Query(default=10, ge=1, le=100)):
-    # FIX RC-02: читаем под блокировкой
     with _run_log_lock:
         log_list = list(_run_log)
     return {"runs": len(log_list), "last_runs": log_list[-limit:]}

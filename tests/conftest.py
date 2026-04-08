@@ -8,9 +8,16 @@ os.environ["LLM_BACKEND"] = "openai"
 
 
 def _make_fake_graph() -> MagicMock:
+    """
+    Returns a fake graph agent for tests.
+
+    AgentRunner.invoke() expects result["messages"] — list of objects with .content.
+    We delete tool_call_id entirely so hasattr() returns False and AgentRunner
+    does not mistake ai_msg for a ToolMessage (MagicMock creates any attr on access).
+    """
     ai_msg = MagicMock()
     ai_msg.content = "ok"
-    del ai_msg.tool_call_id
+    del ai_msg.tool_call_id  # prevent hasattr() returning True on MagicMock
 
     fake_graph = MagicMock()
     fake_graph.invoke = MagicMock(return_value={"messages": [ai_msg]})
@@ -18,34 +25,62 @@ def _make_fake_graph() -> MagicMock:
 
 
 def _fake_create_react_agent(*args, **kwargs) -> MagicMock:
+    """Drop-in replacement for create_react_agent — returns fake graph without LLM."""
     return _make_fake_graph()
 
 
 def _fake_build_llm(*args, **kwargs) -> MagicMock:
+    """Drop-in replacement for build_llm — avoids real ChatOpenAI instantiation."""
     llm = MagicMock()
     llm.model_name = "gpt-mock"
     return llm
 
 
 def _install_mocks() -> None:
+    """
+    Patch all LLM/agent dependencies before test modules are imported.
+
+    Why we patch module attributes (not sys.modules replacement)
+    -------------------------------------------------------------
+    Replacing sys.modules["langgraph.prebuilt"] with a MagicMock breaks
+    langchain internals: langchain/tools/tool_node.py does
+        from langgraph.prebuilt.tool_node import ...
+    which requires langgraph.prebuilt to be a real package object with
+    sub-module support — a MagicMock cannot serve as a package.
+
+    Instead we patch create_react_agent as an attribute on the REAL
+    langgraph.prebuilt module object.  This survives all import styles:
+    - `import langgraph.prebuilt; langgraph.prebuilt.create_react_agent()`
+    - `from langgraph.prebuilt import create_react_agent` (binding already done)
+      -> we also patch each agent module's namespace directly after import.
+
+    Order
+    -----
+    1. Patch langgraph.prebuilt.create_react_agent on the real module object.
+    2. Patch shared.llm.build_llm before agent modules are imported.
+    3. Import each agent module and overwrite create_react_agent in its namespace.
+    4. Stub optional langchain helper modules if not installed.
+    """
     import importlib
 
-    langgraph_prebuilt_mock = MagicMock()
-    langgraph_prebuilt_mock.create_react_agent = _fake_create_react_agent
-    sys.modules["langgraph.prebuilt"] = langgraph_prebuilt_mock
-
+    # 1. Patch create_react_agent on the REAL langgraph.prebuilt module.
+    #    DO NOT replace sys.modules["langgraph.prebuilt"] — that breaks
+    #    langchain sub-module imports (langgraph.prebuilt.tool_node etc.)
     try:
-        importlib.import_module("langgraph.prebuilt")
-        object.__setattr__(langgraph_prebuilt_mock, "create_react_agent", _fake_create_react_agent)
+        real_lgp = importlib.import_module("langgraph.prebuilt")
+        real_lgp.create_react_agent = _fake_create_react_agent
     except Exception:
         pass
 
+    # 2. Patch shared.llm.build_llm before agent modules are imported
     try:
         import shared.llm as _shared_llm
         _shared_llm.build_llm = _fake_build_llm
     except Exception:
         pass
 
+    # 3. Import agent modules and overwrite create_react_agent in their namespaces
+    #    (resolves import binding: `from X import Y` caches the object reference)
     for mod_name in (
         "agent1_dzo_inspector.agent",
         "agent2_tz_inspector.agent",
@@ -54,10 +89,10 @@ def _install_mocks() -> None:
         try:
             mod = importlib.import_module(mod_name)
             mod.create_react_agent = _fake_create_react_agent  # type: ignore[attr-defined]
-            mod.build_llm = _fake_build_llm  # type: ignore[attr-defined]
         except Exception:
             pass
 
+    # 4. Stub optional langchain helper modules if absent
     _langchain_agents_ok = False
     try:
         from langchain.agents import AgentExecutor  # noqa: F401
