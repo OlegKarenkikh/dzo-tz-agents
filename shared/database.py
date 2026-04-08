@@ -16,10 +16,12 @@ logger = logging.getLogger("database")
 DATABASE_URL = os.getenv("DATABASE_URL", "")
 
 _memory_store: dict[str, dict] = {}
-_memory_lock = threading.RLock()  # FIX RC-04: защита _memory_store от concurrent mutation
+# RC-04 fix: lock для потокобезопасной работы с in-memory fallback
+_memory_lock = threading.RLock()
 
 _pool = None
-_pool_lock = threading.Lock()  # FIX RC-01: защита от double-init ThreadedConnectionPool
+# RC-01 fix: lock для double-checked locking при инициализации пула
+_pool_lock = threading.Lock()
 
 
 def _to_date(value) -> _date | None:
@@ -62,11 +64,11 @@ def _pg_available() -> bool:
 
 
 def _get_pool():
-    """FIX RC-01: double-checked locking — безопасная инициализация пула."""
+    """RC-01: double-checked locking — гарантирует единственный пул при конкурентном старте."""
     global _pool
-    if _pool is None:              # fast path без блокировки
+    if _pool is None:               # fast-path без блокировки
         with _pool_lock:
-            if _pool is None:      # double-checked locking
+            if _pool is None:       # повторная проверка под замком
                 import psycopg2.pool
                 _pool = psycopg2.pool.ThreadedConnectionPool(2, 10, DATABASE_URL)
                 logger.info("Пул psycopg2-соединений инициализирован (min=2, max=10).")
@@ -132,6 +134,7 @@ def init_db():
                 CREATE INDEX IF NOT EXISTS idx_jobs_created_at ON jobs(created_at DESC);
                 CREATE INDEX IF NOT EXISTS idx_jobs_decision   ON jobs(decision);
                 CREATE INDEX IF NOT EXISTS idx_jobs_sender     ON jobs(sender);
+                -- DA-01 fix: идемпотентная миграция trace-колонки
                 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS trace JSONB;
             """)
             conn.commit()
@@ -145,11 +148,7 @@ def _now_utc() -> str:
     return datetime.now(UTC).isoformat()
 
 
-def find_duplicate_job(
-    agent: str,
-    sender: str,
-    subject: str,
-) -> dict | None:
+def find_duplicate_job(agent: str, sender: str, subject: str) -> dict | None:
     """Ищет последнее завершённое задание с тем же (agent, sender, subject)."""
     if not sender and not subject:
         return None
@@ -160,12 +159,8 @@ def find_duplicate_job(
                 cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
                 cur.execute("""
                     SELECT * FROM jobs
-                    WHERE agent = %s
-                      AND sender = %s
-                      AND subject = %s
-                      AND status = 'done'
-                    ORDER BY created_at DESC
-                    LIMIT 1
+                    WHERE agent = %s AND sender = %s AND subject = %s AND status = 'done'
+                    ORDER BY created_at DESC LIMIT 1
                 """, (agent, sender, subject))
                 row = cur.fetchone()
                 cur.close()
@@ -173,7 +168,7 @@ def find_duplicate_job(
         except Exception as e:
             logger.error("find_duplicate_job ошибка: %s", e)
             return None
-    # FIX RC-04: in-memory fallback с блокировкой
+    # RC-04: in-memory fallback под замком
     with _memory_lock:
         rows = [
             r for r in _memory_store.values()
@@ -216,7 +211,7 @@ def create_job(agent: str, sender: str = "", subject: str = "") -> str:
         except Exception as e:
             logger.error("create_job ошибка: %s", e)
     else:
-        # FIX RC-04: защита _memory_store
+        # RC-04: атомарная запись в in-memory store
         with _memory_lock:
             _memory_store[job_id] = record
     return job_id
@@ -252,7 +247,7 @@ def update_job(
         except Exception as e:
             logger.error("update_job ошибка: %s", e)
     else:
-        # FIX RC-04: защита _memory_store
+        # RC-04: атомарное обновление in-memory store
         with _memory_lock:
             if job_id in _memory_store:
                 _memory_store[job_id].update({
@@ -278,9 +273,10 @@ def get_job(job_id: str) -> dict | None:
         except Exception as e:
             logger.error("get_job ошибка: %s", e)
             return None
-    # FIX RC-04
+    # RC-04: атомарное чтение
     with _memory_lock:
-        return dict(_memory_store[job_id]) if job_id in _memory_store else None
+        record = _memory_store.get(job_id)
+        return dict(record) if record else None
 
 
 def get_history(
@@ -326,7 +322,7 @@ def get_history(
         except Exception as e:
             logger.error("get_history ошибка: %s", e)
             return []
-    # FIX RC-04: snapshot под блокировкой
+    # RC-04: snapshot под замком
     with _memory_lock:
         rows = list(_memory_store.values())
     if agent:
@@ -347,6 +343,7 @@ def count_history(
     date_from: str | None = None,
     date_to: str | None = None,
 ) -> int:
+    """Быстрый подсчёт количества записей с фильтрами."""
     if _pg_available():
         try:
             with _get_conn() as conn:
@@ -375,7 +372,7 @@ def count_history(
         except Exception as e:
             logger.error("count_history ошибка: %s", e)
             return 0
-    # FIX RC-04
+    # RC-04: snapshot под замком
     with _memory_lock:
         rows = list(_memory_store.values())
     if agent:
@@ -410,7 +407,7 @@ def get_stats() -> dict[str, int]:
         except Exception as e:
             logger.error("get_stats ошибка: %s", e)
             return {}
-    # FIX RC-04
+    # RC-04: snapshot под замком
     with _memory_lock:
         rows = list(_memory_store.values())
     today = datetime.now(UTC).date().isoformat()
@@ -437,7 +434,7 @@ def delete_job(job_id: str) -> bool:
         except Exception as e:
             logger.error("delete_job ошибка: %s", e)
             return False
-    # FIX RC-04
+    # RC-04: атомарное удаление
     with _memory_lock:
         if job_id in _memory_store:
             del _memory_store[job_id]
