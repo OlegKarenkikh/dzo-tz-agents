@@ -1,128 +1,95 @@
-"""
-conftest.py — общие фикстуры и mock-объекты для тестов.
-
-Стратегия патчинга create_react_agent
---------------------------------------
-langgraph реально установлен в CI, поэтому простая замена sys.modules["langgraph.prebuilt"]
-не работает: агентные модули (agent1/agent2/agent21) выполняют
-    from langgraph.prebuilt import create_react_agent
-на уровне модуля или лениво. Python кеширует имя в пространстве имён модуля
-(binding), и последующая замена sys.modules не меняет уже связанный объект.
-
-Правильное решение: патчить атрибут create_react_agent **в каждом агентном
-модуле** через `module.create_react_agent = fake_fn` ПОСЛЕ их импорта,
-а также заменять в langgraph.prebuilt (для ленивых импортов).
-
-Дополнительно: build_llm патчится через monkeypatching shared.llm.build_llm,
-чтобы не создавать реальный ChatOpenAI с фейковым ключом.
-"""
-
 import os
 import sys
 from unittest.mock import MagicMock
-
-import pytest
 
 os.environ["OPENAI_API_KEY"] = "sk-test"
 os.environ["API_KEY"] = "test-secret"
 os.environ["LLM_BACKEND"] = "openai"
 
 
-# ---------------------------------------------------------------------------
-# Fake graph factory
-# ---------------------------------------------------------------------------
-
 def _make_fake_graph() -> MagicMock:
     """
-    Возвращает фиктивный граф-агент.
-    AgentRunner.invoke() ожидает result["messages"] — список объектов с .content.
-    tool_call_id должен быть falsy, чтобы msg не считался ToolMessage.
+    Returns a fake graph agent for tests.
+
+    AgentRunner.invoke() expects result["messages"] — list of objects with .content.
+    We delete tool_call_id entirely so hasattr() returns False and AgentRunner
+    does not mistake ai_msg for a ToolMessage (MagicMock creates any attr on access).
     """
     ai_msg = MagicMock()
     ai_msg.content = "ok"
-    # Явно делаем tool_call_id falsy, чтобы AgentRunner не трактовал как ToolMessage
-    ai_msg.tool_call_id = None
-    # hasattr(msg, "tool_call_id") будет True, но значение None — пропускаем
-    # AgentRunner проверяет: if hasattr(msg, "tool_call_id") — ToolMessage.
-    # Поэтому удаляем атрибут полностью через spec или del.
-    del ai_msg.tool_call_id
+    del ai_msg.tool_call_id  # prevent hasattr() returning True on MagicMock
 
     fake_graph = MagicMock()
-    fake_graph.invoke = MagicMock(return_value={
-        "messages": [ai_msg],
-    })
+    fake_graph.invoke = MagicMock(return_value={"messages": [ai_msg]})
     return fake_graph
 
 
 def _fake_create_react_agent(*args, **kwargs) -> MagicMock:
-    """Замена create_react_agent — возвращает fake graph без запуска LLM."""
+    """Drop-in replacement for create_react_agent — returns fake graph without LLM."""
     return _make_fake_graph()
 
 
 def _fake_build_llm(*args, **kwargs) -> MagicMock:
-    """Замена build_llm — возвращает MagicMock вместо реального ChatOpenAI."""
+    """Drop-in replacement for build_llm — avoids real ChatOpenAI instantiation."""
     llm = MagicMock()
     llm.model_name = "gpt-mock"
     return llm
 
 
-# ---------------------------------------------------------------------------
-# Установка mock-ов
-# ---------------------------------------------------------------------------
-
 def _install_mocks() -> None:
     """
-    Устанавливает все необходимые патчи ДО импорта тестовых модулей.
+    Patch all LLM/agent dependencies before test modules are imported.
 
-    Порядок:
-    1. Патчим sys.modules["langgraph.prebuilt"] (для ленивых from-импортов).
-    2. Патчим атрибут в реальном модуле langgraph.prebuilt (если установлен).
-    3. Патчим shared.llm.build_llm (создание LLM без реального API-ключа).
-    4. Импортируем агентные модули и патчим create_react_agent в каждом из них
-       (устраняем проблему import binding — from X import Y кеширует ссылку).
-    5. Патчим вспомогательные langchain-модули.
+    Why we patch module attributes (not just sys.modules)
+    -------------------------------------------------------
+    When a module does ``from langgraph.prebuilt import create_react_agent`` the
+    name is bound in the module's own namespace at import time.  Replacing
+    sys.modules["langgraph.prebuilt"] afterwards does **not** update names that
+    are already bound.  We must therefore also write directly into each agent
+    module's namespace after importing it.
+
+    Order
+    -----
+    1. Replace sys.modules["langgraph.prebuilt"] for lazy / future imports.
+    2. Patch the real langgraph.prebuilt module object attribute (if installed).
+    3. Patch shared.llm.build_llm before agent modules are imported.
+    4. Import each agent module and overwrite create_react_agent in its namespace.
+    5. Stub optional langchain helper modules.
     """
+    import importlib
 
-    # 1. Патч sys.modules для ленивых импортов
+    # 1. sys.modules patch for lazy imports
     langgraph_prebuilt_mock = MagicMock()
     langgraph_prebuilt_mock.create_react_agent = _fake_create_react_agent
     sys.modules["langgraph.prebuilt"] = langgraph_prebuilt_mock
 
-    # 2. Патч атрибута реального модуля (если langgraph установлен)
+    # 2. Patch attribute on real module object in case it was already cached
     try:
-        import importlib
-        real_lgp = importlib.import_module("langgraph.prebuilt")
-        # После замены sys.modules выше import_module вернёт наш mock,
-        # но на случай если он уже был закеширован — патчим напрямую:
+        importlib.import_module("langgraph.prebuilt")  # returns our mock from sys.modules
         object.__setattr__(langgraph_prebuilt_mock, "create_react_agent", _fake_create_react_agent)
     except Exception:
         pass
 
-    # 3. Патч shared.llm.build_llm — до импорта агентных модулей
+    # 3. Patch shared.llm.build_llm before agent modules are imported
     try:
         import shared.llm as _shared_llm
         _shared_llm.build_llm = _fake_build_llm
     except Exception:
         pass
 
-    # 4. Импортируем агентные модули и патчим create_react_agent непосредственно
-    #    в их пространстве имён (решает проблему import binding).
-    _agent_modules = [
+    # 4. Import agent modules and overwrite create_react_agent in their namespaces
+    for mod_name in (
         "agent1_dzo_inspector.agent",
         "agent2_tz_inspector.agent",
         "agent21_tender_inspector.agent",
-    ]
-    for mod_name in _agent_modules:
+    ):
         try:
-            import importlib
             mod = importlib.import_module(mod_name)
-            # Перезаписываем имя create_react_agent в пространстве имён модуля
             mod.create_react_agent = _fake_create_react_agent  # type: ignore[attr-defined]
         except Exception:
-            # Модуль может отсутствовать или иметь ошибки импорта — не блокируем тесты
             pass
 
-    # 5. Вспомогательные langchain-модули
+    # 5. Stub optional langchain helper modules
     _langchain_agents_ok = False
     try:
         from langchain.agents import AgentExecutor  # noqa: F401
