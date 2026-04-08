@@ -16,6 +16,8 @@ from slowapi.util import get_remote_address
 
 _PROCESS_LIMIT = os.getenv("RATE_LIMIT_PROCESS", "20/minute")
 _DEFAULT_LIMIT = os.getenv("RATE_LIMIT_DEFAULT", "120/minute")
+# Cached once at startup; API_KEY does not change at runtime
+_CONFIGURED_API_KEY = os.getenv("API_KEY", "")
 
 
 def _rate_key(request: Request) -> str:
@@ -27,8 +29,7 @@ def _rate_key(request: Request) -> str:
     обойти IP-лимит, отправляя случайные значения X-API-Key.
     """
     api_key = request.headers.get("X-API-Key", "")
-    configured = os.getenv("API_KEY", "")
-    if api_key and configured and api_key == configured:
+    if api_key and _CONFIGURED_API_KEY and api_key == _CONFIGURED_API_KEY:
         # Не храним ключ целиком — только его хеш (первые 16 сим. SHA-256)
         return "apikey:" + hashlib.sha256(api_key.encode()).hexdigest()[:16]
     return get_remote_address(request)

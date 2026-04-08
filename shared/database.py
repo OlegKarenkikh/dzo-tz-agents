@@ -179,6 +179,8 @@ def find_duplicate_job(agent: str, sender: str, subject: str) -> dict | None:
             and r.get("status") == "done"
         ]
         result = max(candidates, key=lambda r: r.get("created_at", "")) if candidates else None
+        # created_at хранится в ISO 8601 (YYYY-MM-DDTHH:MM:SS±HH:MM), лексикографическое
+        # сравнение корректно для этого формата
     return result
 
 
