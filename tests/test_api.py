@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 # API_KEY устанавлен в conftest.py (значение: "test-secret")
 from api.app import (  # noqa: E402
     _has_tz_agent_analysis_observation,
+    _is_token_limit_error_text,
     _is_result_usable_for_agent,
     _looks_like_tz_content,
     app,
@@ -323,6 +324,20 @@ class TestDzoTzSignalHeuristics:
     def test_observation_returns_false_when_missing(self):
         result = {"intermediate_steps": [("tool", {"emailHtml": "<p>x</p>"})]}
         assert not _has_tz_agent_analysis_observation(result)
+
+
+class TestTokenLimitClassifier:
+    def test_detects_tokens_limit_keyword(self):
+        assert _is_token_limit_error_text("tokens_limit_reached")
+
+    def test_detects_413_phrase(self):
+        assert _is_token_limit_error_text("Error code: 413 - Request body too large")
+
+    def test_detects_max_size_hint(self):
+        assert _is_token_limit_error_text("Max size: 8000 tokens")
+
+    def test_non_token_error_returns_false(self):
+        assert not _is_token_limit_error_text("Rate limit reached 429")
 
 
 class TestDeduplicate:

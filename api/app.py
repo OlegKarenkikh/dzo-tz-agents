@@ -325,6 +325,16 @@ def _has_tz_agent_analysis_observation(model_result: dict) -> bool:
             return True
     return False
 
+
+def _is_token_limit_error_text(error_text: str) -> bool:
+    text = (error_text or "").lower()
+    return (
+        "tokens_limit_reached" in text
+        or "413" in text
+        or "too large" in text
+        or "max size" in text
+    )
+
 def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -> None:
     job = db_get_job(job_id)
     if not job:
@@ -551,6 +561,7 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
             result: dict = {}
             last_exc: BaseException | None = None
             no_tool_calls_exhausted = False
+            token_limit_exhausted = False
 
             for model_idx, model_name in enumerate(fallback_chain):
                 attempt_log = f"модель {model_name} ({model_idx + 1}/{len(fallback_chain)})"
@@ -567,7 +578,16 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                 )
                 _flush_running_log()
 
-                for retry in range(max(1, AGENT_MAX_RETRIES)):
+                max_retries = max(1, AGENT_MAX_RETRIES)
+                retry = 0
+                compaction_bonus_retry_available = False
+
+                while True:
+                    if retry >= max_retries:
+                        if compaction_bonus_retry_available:
+                            compaction_bonus_retry_available = False
+                        else:
+                            break
                     try:
                         if agent_type == "dzo":
                             from agent1_dzo_inspector.agent import create_dzo_agent
@@ -637,6 +657,7 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                                     retry=retry + 1,
                                 )
                                 _flush_running_log()
+                                retry += 1
                                 continue
 
                         _log_event(
@@ -660,8 +681,7 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                         )
                         is_token_limit = (
                             (isinstance(exc, APIStatusError) and getattr(exc, "status_code", 0) == 413)
-                            or "tokens_limit_reached" in _exc_str
-                            or ("413" in _exc_str and "too large" in _exc_str.lower())
+                            or _is_token_limit_error_text(_exc_str)
                         )
                         is_auth_error = isinstance(exc, AuthenticationError) or (
                             isinstance(exc, APIStatusError)
@@ -726,6 +746,8 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                                             after_tokens=estimate_tokens(model_input),
                                         )
                                         _flush_running_log()
+                                        compaction_bonus_retry_available = True
+                                        retry += 1
                                         continue
                                 except Exception as _compact_err:
                                     logger.warning(
@@ -734,8 +756,9 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                                         _compact_err,
                                     )
                             break
-                        if retry + 1 < max(1, AGENT_MAX_RETRIES):
+                        if retry + 1 < max_retries or compaction_bonus_retry_available:
                             time.sleep(AGENT_RATE_LIMIT_BACKOFF)
+                        retry += 1
 
                 if last_exc is None:
                     break
@@ -763,6 +786,15 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                         "model_no_tools_exhausted",
                         "Модель(и) вернули ответ без обязательных tool-вызовов",
                         fallback_chain=fallback_chain,
+                    )
+                    _flush_running_log()
+                elif _is_token_limit_error_text(str(last_exc)):
+                    token_limit_exhausted = True
+                    _log_event(
+                        "model_token_limit_exhausted",
+                        "Модель(и) не смогли обработать input в рамках token limit",
+                        fallback_chain=fallback_chain,
+                        error=str(last_exc),
                     )
                     _flush_running_log()
                 else:
@@ -851,6 +883,13 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                         "message": "Модель не выполнила обязательные tool-вызовы для данного агента",
                     }
                     logger.warning("[%s] Завершено с технической ошибкой: NoToolCalls", job_id)
+                elif token_limit_exhausted:
+                    decision = "token_limit_exhausted"
+                    artifacts["model_error"] = {
+                        "code": "TokenLimitExhausted",
+                        "message": "Все попытки обработки завершились ошибкой token limit (413)",
+                    }
+                    logger.warning("[%s] Завершено с технической ошибкой: TokenLimitExhausted", job_id)
                 else:
                     logger.warning(
                         "[%s] decision не установлен агентом — intermediate_steps пусты или нет decision",
