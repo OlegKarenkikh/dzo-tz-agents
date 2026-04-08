@@ -12,12 +12,14 @@ import importlib
 import json
 import pkgutil
 import re
+import time
 from functools import lru_cache
 from threading import Lock
 from typing import Any
 
 import config
 from shared.logger import setup_logger
+from shared.llm import build_fallback_chain
 
 logger = setup_logger("agent_tooling")
 
@@ -31,9 +33,12 @@ _DEFAULT_AGENT_TOOL_PERMISSIONS: dict[str, list[str]] = {
     "*": ["*"],
 }
 
-_agent_cache: dict[str, Any] = {}
+_agent_cache: dict[tuple[str, str | None], Any] = {}
 _cache_lock = Lock()
+_model_cooldown_until: dict[str, float] = {}
+_cooldown_lock = Lock()
 _AUTO_DISCOVER_PATTERN = re.compile(r"^agent\d+_([a-zA-Z0-9_]+)_inspector$")
+_TOOL_CAPABLE_GITHUB_MODELS = {"gpt-4o", "gpt-4o-mini"}
 
 
 def _get_registry() -> dict[str, str]:
@@ -85,9 +90,10 @@ def _load_factory(import_path: str):
     return factory
 
 
-def _get_agent_runner(agent_id: str):
+def _get_agent_runner(agent_id: str, model_name_override: str | None = None):
     with _cache_lock:
-        cached = _agent_cache.get(agent_id)
+        cache_key = (agent_id, model_name_override)
+        cached = _agent_cache.get(cache_key)
         if cached is not None:
             return cached
 
@@ -97,10 +103,58 @@ def _get_agent_runner(agent_id: str):
             raise KeyError(f"Агент {agent_id!r} не найден в AGENT_TOOL_REGISTRY")
 
         factory = _load_factory(import_path)
-        runner = factory()
-        _agent_cache[agent_id] = runner
-        logger.info("[agent-tool] cached runner for target=%s", agent_id)
+        try:
+            if model_name_override is not None:
+                runner = factory(model_name=model_name_override)
+            else:
+                runner = factory()
+        except TypeError:
+            # Совместимость с кастомными фабриками без model_name.
+            runner = factory()
+        _agent_cache[cache_key] = runner
+        logger.info("[agent-tool] cached runner for target=%s model=%s", agent_id, model_name_override)
         return runner
+
+
+def _is_model_on_cooldown(model_name: str) -> bool:
+    with _cooldown_lock:
+        until = _model_cooldown_until.get(model_name, 0.0)
+    return time.monotonic() < until
+
+
+def _mark_model_cooldown(model_name: str, error_text: str) -> None:
+    cooldown_sec = 60
+    m = re.search(r"wait\s+(\d+)\s+seconds", error_text, re.IGNORECASE)
+    if m:
+        try:
+            cooldown_sec = max(1, int(m.group(1)))
+        except ValueError:
+            cooldown_sec = 60
+    with _cooldown_lock:
+        _model_cooldown_until[model_name] = time.monotonic() + cooldown_sec
+
+
+def _is_retryable_model_error(exc: Exception) -> bool:
+    text = str(exc).lower()
+    return (
+        "429" in text
+        or "ratelimit" in text
+        or "rate limit" in text
+        or "413" in text
+        or "tokens_limit_reached" in text
+        or "too large" in text
+        or "max size" in text
+    )
+
+
+def _build_tool_fallback_chain() -> list[str]:
+    primary = getattr(config, "MODEL_NAME", "gpt-4o")
+    chain = build_fallback_chain(primary)
+    if getattr(config, "LLM_BACKEND", "openai") == "github_models":
+        preferred = [m for m in chain if m in _TOOL_CAPABLE_GITHUB_MODELS]
+        if preferred:
+            chain = preferred
+    return chain
 
 
 def extract_observations(result: dict[str, Any]) -> list[dict[str, Any]]:
@@ -154,19 +208,43 @@ def invoke_agent_as_tool(
             "Разрешите маршрут через AGENT_TOOL_PERMISSIONS."
         )
 
-    runner = _get_agent_runner(target_agent)
     invoke_config = {"metadata": metadata} if metadata else {}
-    result = runner.invoke({"input": chat_input}, config=invoke_config)
-    if not isinstance(result, dict):
-        raise TypeError("Некорректный формат ответа target-агента: ожидался dict")
 
-    output = result.get("output", "")
-    steps = result.get("intermediate_steps", []) or []
-    observations = extract_observations(result)
+    last_exc: Exception | None = None
+    for model_name in _build_tool_fallback_chain():
+        if _is_model_on_cooldown(model_name):
+            logger.info("[agent-tool] skip cooldown model=%s target=%s", model_name, target_agent)
+            continue
+        try:
+            runner = _get_agent_runner(target_agent, model_name_override=model_name)
+            result = runner.invoke({"input": chat_input}, config=invoke_config)
+            if not isinstance(result, dict):
+                raise TypeError("Некорректный формат ответа target-агента: ожидался dict")
 
-    return {
-        "target_agent": target_agent,
-        "output": output,
-        "intermediate_steps": steps,
-        "observations": observations,
-    }
+            steps = result.get("intermediate_steps", []) or []
+            if len(steps) == 0:
+                raise RuntimeError("NoToolCalls")
+
+            output = result.get("output", "")
+            observations = extract_observations(result)
+            return {
+                "target_agent": target_agent,
+                "output": output,
+                "intermediate_steps": steps,
+                "observations": observations,
+            }
+        except Exception as exc:
+            last_exc = exc
+            if _is_retryable_model_error(exc):
+                _mark_model_cooldown(model_name, str(exc))
+            logger.warning(
+                "[agent-tool] model=%s target=%s failed: %s",
+                model_name,
+                target_agent,
+                exc,
+            )
+            continue
+
+    if last_exc is not None:
+        raise last_exc
+    raise RuntimeError("Не удалось выбрать доступную модель для межагентного tool-вызова")
