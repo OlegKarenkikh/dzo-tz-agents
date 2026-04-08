@@ -344,6 +344,33 @@ class TestBuildLlmLocalBackend:
         })
         assert kwargs.get("max_retries") == 2
 
+class TestProbeMaxInputTokens:
+    def test_extracts_limit_from_context_length_phrase(self):
+        import shared.llm as llm_module
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 413
+        mock_resp.text = "This model's maximum context length is 8192 tokens"
+
+        with patch.object(llm_module.httpx, "post", return_value=mock_resp):
+            with patch.object(llm_module, "_MAX_INPUT_TOKENS_CACHE", {}):
+                limit = llm_module.probe_max_input_tokens("k", "gpt-4o")
+
+        assert limit == 8192
+
+    def test_falls_back_to_conservative_default_when_unparsable(self):
+        import shared.llm as llm_module
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 413
+        mock_resp.text = "payload too large"
+
+        with patch.object(llm_module.httpx, "post", return_value=mock_resp):
+            with patch.object(llm_module, "_MAX_INPUT_TOKENS_CACHE", {}):
+                limit = llm_module.probe_max_input_tokens("k", "unknown-model")
+
+        assert limit == 8192
+
 
 class TestGithubTokenInConfig:
     """Проверяет, что config.py корректно читает GITHUB_TOKEN / GH_TOKEN."""

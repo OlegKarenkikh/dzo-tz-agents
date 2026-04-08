@@ -408,6 +408,12 @@ curl -H "X-API-Key: your-secret-key" http://localhost:8000/api/v1/stats
 Примечание по `decision`:
 - `tool_calls_missing` — все модели из fallback-цепочки вернули ответ без обязательных tool-вызовов (универсально для любого агента API-пайплайна).
 
+Примечание по `processing_log.events` (stage=`routing`):
+- `estimated_input_tokens` — оценка размера входа в токенах.
+- `tools_overhead_tokens` — заложенный budget под system/tool schema overhead.
+- `model_context_tokens` — карта лимитов контекста по моделям fallback-цепочки.
+- `chunking_threshold_tokens` — порог, после которого включается поблочный анализ.
+
 ---
 
 ## Дедупликация

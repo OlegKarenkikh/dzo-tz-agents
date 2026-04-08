@@ -419,7 +419,7 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                     _api_key = effective_openai_key() or GITHUB_TOKEN or ""
                 else:
                     _api_key = effective_openai_key() or "not-needed"
-                _TOOLS_OVERHEAD = 3000
+                _TOOLS_OVERHEAD = 6000 if LLM_BACKEND == "github_models" else 3000
                 _est_input = estimate_tokens(chat_input)
 
                 def _get_ctx(m: str) -> int:
@@ -432,6 +432,7 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                 _best_model = max(fallback_chain, key=lambda m: _get_ctx(m) or 0)
                 _best_ctx = _get_ctx(_best_model) or 0
                 _chunking_threshold_tok = max(1, (_best_ctx - _TOOLS_OVERHEAD) // 2)
+                _ctx_map = {m: (_get_ctx(m) or 0) for m in fallback_chain}
 
                 if _est_input > _chunking_threshold_tok:
                     from shared.chunked_analysis import analyze_document_in_chunks
@@ -475,6 +476,10 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                 "Определена цепочка моделей",
                 fallback_chain=fallback_chain,
                 llm_backend=LLM_BACKEND,
+                estimated_input_tokens=_est_input if LLM_BACKEND == "github_models" or LLM_BACKEND in LOCAL_BACKENDS else None,
+                tools_overhead_tokens=_TOOLS_OVERHEAD if LLM_BACKEND == "github_models" or LLM_BACKEND in LOCAL_BACKENDS else None,
+                model_context_tokens=_ctx_map if LLM_BACKEND == "github_models" or LLM_BACKEND in LOCAL_BACKENDS else None,
+                chunking_threshold_tokens=_chunking_threshold_tok if LLM_BACKEND == "github_models" or LLM_BACKEND in LOCAL_BACKENDS else None,
             )
             _flush_running_log()
 
