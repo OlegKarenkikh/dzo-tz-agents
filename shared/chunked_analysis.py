@@ -10,11 +10,19 @@
 Применяется когда документ слишком большой для контекстного окна модели.
 """
 import logging
+import math
 
 import httpx
 
 from config import LLM_BACKEND, OPENAI_API_BASE
-from shared.llm import _GITHUB_MODELS_BASE_URL, LOCAL_BACKENDS, resolve_local_base_url
+from shared.llm import (
+    _GITHUB_MODELS_BASE_URL,
+    LOCAL_BACKENDS,
+    estimate_tokens,
+    probe_local_max_context,
+    probe_max_input_tokens,
+    resolve_local_base_url,
+)
 
 logger = logging.getLogger("chunked_analysis")
 
@@ -36,6 +44,10 @@ _MAX_CHUNKS = 14
 # Лимит токенов на один ответ анализа чанка.
 # 18 чанков × 250 = 4 500 токенов резюме (+3 000 overhead агента = 7 500 < 8 000).
 _CHUNK_RESPONSE_TOKENS = 250
+_MIN_CHUNK_INPUT_TOKENS = 900
+_CHUNK_SAFETY_MARGIN_TOKENS = 256
+_SYSTEM_PROMPT_OVERHEAD_TOKENS = 120
+_DEFAULT_MODEL_CONTEXT_TOKENS = 8_192
 
 # ── Системные промпты для каждого типа агента ────────────────────────────────
 
@@ -165,6 +177,46 @@ def chunk_document(
     return chunks
 
 
+def _resolve_model_context_tokens(api_key: str, model_name: str) -> int:
+    """Определяет контекстное окно модели для текущего backend."""
+    try:
+        if LLM_BACKEND == "github_models":
+            return probe_max_input_tokens(api_key, model_name)
+        if LLM_BACKEND in LOCAL_BACKENDS:
+            return probe_local_max_context(resolve_local_base_url(), model_name)
+    except Exception as exc:
+        logger.warning(
+            "⚠️ Не удалось определить context window для %s: %s. Используется %d.",
+            model_name,
+            exc,
+            _DEFAULT_MODEL_CONTEXT_TOKENS,
+        )
+    return _DEFAULT_MODEL_CONTEXT_TOKENS
+
+
+def _plan_chunking(text: str, api_key: str, model_name: str, system_prompt: str) -> tuple[int, int, int, int]:
+    """Возвращает параметры чанкинга: (max_chars, overlap_chars, max_chunks, model_ctx_tokens)."""
+    model_ctx = max(2_048, _resolve_model_context_tokens(api_key, model_name))
+    system_tokens = estimate_tokens(system_prompt) + _SYSTEM_PROMPT_OVERHEAD_TOKENS
+    available_input_tokens = max(
+        _MIN_CHUNK_INPUT_TOKENS,
+        model_ctx - system_tokens - _CHUNK_RESPONSE_TOKENS - _CHUNK_SAFETY_MARGIN_TOKENS,
+    )
+
+    # Держим запас на фактическое расхождение tokenizers разных провайдеров.
+    target_chunk_tokens = max(_MIN_CHUNK_INPUT_TOKENS, int(available_input_tokens * 0.8))
+    max_chars = target_chunk_tokens * 4
+
+    overlap_chars = max(200, min(2_000, int(max_chars * 0.08)))
+
+    doc_tokens = estimate_tokens(text)
+    approx_needed_chunks = max(1, math.ceil(doc_tokens / max(1, target_chunk_tokens)))
+    # Не ограничиваем чанки слишком агрессивно, чтобы не увеличивать их сверх budget.
+    max_chunks = max(_MAX_CHUNKS, approx_needed_chunks + 2)
+
+    return max_chars, overlap_chars, max_chunks, model_ctx
+
+
 def _resolve_completions_url() -> str:
     """Return the chat/completions URL for the current backend."""
     if LLM_BACKEND == "github_models":
@@ -236,13 +288,6 @@ def analyze_document_in_chunks(
         Строка-резюме для передачи агенту вместо исходного документа.
         ``None`` если все чанки завершились ошибкой.
     """
-    chunks = chunk_document(text)
-    n = len(chunks)
-    logger.info(
-        "📦 Поблочный анализ (%s): %d символов → %d чанков (model=%s)",
-        agent_type, len(text), n, model_name,
-    )
-
     if agent_type == "tz":
         sys_prompt  = _TZ_SYSTEM
         user_tmpl   = _TZ_USER
@@ -250,7 +295,7 @@ def analyze_document_in_chunks(
             "╔══════════════════════════════════════════════════════════════╗\n"
             "║      ПРЕДВАРИТЕЛЬНЫЙ ПОБЛОЧНЫЙ АНАЛИЗ ТЕХНИЧЕСКОГО ЗАДАНИЯ  ║\n"
             "╚══════════════════════════════════════════════════════════════╝\n"
-            f"Исходный документ: {len(text):,} символов → обработан {n} фрагментами.\n\n"
+            f"Исходный документ: {len(text):,} символов → обработан {{chunk_count}} фрагментами.\n\n"
         )
         result_footer = (
             "\n\n══════════════════════════════════════════════════════════════\n"
@@ -269,7 +314,7 @@ def analyze_document_in_chunks(
             "╔══════════════════════════════════════════════════════════════╗\n"
             "║   ПРЕДВАРИТЕЛЬНЫЙ ПОБЛОЧНЫЙ АНАЛИЗ ТЕНДЕРНОЙ ДОКУМЕНТАЦИИ   ║\n"
             "╚══════════════════════════════════════════════════════════════╝\n"
-            f"Исходный документ: {len(text):,} символов → обработан {n} фрагментами.\n\n"
+            f"Исходный документ: {len(text):,} символов → обработан {{chunk_count}} фрагментами.\n\n"
         )
         result_footer = (
             "\n\n══════════════════════════════════════════════════════════════\n"
@@ -287,7 +332,7 @@ def analyze_document_in_chunks(
             "╔══════════════════════════════════════════════════════════════╗\n"
             "║      ПРЕДВАРИТЕЛЬНЫЙ ПОБЛОЧНЫЙ АНАЛИЗ ЗАЯВКИ ДЗО            ║\n"
             "╚══════════════════════════════════════════════════════════════╝\n"
-            f"Исходный документ: {len(text):,} символов → обработан {n} фрагментами.\n\n"
+            f"Исходный документ: {len(text):,} символов → обработан {{chunk_count}} фрагментами.\n\n"
         )
         result_footer = (
             "\n\n══════════════════════════════════════════════════════════════\n"
@@ -299,6 +344,32 @@ def analyze_document_in_chunks(
             "Опирайся на результаты анализа фрагментов выше.\n"
             "══════════════════════════════════════════════════════════════"
         )
+
+    chunk_max_chars, chunk_overlap_chars, chunk_max_count, model_ctx_tokens = _plan_chunking(
+        text,
+        api_key,
+        model_name,
+        sys_prompt,
+    )
+    chunks = chunk_document(
+        text,
+        max_chars=chunk_max_chars,
+        overlap=chunk_overlap_chars,
+        max_chunks=chunk_max_count,
+    )
+    n = len(chunks)
+    result_header = result_header.format(chunk_count=n)
+    logger.info(
+        "📦 Поблочный анализ (%s): %d символов (~%d ток.) → %d чанков (model=%s, ctx=%d, chunk=%d симв, overlap=%d)",
+        agent_type,
+        len(text),
+        estimate_tokens(text),
+        n,
+        model_name,
+        model_ctx_tokens,
+        chunk_max_chars,
+        chunk_overlap_chars,
+    )
 
     analyses: list[str] = []
     for i, chunk in enumerate(chunks):
