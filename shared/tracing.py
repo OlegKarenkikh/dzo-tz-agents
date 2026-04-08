@@ -98,7 +98,7 @@ def log_agent_steps(
                         "decision": None,
                         "output_keys": ["raw"],
                         "latency_ms": 0.0,
-                        "raw": str(step),
+                        "raw": _truncate(str(step)),
                     }
                 )
                 continue
