@@ -19,9 +19,16 @@ _DEFAULT_LIMIT = os.getenv("RATE_LIMIT_DEFAULT", "120/minute")
 
 
 def _rate_key(request: Request) -> str:
-    """FIX SE-03: rate limit по хешу API-ключа (если есть) или по IP."""
+    """FIX SE-03: rate limit по хешу API-ключа (если валиден) или по IP.
+
+    Хеш API-ключа используется только тогда, когда присланный заголовок
+    X-API-Key совпадает с настроенным API_KEY. Для отсутствующего или
+    невалидного ключа возвращается IP-адрес клиента, чтобы нельзя было
+    обойти IP-лимит, отправляя случайные значения X-API-Key.
+    """
     api_key = request.headers.get("X-API-Key", "")
-    if api_key:
+    configured = os.getenv("API_KEY", "")
+    if api_key and configured and api_key == configured:
         # Не храним ключ целиком — только его хеш (первые 16 сим. SHA-256)
         return "apikey:" + hashlib.sha256(api_key.encode()).hexdigest()[:16]
     return get_remote_address(request)
