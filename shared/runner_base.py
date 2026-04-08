@@ -145,11 +145,12 @@ class BaseEmailRunner(ABC):
                 dup = db.find_duplicate_job(self.agent_id, sender, subject)
                 if dup:
                     created_at = dup.get("created_at")
-                    created_at_display = (
-                        created_at.date().isoformat()
-                        if hasattr(created_at, "date")
-                        else str(created_at)[:10]
-                    )
+                    if created_at is None:
+                        created_at_display = "N/A"
+                    elif hasattr(created_at, "date"):
+                        created_at_display = created_at.date().isoformat()
+                    else:
+                        created_at_display = str(created_at)[:10]
                     logger.info(
                         "[dedup] Пропускаем дубль: '%s' от %s "
                         "(ранее обработано %s, решение: %s)",
