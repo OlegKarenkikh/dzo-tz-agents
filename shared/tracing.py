@@ -90,7 +90,17 @@ def log_agent_steps(
         step_t0 = time.monotonic()
         try:
             if not (isinstance(step, (list, tuple)) and len(step) >= 2):
-                trace.append({"step": i + 1, "raw": str(step)})
+                trace.append(
+                    {
+                        "step": i + 1,
+                        "tool": "unknown",
+                        "tool_input": {},
+                        "decision": None,
+                        "output_keys": ["raw"],
+                        "latency_ms": 0.0,
+                        "raw": str(step),
+                    }
+                )
                 continue
 
             action, observation = step[0], step[1]
@@ -168,7 +178,15 @@ def log_agent_steps(
 
         except Exception as exc:
             logger.debug("[%s] Ошибка сериализации шага %d: %s", job_id, i + 1, exc)
-            trace.append({"step": i + 1, "error": str(exc)})
+            trace.append({
+                "step": i + 1,
+                "tool": None,
+                "tool_input": None,
+                "decision": None,
+                "output_keys": [],
+                "latency_ms": round((time.monotonic() - step_t0) * 1000, 3),
+                "error": str(exc),
+            })
 
     logger.info("[%s] agent=%s steps=%d elapsed_ms=%.1f",
                 job_id, agent, len(trace),
