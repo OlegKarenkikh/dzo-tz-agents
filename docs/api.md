@@ -398,6 +398,7 @@ curl -H "X-API-Key: your-secret-key" http://localhost:8000/api/v1/stats
 | `decision` | `str` | Решение (например «Заявка полная») |
 | `email_html` | `str` | HTML-письмо для отправки |
 | `request_payload` | `dict` | Исходный payload запроса (для корректной переобработки из истории) |
+| `request_payload_preview` | `dict` | Безопасный preview payload без base64-вложений (метаданные файлов) |
 | `processing_log` | `dict` | Пошаговый журнал обработки (этапы, tool-вызовы, маршрутизация, итог) |
 | `model_error` | `dict` | Техническая причина деградации модели (например `NoToolCalls`) |
 | `missing_recommended_tool` | `dict` | Мягкое предупреждение: рекомендуемый tool не вызван (например `analyze_tz_with_agent`) |
