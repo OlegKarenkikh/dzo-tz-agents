@@ -167,15 +167,18 @@ def log_agent_steps(
 
             latency_ms = round((time.monotonic() - step_t0) * 1000, 3)
 
-            trace.append({
+            step_record = {
                 "step": i + 1,
                 "tool": tool_name,
                 "tool_input": tool_input_stored,
                 "decision": decision,
                 "output_keys": output_keys,
                 "latency_ms": latency_ms,
-            })
+            }
+            if obs_dict is None:
+                step_record["raw"] = None if observation is None else _truncate(str(observation))
 
+            trace.append(step_record)
         except Exception as exc:
             logger.debug("[%s] Ошибка сериализации шага %d: %s", job_id, i + 1, exc)
             trace.append({
