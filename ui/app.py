@@ -22,10 +22,10 @@ from dotenv import load_dotenv
 
 try:
     # Prefer the package-relative config when ui is available as a package
-    from ui.config import API_URL, AUTH_HEADERS, AUTO_REFRESH_SEC
+    from ui.config import API_URL, AUTH_HEADERS
 except ImportError:
     # Fallback for running from inside the ui/ directory as a simple script
-    from config import API_URL, AUTH_HEADERS, AUTO_REFRESH_SEC
+    from config import API_URL, AUTH_HEADERS
 
 load_dotenv()
 

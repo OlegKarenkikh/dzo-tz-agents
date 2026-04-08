@@ -11,8 +11,8 @@ import logging
 import sys
 
 from agent1_dzo_inspector.agent import create_dzo_agent
-from agent21_tender_inspector.agent import create_tender_agent
 from agent2_tz_inspector.agent import create_tz_agent
+from agent21_tender_inspector.agent import create_tender_agent
 
 # Настройка логирования на уровень DEBUG
 logging.basicConfig(

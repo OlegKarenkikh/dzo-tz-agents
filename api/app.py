@@ -316,7 +316,12 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
             status="running",
             result={
                 "processing_log": processing_log,
-                "request_payload": request.model_dump(),
+                "request_preview": {
+                    "sender_email": request.sender_email,
+                    "subject": request.subject,
+                    "text_chars": len(request.text or ""),
+                    "attachments_count": len(request.attachments or []),
+                },
             },
         )
 
@@ -613,7 +618,7 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                         "Получен результат tool-вызова",
                         step=step_idx,
                         tool=tool_name,
-                        keys=sorted(list(obs.keys()))[:20],
+                        keys=sorted(obs.keys())[:20],
                     )
 
                     if obs.get("decision"):
@@ -684,7 +689,7 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                 "completed",
                 "Обработка завершена",
                 decision=decision,
-                artifacts=sorted(list(artifacts.keys())),
+                artifacts=sorted(artifacts.keys()),
             )
 
             update_job(

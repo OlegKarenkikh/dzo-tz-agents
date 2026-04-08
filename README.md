@@ -237,8 +237,8 @@ git push origin v1.1.0
 | `emailReadImap` | `imaplib.IMAP4_SSL` |
 | `extractFromFile (pdf)` | `pdfplumber` |
 | HTTP OCR → GPT-4o Vision | `openai.chat.completions.create` |
-| `@n8n/langchain.agent` | `create_openai_tools_agent` + `AgentExecutor` |
-| `memoryBufferWindow` | `ConversationBufferWindowMemory(k=20)` |
+| `@n8n/langchain.agent` | `langgraph.prebuilt.create_react_agent` |
+| `memoryBufferWindow` | Управление контекстом через лимиты токенов/поблочный анализ в `api/app.py` |
 | `toolCode` | `@tool`-декоратор LangChain |
 | `emailSend` | `smtplib.SMTP` |
 | `switch` / `if` | Python `if/elif` |
