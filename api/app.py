@@ -19,7 +19,6 @@ FastAPI REST API для обработки документов агентами
   GET  /api/v1/history                 — история обработок (с пагинацией)
   GET  /api/v1/stats                   — аггрегированная статистика
 """
-import asyncio
 import base64
 import concurrent.futures
 import importlib.metadata
