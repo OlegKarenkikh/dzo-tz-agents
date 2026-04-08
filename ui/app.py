@@ -242,6 +242,22 @@ def _show_artifacts(r: dict, expanded: bool = True, key_prefix: str = "") -> Non
         with st.expander("🧩 Результаты межагентных вызовов", expanded=False):
             st.json(r["peer_agent_results"])
 
+    # ── Журнал обработки ───────────────────────────────────────────────
+    if r.get("processing_log"):
+        with st.expander("🧾 Журнал обработки", expanded=expanded):
+            processing_log = r["processing_log"]
+            events = processing_log.get("events", []) if isinstance(processing_log, dict) else []
+            if events:
+                rows = []
+                for ev in events:
+                    rows.append({
+                        "Время": str(ev.get("ts", ""))[:19].replace("T", " "),
+                        "Этап": ev.get("stage", ""),
+                        "Сообщение": ev.get("message", ""),
+                    })
+                st.dataframe(rows, hide_index=True)
+            st.json(processing_log)
+
     # ── Тендер: список документов ──────────────────────────────────────
     if r.get("document_list"):
         with st.expander("📑 Перечень документов участника", expanded=expanded):
@@ -963,6 +979,7 @@ elif page == "📋 История":
                     "email_html", "tezis_form_html", "corrected_html", "escalation_html",
                     "corrected_tz_html", "json_report", "validation_report", "output",
                     "tz_agent_analysis", "peer_agent_results", "document_list", "document_list_error",
+                    "processing_log",
                 )):
                     st.divider()
                     _show_artifacts(r, expanded=False, key_prefix=item["job_id"])
