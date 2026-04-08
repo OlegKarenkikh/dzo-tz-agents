@@ -1,1 +1,6 @@
-LS0gVGhpcyBmaWxlIGlzIGtlcHQgZm9yIGJhY2t3YXJkIGNvbXBhdGliaWxpdHkuCi0tIEFsbCBzY2hlbWEgZGVmaW5pdGlvbnMgYXJlIG5vdyBpbiAwMDFfY3JlYXRlX2pvYnMuc3FsLgotLQotLSBGSVggRFUtMDM6IGR1cGxpY2F0ZSBtaWdyYXRpb24gcmVzb2x2ZWQuCi0tIFVzZSAwMDFfY3JlYXRlX2pvYnMuc3FsIGZvciBhbGwgc2NoZW1hIHNldHVwLgo=
+-- 001_init.sql
+-- Этот файл оставлен для обратной совместимости.
+-- Все определения схемы перенесены в 001_create_jobs.sql.
+--
+-- FIX DU-03: дублирующая миграция устранена.
+-- Используйте 001_create_jobs.sql для настройки схемы.
