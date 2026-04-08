@@ -218,6 +218,25 @@ class TestAnalyzeTzWithAgent:
         assert analysis["overall_status"] == "Ошибка анализа"
         assert "Не удалось выполнить анализ ТЗ" in analysis["summary"]
 
+    @patch(
+        "agent1_dzo_inspector.tools.invoke_agent_as_tool",
+        side_effect=RuntimeError(
+            "Error code: 429 - {'error': {'code': 'RateLimitReached', "
+            "'message': 'Rate limit of 50 per 86400s exceeded for UserByModelByDay. "
+            "Please wait 78458 seconds before retrying.'}}"
+        ),
+    )
+    def test_rate_limit_returns_structured_fallback(self, _mock_invoke):
+        result = json.loads(analyze_tz_with_agent.invoke({
+            "tz_text": "Цель закупки. Требования. Количество. Срок поставки.",
+            "target_agent": "tz",
+        }))
+        analysis = result["tzAgentAnalysis"]
+        assert analysis["overall_status"] == "Ограничено квотой модели"
+        assert analysis["fallback"]["reason"] == "rate_limit"
+        assert analysis["fallback"]["retry_after_sec"] == 78458
+        assert "Эвристически распознано разделов" in analysis["summary"]
+
     def test_validation_error_when_tz_text_missing(self):
         with pytest.raises(ValidationError):
             analyze_tz_with_agent.invoke({"email_subject": "Тема"})
