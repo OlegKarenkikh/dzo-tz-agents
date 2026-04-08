@@ -315,7 +315,7 @@ curl -X DELETE -H "X-API-Key: your-secret-key" \
 
 | Параметр | Тип | Описание |
 |---|---|---|
-| `agent` | str | `dzo` или `tz` |
+| `agent` | str | `dzo`, `tz` или `tender` |
 | `status` | str | `pending`, `running`, `done`, `error` |
 | `decision` | str | Фильтр по тексту решения |
 | `date_from` | str | ISO 8601, начало периода |
@@ -385,7 +385,7 @@ curl -H "X-API-Key: your-secret-key" http://localhost:8000/api/v1/stats
 |---|---|---|
 | `job_id` | `str` | UUID задания |
 | `status` | `str` | `pending`, `running`, `done`, `error` |
-| `agent` | `str` | `dzo` или `tz` |
+| `agent` | `str` | `dzo`, `tz` или `tender` |
 | `created_at` | `str` | ISO 8601 timestamp |
 | `result` | `dict или null` | Результат (после завершения) |
 | `error` | `str или null` | Описание ошибки |
@@ -397,6 +397,10 @@ curl -H "X-API-Key: your-secret-key" http://localhost:8000/api/v1/stats
 | `output` | `str` | Текстовый вывод агента |
 | `decision` | `str` | Решение (например «Заявка полная») |
 | `email_html` | `str` | HTML-письмо для отправки |
+| `tz_agent_analysis` | `dict` | Результат делегированного анализа ТЗ |
+| `peer_agent_results` | `list[dict]` | Результаты вызовов других агентов |
+| `document_list` | `dict` | Структурированный список документов по тендеру |
+| `document_list_error` | `dict` | Ошибка построения списка документов |
 
 ---
 

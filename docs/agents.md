@@ -86,7 +86,7 @@
 ```bash
 AGENT_TOOL_ENABLED=true
 AGENT_TOOL_REGISTRY={"dzo":"agent1_dzo_inspector.agent:create_dzo_agent","tz":"agent2_tz_inspector.agent:create_tz_agent"}
-AGENT_TOOL_PERMISSIONS={"dzo":["tz"],"tz":["dzo"]}
+AGENT_TOOL_PERMISSIONS={"*":["*"]}
 ```
 
 ### Пример входных данных

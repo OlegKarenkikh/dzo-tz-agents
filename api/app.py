@@ -522,6 +522,10 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                         artifacts["json_report"] = obs
                     if "html" in obs and "title" in obs:
                         artifacts["corrected_tz_html"] = obs["html"]
+                    if obs.get("tzAgentAnalysis") and isinstance(obs.get("tzAgentAnalysis"), dict):
+                        artifacts["tz_agent_analysis"] = obs["tzAgentAnalysis"]
+                    if obs.get("peerAgentResult") and isinstance(obs.get("peerAgentResult"), dict):
+                        artifacts.setdefault("peer_agent_results", []).append(obs["peerAgentResult"])
 
                     if (
                         agent_type == "tender"
