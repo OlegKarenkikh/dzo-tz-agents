@@ -397,6 +397,7 @@ curl -H "X-API-Key: your-secret-key" http://localhost:8000/api/v1/stats
 | `output` | `str` | Текстовый вывод агента |
 | `decision` | `str` | Решение (например «Заявка полная») |
 | `email_html` | `str` | HTML-письмо для отправки |
+| `response_email_html` | `str` | Опциональный общий шаблон письма (если decision-специфичное письмо уже сформировано) |
 | `request_payload` | `dict` | Исходный payload запроса (для корректной переобработки из истории) |
 | `request_payload_preview` | `dict` | Безопасный preview payload без base64-вложений (метаданные файлов) |
 | `processing_log` | `dict` | Пошаговый журнал обработки (этапы, tool-вызовы, маршрутизация, итог) |

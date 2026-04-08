@@ -21,6 +21,7 @@ FastAPI REST API для обработки документов агентами
 """
 import base64
 import concurrent.futures
+import html
 import importlib.metadata
 import json
 import logging
@@ -334,6 +335,22 @@ def _is_token_limit_error_text(error_text: str) -> bool:
         or "too large" in text
         or "max size" in text
     )
+
+
+def _apply_email_artifact(artifacts: dict, tool_name: str, email_html: str) -> None:
+    """Сохраняет email-артефакт с приоритетом decision-специфичных шаблонов.
+
+    generate_info_request / generate_escalation имеют более конкретный
+    бизнес-контент, чем общий generate_response_email.
+    """
+    if not email_html:
+        return
+
+    if tool_name == "generate_response_email" and artifacts.get("email_html"):
+        artifacts["response_email_html"] = email_html
+        return
+
+    artifacts["email_html"] = email_html
 
 def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -> None:
     job = db_get_job(job_id)
@@ -829,9 +846,11 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                         decision = obs["decision"]
 
                     if obs.get("emailHtml"):
-                        if "email_html" in artifacts:
-                            logger.warning("[%s] email_html перезаписывается (шаг %d)", job_id, step_idx)
-                        artifacts["email_html"] = obs["emailHtml"]
+                        _apply_email_artifact(
+                            artifacts,
+                            tool_name=tool_name,
+                            email_html=obs["emailHtml"],
+                        )
                     if obs.get("tezisFormHtml"):
                         artifacts["tezis_form_html"] = obs["tezisFormHtml"]
                     if obs.get("correctedHtml"):
@@ -873,6 +892,17 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                         "Ошибка разбора intermediate шага",
                         step=step_idx,
                         error=str(_step_err),
+                    )
+
+            tz_summary = (artifacts.get("tz_agent_analysis") or {}).get("summary", "")
+            if tz_summary and artifacts.get("email_html"):
+                safe_summary = html.escape(str(tz_summary))
+                if safe_summary not in artifacts["email_html"]:
+                    artifacts["email_html"] += (
+                        "<hr><div style='font-family:Arial'>"
+                        "<p><strong>Результат анализа технического задания:</strong></p>"
+                        f"<p>{safe_summary}</p>"
+                        "</div>"
                     )
 
             if not decision:
