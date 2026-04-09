@@ -60,7 +60,7 @@ class TestGithubModelsApiKeyPriority:
         """GITHUB_TOKEN имеет приоритет над OPENAI_API_KEY для github_models."""
         kwargs = self._build_with_env(monkeypatch, {
             "LLM_BACKEND": "github_models",
-            "OPENAI_API_KEY": "nk-noobkeys-key",  # чужой ключ — должен быть проигнорирован
+            "OPENAI_API_KEY": "sk-different-key",  # чужой ключ — должен быть проигнорирован
             "GITHUB_TOKEN": "ghu_github_token",
             "GH_TOKEN": None,
         })
@@ -375,100 +375,6 @@ class TestBuildLlmLocalBackend:
         })
         assert kwargs.get("max_retries") == 2
 
-
-class TestBuildLlmNoobkeys:
-    """Проверяет build_llm для LLM_BACKEND=noobkeys."""
-
-    def _build_with_env(self, monkeypatch, env: dict) -> dict:
-        for k, v in env.items():
-            if v is None:
-                monkeypatch.delenv(k, raising=False)
-            else:
-                monkeypatch.setenv(k, v)
-
-        with patch("dotenv.load_dotenv"):
-            import config
-            import shared.llm as llm_module
-            importlib.reload(config)
-            importlib.reload(llm_module)
-
-            captured: dict = {}
-
-            def fake_chat(**kwargs):
-                captured.update(kwargs)
-                return MagicMock()
-
-            with patch.object(llm_module, "ChatOpenAI", side_effect=fake_chat):
-                llm_module.build_llm()
-
-        return captured
-
-    def test_noobkeys_uses_default_base_url(self, monkeypatch):
-        """noobkeys использует https://noobkeys.onrender.com/v1 по умолчанию."""
-        kwargs = self._build_with_env(monkeypatch, {
-            "LLM_BACKEND": "noobkeys",
-            "OPENAI_API_KEY": "sk-noob-test",
-            "OPENAI_API_BASE": None,
-            "MODEL_NAME": "gpt-4o",
-            "FALLBACK_MODELS": "",
-        })
-        assert kwargs.get("base_url") == "https://noobkeys.onrender.com/v1"
-        assert kwargs.get("api_key") == "sk-noob-test"
-
-    def test_noobkeys_custom_base_url_overrides_default(self, monkeypatch):
-        """OPENAI_API_BASE переопределяет URL прокси для noobkeys."""
-        kwargs = self._build_with_env(monkeypatch, {
-            "LLM_BACKEND": "noobkeys",
-            "OPENAI_API_KEY": "sk-noob-test",
-            "OPENAI_API_BASE": "https://custom.proxy.example/v1",
-            "MODEL_NAME": "gpt-4o",
-            "FALLBACK_MODELS": "",
-        })
-        assert kwargs.get("base_url") == "https://custom.proxy.example/v1"
-
-    def test_noobkeys_without_fallback_has_retries(self, monkeypatch):
-        """noobkeys без FALLBACK_MODELS включает SDK ретрай."""
-        kwargs = self._build_with_env(monkeypatch, {
-            "LLM_BACKEND": "noobkeys",
-            "OPENAI_API_KEY": "sk-noob-test",
-            "OPENAI_API_BASE": None,
-            "MODEL_NAME": "gpt-4o",
-            "FALLBACK_MODELS": "",
-        })
-        assert kwargs.get("max_retries") == 2
-
-    def test_noobkeys_with_fallback_disables_retries(self, monkeypatch):
-        """noobkeys с FALLBACK_MODELS отключает SDK ретрай."""
-        kwargs = self._build_with_env(monkeypatch, {
-            "LLM_BACKEND": "noobkeys",
-            "OPENAI_API_KEY": "sk-noob-test",
-            "OPENAI_API_BASE": None,
-            "MODEL_NAME": "gpt-4o",
-            "FALLBACK_MODELS": "gpt-4o-mini",
-        })
-        assert kwargs.get("max_retries") == 0
-
-    def test_noobkeys_without_api_key_raises(self, monkeypatch):
-        """noobkeys без OPENAI_API_KEY должен выбросить ValueError."""
-        for k, v in {
-            "LLM_BACKEND": "noobkeys",
-            "OPENAI_API_KEY": None,
-            "OPENAI_API_BASE": None,
-            "MODEL_NAME": "gpt-4o",
-            "FALLBACK_MODELS": "",
-        }.items():
-            if v is None:
-                monkeypatch.delenv(k, raising=False)
-            else:
-                monkeypatch.setenv(k, v)
-
-        with patch("dotenv.load_dotenv"):
-            import config
-            import shared.llm as llm_module
-            importlib.reload(config)
-            importlib.reload(llm_module)
-            with pytest.raises(ValueError, match="noobkeys"):
-                llm_module.build_llm()
 
 class TestProbeMaxInputTokens:
     def test_extracts_limit_from_context_length_phrase(self):
