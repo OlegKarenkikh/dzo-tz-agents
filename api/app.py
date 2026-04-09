@@ -719,6 +719,13 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                             isinstance(exc, APIStatusError)
                             and getattr(exc, "status_code", 0) == 401
                         )
+                        # 400 model_not_found — модель недоступна на этом endpoint'е;
+                        # переключаемся на следующую в цепочке без ретраев.
+                        is_model_not_found = (
+                            isinstance(exc, APIStatusError)
+                            and getattr(exc, "status_code", 0) == 400
+                            and "model_not_found" in _exc_str.lower()
+                        )
 
                         if is_auth_error:
                             logger.error("[%s] Ошибка аутентификации на модели %s: %s", job_id, model_name, exc)
@@ -729,6 +736,16 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                                 error=str(exc),
                             )
                             raise
+                        if is_model_not_found:
+                            logger.warning("[%s] Модель %s недоступна на endpoint'е — переключаем", job_id, model_name)
+                            _log_event(
+                                "model_not_found",
+                                "Модель недоступна на текущем endpoint'е",
+                                model=model_name,
+                                error=str(exc),
+                            )
+                            last_exc = exc
+                            break  # немедленно перейти к следующей модели в fallback_chain
                         if not is_rate_limit and not is_token_limit:
                             _log_event(
                                 "model_error",
@@ -800,6 +817,7 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                     or "tokens_limit_reached" in _exc_str_sw
                     or "429" in _exc_str_sw
                     or "413" in _exc_str_sw
+                    or "model_not_found" in _exc_str_sw.lower()
                     or "NoToolCalls" in _exc_str_sw
                 )
                 if _switchable and model_idx + 1 < len(fallback_chain):
