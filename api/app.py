@@ -234,6 +234,22 @@ def _format_created_at(created_at: object) -> str:
     return str(created_at)[:10]
 
 
+def _attachment_meta(attachments: list) -> list[dict]:
+    """Формирует metadata-only список вложений (без content_base64).
+
+    size_bytes вычисляется корректно с учётом base64-padding ('=').
+    Используется и в успешной, и в ошибочной ветке _process_with_agent,
+    чтобы обе ветки всегда давали одинаковый формат.
+    """
+    result = []
+    for a in attachments:
+        b64 = a.content_base64
+        # base64: 4 символа → 3 байта; каждый '=' уменьшает на 1 байт
+        size = len(b64) * 3 // 4 - b64.count("=")
+        result.append({"filename": a.filename, "mime_type": a.mime_type, "size_bytes": size})
+    return result
+
+
 def _get_api_key() -> str:
     return os.getenv("API_KEY", "")
 
@@ -962,14 +978,7 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                     # to avoid bloating JSONB with up to 7 MB per attachment.
                     "request_payload": {
                         **{k: v for k, v in request.model_dump().items() if k != "attachments"},
-                        "attachments": [
-                            {
-                                "filename": a.filename,
-                                "mime_type": a.mime_type,
-                                "size_bytes": len(a.content_base64) * 3 // 4,
-                            }
-                            for a in (request.attachments or [])
-                        ],
+                        "attachments": _attachment_meta(request.attachments or []),
                     },
                     "processing_log": processing_log,
                     **artifacts,
@@ -989,14 +998,7 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                     # Attachments stored as metadata only — same as success path
                     "request_payload": {
                         **{k: v for k, v in request.model_dump().items() if k != "attachments"},
-                        "attachments": [
-                            {
-                                "filename": a.filename,
-                                "mime_type": a.mime_type,
-                                "size_bytes": len(a.content_base64) * 3 // 4,
-                            }
-                            for a in (request.attachments or [])
-                        ],
+                        "attachments": _attachment_meta(request.attachments or []),
                     },
                     "processing_log": processing_log,
                 },

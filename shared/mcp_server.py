@@ -186,6 +186,12 @@ def list_agents() -> dict[str, Any]:
 
 if __name__ == "__main__":  # pragma: no cover
     # Запуск stdio-транспорта (для Claude Desktop / Cursor)
-    log_level = os.getenv("MCP_LOG_LEVEL", "WARNING")
-    logging.basicConfig(level=getattr(logging, log_level, logging.WARNING))
+    _level_str = os.getenv("MCP_LOG_LEVEL", "WARNING").upper()
+    _level_int = getattr(logging, _level_str, None)
+    if not isinstance(_level_int, int):
+        _level_int = logging.WARNING
+    # Задаём уровень непосредственно логгеру mcp_server (basicConfig не сработает
+    # — setup_logger уже добавил handlers и выставил уровень INFO).
+    logger.setLevel(_level_int)
+    logging.basicConfig(level=_level_int)
     mcp.run(transport="stdio")

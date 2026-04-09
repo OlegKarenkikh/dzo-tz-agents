@@ -34,7 +34,7 @@ def _safe_float(name: str, default: float) -> float:
 OPENAI_API_KEY  = os.getenv("OPENAI_API_KEY")
 OPENAI_API_BASE = os.getenv("OPENAI_API_BASE")
 
-_VALID_BACKENDS = {"openai", "ollama", "deepseek", "vllm", "lmstudio", "github_models"}
+_VALID_BACKENDS = {"openai", "ollama", "deepseek", "vllm", "lmstudio", "github_models", "noobkeys"}
 LLM_BACKEND = os.getenv("LLM_BACKEND", "openai").lower()
 
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN")

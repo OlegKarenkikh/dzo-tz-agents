@@ -15,7 +15,7 @@
   - поддержка двух транспортов: `stdio` (Claude Desktop / Cursor) и `streamable-http`
 - `api/app.py`:
   - MCP endpoint `GET/POST /mcp` через `app.mount("/mcp", mcp.streamable_http_app())`
-  - A2A Agent Card `GET /.well-known/agent.json` c описанием capabilities и skills
+  - A2A Agent Card `GET /.well-known/agent.json` с описанием capabilities и skills
 - `tests/test_mcp_server.py` — unit-тесты MCP tools, A2A Agent Card и MCP mount
 - `docs/mcp-a2a.md` — документация по интеграции с MCP-клиентами и A2A consumers
 - `requirements.txt`, `pyproject.toml`: зависимость `mcp[cli]>=1.3.0`

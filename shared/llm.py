@@ -7,6 +7,7 @@
   vllm          — vLLM (self-hosted)
   lmstudio      — LM Studio
   github_models — GitHub Models (https://models.inference.ai.azure.com)
+  noobkeys      — noobkeys.onrender.com OpenAI-совместимый прокси
 """
 import logging
 import re
@@ -27,6 +28,7 @@ from config import (
 logger = logging.getLogger("llm")
 
 _GITHUB_MODELS_BASE_URL = "https://models.inference.ai.azure.com"
+_NOOBKEYS_BASE_URL = "https://noobkeys.onrender.com/v1"
 
 _GITHUB_MODELS_PRIORITY: list[str] = [
     "gpt-4o-mini",
@@ -345,6 +347,7 @@ def build_fallback_chain(primary: str) -> list[str]:
         return build_github_fallback_chain(api_key, primary)
     if LLM_BACKEND in LOCAL_BACKENDS:
         return build_local_fallback_chain(primary)
+    # openai / deepseek / noobkeys / any custom OpenAI-compatible endpoint
     chain: list[str] = [primary]
     for m in FALLBACK_MODELS:
         if m not in chain:
@@ -364,6 +367,17 @@ def build_llm(temperature: float = 0.2, model_name_override: str | None = None) 
         base_url = _GITHUB_MODELS_BASE_URL
         max_retries = 0
         max_tokens_out = probe_max_output_tokens(api_key, model)
+    elif LLM_BACKEND == "noobkeys":
+        api_key = effective_openai_key()
+        if not api_key:
+            raise ValueError(
+                "Для LLM_BACKEND='noobkeys' необходимо задать OPENAI_API_KEY "
+                "(ключ от noobkeys.onrender.com)."
+            )
+        base_url = OPENAI_API_BASE or _NOOBKEYS_BASE_URL
+        has_fallback = len(FALLBACK_MODELS) > 0
+        max_retries = 0 if has_fallback else 2
+        max_tokens_out = 8192
     elif LLM_BACKEND in LOCAL_BACKENDS:
         api_key = OPENAI_API_KEY or "not-needed"
         base_url = resolve_local_base_url()
