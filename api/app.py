@@ -1172,6 +1172,7 @@ def _agent_card_base_url(request: Request) -> str:
     base = str(request.base_url).rstrip("/")
     proto = request.headers.get("X-Forwarded-Proto", "").strip().lower()
     if proto in ("http", "https"):
+        # request.base_url always contains "://" — partition is safe here.
         _, sep, rest = base.partition("://")
         if sep:
             base = f"{proto}://{rest}"

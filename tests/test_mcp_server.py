@@ -243,25 +243,16 @@ class TestA2AAgentCard:
 class TestMcpImportError:
     def test_import_error_without_mcp_package(self, monkeypatch):
         """Если mcp не установлен — должен подняться ImportError с понятным сообщением."""
+        import importlib
         import sys
-        # Убираем mcp из sys.modules чтобы имитировать отсутствие пакета
-        mcp_modules = [k for k in sys.modules if k.startswith("mcp")]
-        saved = {k: sys.modules.pop(k) for k in mcp_modules}
-        # Блокируем реимпорт
+        # Блокируем все уже загруженные mcp* модули и три ключевых подпакета
+        # через monkeypatch — он автоматически восстановит их после теста.
+        for key in [k for k in sys.modules if k.startswith("mcp")]:
+            monkeypatch.setitem(sys.modules, key, None)  # type: ignore[arg-type]
         monkeypatch.setitem(sys.modules, "mcp", None)  # type: ignore[arg-type]
         monkeypatch.setitem(sys.modules, "mcp.server", None)  # type: ignore[arg-type]
         monkeypatch.setitem(sys.modules, "mcp.server.fastmcp", None)  # type: ignore[arg-type]
-        try:
-            import importlib
-            # shared.mcp_server уже в sys.modules — удаляем для чистого реимпорта
-            sys.modules.pop("shared.mcp_server", None)
-            with pytest.raises((ImportError, TypeError)):
-                importlib.import_module("shared.mcp_server")
-        finally:
-            # Удаляем ключи mcp*, добавленные во время теста (не входили в saved).
-            # sys.modules.update(saved) восстанавливает как удалённые, так и изменённые ключи
-            # из сохранённого снимка, поэтому порядок важен: сначала удалить новые, потом накатить.
-            added = [k for k in list(sys.modules) if k.startswith("mcp") and k not in saved]
-            for k in added:
-                sys.modules.pop(k, None)
-            sys.modules.update(saved)
+        # Удаляем shared.mcp_server для чистого реимпорта; monkeypatch восстановит его.
+        monkeypatch.delitem(sys.modules, "shared.mcp_server", raising=False)
+        with pytest.raises((ImportError, TypeError)):
+            importlib.import_module("shared.mcp_server")
