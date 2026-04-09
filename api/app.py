@@ -1165,7 +1165,7 @@ def _agent_card_base_url(request: Request) -> str:
         hostname = (request.url.hostname or "").lower()
         if hostname not in allowed:
             raise HTTPException(
-                status_code=400,
+                status_code=403,
                 detail="Untrusted host for Agent Card. Set PUBLIC_BASE_URL or AGENT_CARD_ALLOWED_HOSTS.",
             )
 
