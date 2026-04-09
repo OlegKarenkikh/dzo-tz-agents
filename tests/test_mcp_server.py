@@ -73,6 +73,16 @@ class TestInvokeAgent:
         assert "error" in result
         assert "LLM unavailable" in result["error"]
 
+    def test_invoke_agent_too_large_input_returns_error(self):
+        """Входной текст сверх _MCP_MAX_INPUT_CHARS должен вернуть error без вызова агента."""
+        from shared.mcp_server import _MCP_MAX_INPUT_CHARS, _invoke_agent
+        oversized = "x" * (_MCP_MAX_INPUT_CHARS + 1)
+        result = _invoke_agent("dzo", oversized)
+        assert result["output"] == ""
+        assert result["steps"] == 0
+        assert "error" in result
+        assert "лимит" in result["error"].lower() or "превышает" in result["error"].lower()
+
     def test_invoke_returns_steps_count(self, mock_agent_runner):
         mock_agent_runner.invoke.return_value = {
             "output": "result",

@@ -41,6 +41,10 @@ mcp = FastMCP(
     streamable_http_path="/",
 )
 
+# Максимальная длина суммарного входного текста — соответствует max_length
+# поля text в ProcessRequest (api/app.py), защищает от чрезмерно дорогих LLM-вызовов.
+_MCP_MAX_INPUT_CHARS = 5_000_000
+
 
 def _invoke_agent(agent_type: str, chat_input: str, model_name: str | None = None) -> dict[str, Any]:
     """Общий вызов агента по типу."""
@@ -57,6 +61,13 @@ def _invoke_agent(agent_type: str, chat_input: str, model_name: str | None = Non
         raise ValueError(f"Неизвестный тип агента: {agent_type!r}")
 
     logger.info("[MCP] invoke agent=%s input_len=%d", agent_type, len(chat_input))
+    if len(chat_input) > _MCP_MAX_INPUT_CHARS:
+        msg = (
+            f"Текст превышает лимит {_MCP_MAX_INPUT_CHARS:,} символов "
+            f"(получено {len(chat_input):,}). Сократите входной текст."
+        )
+        logger.warning("[MCP] agent=%s input too large: %d chars", agent_type, len(chat_input))
+        return {"output": "", "agent": agent_type, "steps": 0, "error": msg}
     try:
         result = agent.invoke({"input": chat_input})
         return {
