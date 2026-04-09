@@ -470,10 +470,12 @@ elif page == "🧪 Тестирование":
         # Максимум 300 итераций × 2с = 600с (10 мин).
         # При 413/token_limit агент может потратить ~5-7 мин на chunked compaction.
         max_iters = 300
+        _poll_interval = 2  # секунд между запросами
+        total_seconds = max_iters * _poll_interval
         bar = st.progress(0, text="Ожидаем результат...")
         live_log = st.empty()
         for i in range(max_iters):
-            time.sleep(2)
+            time.sleep(_poll_interval)
             res = _api_get(f"/api/v1/jobs/{job_id}")
             if res and isinstance(res, dict):
                 result_obj = res.get("result") if isinstance(res.get("result"), dict) else {}
@@ -492,9 +494,9 @@ elif page == "🧪 Тестирование":
                     with live_log.container():
                         st.caption("🧾 Живой журнал обработки (последние события)")
                         st.dataframe(tail_rows, hide_index=True, width='stretch')
-            elapsed = (i + 1) * 2
+            elapsed = (i + 1) * _poll_interval
             bar.progress(
-                min(int(elapsed / 600 * 100), 99),
+                min(int(elapsed / total_seconds * 100), 99),
                 text=f"Обработка... {elapsed} сек.",
             )
             if res and res.get("status") in ("done", "error"):

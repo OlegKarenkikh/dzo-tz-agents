@@ -1,4 +1,4 @@
-.PHONY: help install test lint fmt build up down logs clean api ui api-ui dzo-only tz-only tender-only test-agent-dzo test-agent-tz test-agent-tender monitoring monitoring-down
+.PHONY: help install test lint fmt build up down logs clean api ui api-ui stop-local restart-local dzo-only tz-only tender-only test-agent-dzo test-agent-tz test-agent-tender monitoring monitoring-down
 
 help: ## Показать доступные команды
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -40,6 +40,15 @@ ui: ## Запустить Streamlit локально
 
 api-ui: ## Запустить API + UI одновременно
 	$(MAKE) -j2 api ui
+
+stop-local: ## Остановить локально запущенные API и UI (по порту)
+	@echo "Останавливаем процессы на портах 8000 и 8501..."
+	@fuser -k 8000/tcp 2>/dev/null && echo "  API (8000) остановлен" || echo "  API (8000) не запущен"
+	@fuser -k 8501/tcp 2>/dev/null && echo "  UI  (8501) остановлен" || echo "  UI  (8501) не запущен"
+
+restart-local: stop-local ## Перезапустить API + UI локально (kill по порту → запуск)
+	@sleep 1
+	$(MAKE) api-ui
 
 dzo-only: ## Запустить только Агент ДЗО
 	AGENT_MODE=dzo python main.py

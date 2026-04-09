@@ -343,7 +343,8 @@ _effective_openai_key = effective_openai_key
 
 def build_fallback_chain(primary: str) -> list[str]:
     if LLM_BACKEND == "github_models":
-        api_key = effective_openai_key() or GITHUB_TOKEN or ""
+        # Приоритет GITHUB_TOKEN → effective_openai_key() — совпадает с build_llm().
+        api_key = GITHUB_TOKEN or effective_openai_key() or ""
         return build_github_fallback_chain(api_key, primary)
     if LLM_BACKEND in LOCAL_BACKENDS:
         return build_local_fallback_chain(primary)

@@ -63,6 +63,7 @@ from config import (  # noqa: E402
     GITHUB_TOKEN,
     LLM_BACKEND,
     MODEL_NAME,
+    PUBLIC_BASE_URL,
 )
 from shared.database import (  # noqa: E402
     close_db,
@@ -504,9 +505,12 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
 
             # Для tool-агентов на GitHub Models приоритетно используем модели,
             # которые стабильно поддерживают tool-calling.
+            # Нормализуем ID: GitHub Models может возвращать "openai/gpt-4o" или "gpt-4o".
             if LLM_BACKEND == "github_models":
                 _preferred_tool_models = {"gpt-4o", "gpt-4o-mini"}
-                _preferred = [m for m in fallback_chain if m in _preferred_tool_models]
+                def _norm_model_id(m: str) -> str:
+                    return m.split("/")[-1] if "/" in m else m
+                _preferred = [m for m in fallback_chain if _norm_model_id(m) in _preferred_tool_models]
                 if _preferred:
                     _skipped_non_tool = [m for m in fallback_chain if m not in _preferred]
                     fallback_chain = _preferred
@@ -1101,13 +1105,16 @@ def list_agents():
 
 @app.get("/.well-known/agent.json", summary="A2A Agent Card")
 def agent_card(request: Request):
-    # Учитываем X-Forwarded-Proto от reverse-proxy (nginx передаёт Host и X-Forwarded-Proto).
-    # Валидируем proto — принимаем только http/https, чтобы предотвратить host-header injection.
-    proto = request.headers.get("X-Forwarded-Proto", request.url.scheme)
-    if proto not in ("http", "https"):
-        proto = request.url.scheme
-    host = request.headers.get("Host", request.url.netloc)
-    base_url = f"{proto}://{host}"
+    # Приоритет: явный PUBLIC_BASE_URL (снимает зависимость от Host-заголовка).
+    # Если не задан — используем base_url, рассчитанный Starlette/uvicorn,
+    # с подстановкой X-Forwarded-Proto от доверенного reverse-proxy.
+    if PUBLIC_BASE_URL:
+        base_url = PUBLIC_BASE_URL.rstrip("/")
+    else:
+        proto = request.headers.get("X-Forwarded-Proto", request.url.scheme)
+        if proto not in ("http", "https"):
+            proto = request.url.scheme
+        base_url = f"{proto}://{request.url.netloc}"
     return {
         "name": "DZO/TZ Inspector",
         "description": "Инспектор заявок ДЗО, технических заданий и тендерной документации",

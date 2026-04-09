@@ -115,3 +115,8 @@ def _safe_json_dict(name: str, default: dict) -> dict:
 AGENT_TOOL_ENABLED: bool = os.getenv("AGENT_TOOL_ENABLED", "true").lower() == "true"
 AGENT_TOOL_REGISTRY: dict = _safe_json_dict("AGENT_TOOL_REGISTRY", {})
 AGENT_TOOL_PERMISSIONS: dict = _safe_json_dict("AGENT_TOOL_PERMISSIONS", {})
+
+# Явный публичный URL сервиса (используется в A2A Agent Card).
+# Если задан — снимает зависимость от Host-заголовка.
+# Пример: PUBLIC_BASE_URL=https://agents.company.ru
+PUBLIC_BASE_URL: str | None = os.getenv("PUBLIC_BASE_URL") or None
