@@ -137,7 +137,7 @@ app.add_middleware(
     allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["GET", "POST", "DELETE"],
-    allow_headers=["X-API-Key", "Authorization", "Content-Type", "Accept"],
+    allow_headers=["X-API-Key", "Authorization", "Content-Type", "Accept", "X-Requested-With"],
 )
 if _MCP_AVAILABLE:
     app.mount("/mcp", _mcp_server.streamable_http_app())  # type: ignore[union-attr]
