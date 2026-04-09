@@ -358,7 +358,7 @@ def build_fallback_chain(primary: str) -> list[str]:
 def build_llm(temperature: float = 0.2, model_name_override: str | None = None) -> ChatOpenAI:
     model = model_name_override or MODEL_NAME
     if LLM_BACKEND == "github_models":
-        api_key = effective_openai_key() or GITHUB_TOKEN
+        api_key = GITHUB_TOKEN or effective_openai_key()
         if not api_key:
             raise ValueError(
                 "Для LLM_BACKEND='github_models' необходимо задать OPENAI_API_KEY "

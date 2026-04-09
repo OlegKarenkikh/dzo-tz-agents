@@ -56,8 +56,19 @@ class TestGithubModelsApiKeyPriority:
 
         return captured
 
-    def test_openai_api_key_used_when_set(self, monkeypatch):
-        """OPENAI_API_KEY имеет приоритет над GITHUB_TOKEN."""
+    def test_github_token_takes_priority_over_openai_api_key(self, monkeypatch):
+        """GITHUB_TOKEN имеет приоритет над OPENAI_API_KEY для github_models."""
+        kwargs = self._build_with_env(monkeypatch, {
+            "LLM_BACKEND": "github_models",
+            "OPENAI_API_KEY": "nk-noobkeys-key",  # чужой ключ — должен быть проигнорирован
+            "GITHUB_TOKEN": "ghu_github_token",
+            "GH_TOKEN": None,
+        })
+        assert kwargs.get("api_key") == "ghu_github_token"
+        assert kwargs.get("base_url") == "https://models.github.ai/inference"
+
+    def test_openai_api_key_used_when_github_token_absent(self, monkeypatch):
+        """Если GITHUB_TOKEN не задан — используется OPENAI_API_KEY как fallback."""
         kwargs = self._build_with_env(monkeypatch, {
             "LLM_BACKEND": "github_models",
             "OPENAI_API_KEY": "ghp_explicit_pat",
@@ -67,8 +78,8 @@ class TestGithubModelsApiKeyPriority:
         assert kwargs.get("api_key") == "ghp_explicit_pat"
         assert kwargs.get("base_url") == "https://models.github.ai/inference"
 
-    def test_github_token_used_as_fallback(self, monkeypatch):
-        """Если OPENAI_API_KEY не задан — используется GITHUB_TOKEN."""
+    def test_github_token_used_when_set(self, monkeypatch):
+        """GITHUB_TOKEN используется когда задан."""
         kwargs = self._build_with_env(monkeypatch, {
             "LLM_BACKEND": "github_models",
             "OPENAI_API_KEY": None,
