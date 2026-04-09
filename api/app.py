@@ -1039,8 +1039,9 @@ async def _mcp_auth_guard(request: Request, call_next):
     """Защита /mcp endpoint API-ключом (если API_KEY задан).
 
     A2A Agent Card (/.well-known/agent.json) остаётся публичной по стандарту A2A.
+    OPTIONS preflight пропускается без проверки — CORS middleware должен обработать его первым.
     """
-    if _MCP_AVAILABLE and request.url.path.startswith("/mcp"):
+    if _MCP_AVAILABLE and request.url.path.startswith("/mcp") and request.method != "OPTIONS":
         api_key = _get_api_key()
         if api_key:
             provided = (request.headers.get("X-API-Key") or "").strip()

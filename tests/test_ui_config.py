@@ -88,6 +88,7 @@ class TestAutoRefreshSec:
 
 class TestLlmBackend:
     def test_default(self, monkeypatch):
+        monkeypatch.setattr("dotenv.load_dotenv", lambda *a, **k: None)
         monkeypatch.delenv("LLM_BACKEND", raising=False)
         import ui.config as cfg
         importlib.reload(cfg)
