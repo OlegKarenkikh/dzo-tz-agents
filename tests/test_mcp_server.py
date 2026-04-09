@@ -258,7 +258,9 @@ class TestMcpImportError:
             with pytest.raises((ImportError, TypeError)):
                 importlib.import_module("shared.mcp_server")
         finally:
-            # Удаляем все ключи mcp*, которых не было до теста, и восстанавливаем сохранённые.
+            # Удаляем ключи mcp*, добавленные во время теста (не входили в saved).
+            # sys.modules.update(saved) восстанавливает как удалённые, так и изменённые ключи
+            # из сохранённого снимка, поэтому порядок важен: сначала удалить новые, потом накатить.
             added = [k for k in list(sys.modules) if k.startswith("mcp") and k not in saved]
             for k in added:
                 sys.modules.pop(k, None)

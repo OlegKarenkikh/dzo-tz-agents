@@ -1099,7 +1099,7 @@ async def _mcp_auth_guard(request: Request, call_next):
                 scheme, _, credentials = auth_header.partition(" ")
                 if scheme.lower() == "bearer":
                     provided = credentials.strip()
-            if not secrets.compare_digest(provided, api_key):
+            if not provided or not secrets.compare_digest(provided, api_key):
                 return JSONResponse({"detail": "Unauthorized"}, status_code=401)
     return await call_next(request)
 
@@ -1172,8 +1172,8 @@ def _agent_card_base_url(request: Request) -> str:
     base = str(request.base_url).rstrip("/")
     proto = request.headers.get("X-Forwarded-Proto", "").strip().lower()
     if proto in ("http", "https"):
-        scheme, sep, rest = base.partition("://")
-        if sep and scheme.lower() != proto:
+        _, sep, rest = base.partition("://")
+        if sep:
             base = f"{proto}://{rest}"
     return base
 
