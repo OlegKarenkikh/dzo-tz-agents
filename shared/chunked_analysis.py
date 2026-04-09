@@ -41,6 +41,12 @@ _CHUNK_OVERLAP_CHARS = 300
 # = 6 900 токенов < 8 000 — безопасный бюджет для любой Github-free модели.
 _MAX_CHUNKS = 14
 
+# Абсолютный потолок чанков независимо от размера документа.
+# Защита от DoS через намеренно большой payload: при превышении документ
+# кадрируется через chunk_document (соседние чанки объединяются) и
+# возвращается предупреждение в результате.
+_MAX_CHUNKS_HARD_CAP = 50
+
 # Лимит токенов на один ответ анализа чанка.
 # 18 чанков × 250 = 4 500 токенов резюме (+3 000 overhead агента = 7 500 < 8 000).
 _CHUNK_RESPONSE_TOKENS = 250
@@ -48,6 +54,11 @@ _MIN_CHUNK_INPUT_TOKENS = 900
 _CHUNK_SAFETY_MARGIN_TOKENS = 256
 _SYSTEM_PROMPT_OVERHEAD_TOKENS = 120
 _DEFAULT_MODEL_CONTEXT_TOKENS = 8_192
+
+# Коэффициент символов на токен для не-ASCII текста (кириллица ≈ 2 симв/токен).
+# Латиница/ASCII ≈ 4 симв/токен; при смешанном тексте берём среднее.
+_CHARS_PER_TOKEN_ASCII = 4
+_CHARS_PER_TOKEN_NONASCII = 2
 
 # ── Системные промпты для каждого типа агента ────────────────────────────────
 
@@ -205,14 +216,30 @@ def _plan_chunking(text: str, api_key: str, model_name: str, system_prompt: str)
 
     # Держим запас на фактическое расхождение tokenizers разных провайдеров.
     target_chunk_tokens = max(_MIN_CHUNK_INPUT_TOKENS, int(available_input_tokens * 0.8))
-    max_chars = target_chunk_tokens * 4
+
+    # Определяем коэффициент симв/токен с учётом доли не-ASCII символов
+    # (кириллица ≈ 2 симв/токен, латиница ≈ 4 симв/токен).
+    sample = text[:2000]
+    non_ascii_ratio = sum(1 for c in sample if ord(c) > 127) / max(1, len(sample))
+    chars_per_token = (
+        _CHARS_PER_TOKEN_NONASCII
+        if non_ascii_ratio > 0.3
+        else (
+            _CHARS_PER_TOKEN_ASCII
+            if non_ascii_ratio < 0.1
+            # Линейная интерполяция от 4 (при ratio=0.1) до 2 (при ratio=0.3)
+            else int(_CHARS_PER_TOKEN_ASCII - (_CHARS_PER_TOKEN_ASCII - _CHARS_PER_TOKEN_NONASCII) * (non_ascii_ratio - 0.1) / 0.2)
+        )
+    )
+    max_chars = target_chunk_tokens * chars_per_token
 
     overlap_chars = max(200, min(2_000, int(max_chars * 0.08)))
 
     doc_tokens = estimate_tokens(text)
     approx_needed_chunks = max(1, math.ceil(doc_tokens / max(1, target_chunk_tokens)))
-    # Не ограничиваем чанки слишком агрессивно, чтобы не увеличивать их сверх budget.
-    max_chunks = max(_MAX_CHUNKS, approx_needed_chunks + 2)
+    # Не ограничиваем чанки слишком агрессивно, чтобы не увеличивать их сверх budget,
+    # но защищаем от DoS через абсолютный потолок.
+    max_chunks = min(_MAX_CHUNKS_HARD_CAP, max(_MAX_CHUNKS, approx_needed_chunks + 2))
 
     return max_chars, overlap_chars, max_chunks, model_ctx
 
