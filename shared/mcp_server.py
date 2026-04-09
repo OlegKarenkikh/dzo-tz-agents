@@ -38,6 +38,7 @@ mcp = FastMCP(
         "Используй inspect_dzo для заявок ДЗО, inspect_tz для технических заданий, "
         "inspect_tender для тендерной документации."
     ),
+    streamable_http_path="/",
 )
 
 

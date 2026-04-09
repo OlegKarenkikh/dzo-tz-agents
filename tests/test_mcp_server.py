@@ -161,7 +161,9 @@ class TestA2AAgentCard:
         # Патчим init_db чтобы не создавать реальную БД
         with patch("shared.database.init_db"), patch("shared.database.close_db"):
             from api.app import app
-            return TestClient(app)
+            # raise_server_exceptions=False: MCP sub-app требует asyncio lifespan (run()),
+            # поэтому в unit-тестах возвращает 500, а не 404 — нас это устраивает.
+            return TestClient(app, raise_server_exceptions=False)
 
     def test_agent_card_endpoint_returns_200(self, client):
         resp = client.get("/.well-known/agent.json")
