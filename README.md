@@ -151,7 +151,7 @@ make build && make up
 | GET | `/health` | — | Статус сервиса |
 | GET | `/agents` | — | Список агентов |
 | GET | `/.well-known/agent.json` | — | A2A Agent Card |
-| GET/POST | `/mcp` | — | MCP streamable HTTP endpoint |
+| GET/POST | `/mcp` | ✅¹ | MCP streamable HTTP endpoint |
 | POST | `/api/v1/process/dzo` | ✅ | Обработать заявку ДЗО |
 | POST | `/api/v1/process/tz` | ✅ | Обработать ТЗ |
 | POST | `/api/v1/process/tender` | ✅ | Парсинг тендерной документации |
@@ -165,6 +165,8 @@ make build && make up
 | GET | `/api/v1/history` | ✅ | История с фильтрами |
 | GET | `/api/v1/stats` | ✅ | Аггрегированная статистика |
 | GET | `/metrics` | — | Prometheus scrape |
+
+> ¹ Если `API_KEY` задан — требуется `X-API-Key: <key>` или `Authorization: Bearer <key>`. Если `API_KEY` не задан или MCP не установлен — эндпоинт открыт / недоступен.
 
 ## Разработка
 

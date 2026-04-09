@@ -65,7 +65,7 @@ def _invoke_agent(agent_type: str, chat_input: str, model_name: str | None = Non
             "steps": len(result.get("intermediate_steps", [])),
         }
     except Exception as exc:
-        logger.error("[MCP] agent=%s error: %s", agent_type, exc)
+        logger.exception("[MCP] agent=%s error_type=%s error=%s", agent_type, type(exc).__name__, exc)
         return {"output": "", "agent": agent_type, "steps": 0, "error": str(exc)}
 
 

@@ -222,6 +222,18 @@ def _resolve_agent(request: "ProcessRequest") -> tuple[str, str | None]:
     return _fallback_agent_id(), None
 
 
+def _format_created_at(created_at: object) -> str:
+    """Форматирует дату создания задачи в строку YYYY-MM-DD.
+
+    Корректно обрабатывает PG datetime, ISO-строки и None.
+    """
+    if created_at is None:
+        return "N/A"
+    if hasattr(created_at, "date"):
+        return created_at.date().isoformat()
+    return str(created_at)[:10]
+
+
 def _get_api_key() -> str:
     return os.getenv("API_KEY", "")
 
@@ -974,7 +986,18 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                 status="error",
                 error=str(e),
                 result={
-                    "request_payload": request.model_dump(),
+                    # Attachments stored as metadata only — same as success path
+                    "request_payload": {
+                        **{k: v for k, v in request.model_dump().items() if k != "attachments"},
+                        "attachments": [
+                            {
+                                "filename": a.filename,
+                                "mime_type": a.mime_type,
+                                "size_bytes": len(a.content_base64) * 3 // 4,
+                            }
+                            for a in (request.attachments or [])
+                        ],
+                    },
                     "processing_log": processing_log,
                 },
             )
@@ -1001,7 +1024,7 @@ def _check_and_process(agent_type: str, request: ProcessRequest, background_task
                 "duplicate": True,
                 "existing_job_id": dup["job_id"],
                 "job": dup,
-                "message": "Письмо уже было обработано (" + str(dup["created_at"])[:10] + "). Добавьте force=true чтобы переобработать.",
+                "message": "Письмо уже было обработано (" + _format_created_at(dup["created_at"]) + "). Добавьте force=true чтобы переобработать.",
             }
     job_id = create_job(agent_type, sender=request.sender_email, subject=request.subject)
     background_tasks.add_task(_process_with_agent, job_id, agent_type, request)
@@ -1015,7 +1038,7 @@ async def _mcp_auth_guard(request: Request, call_next):
 
     A2A Agent Card (/.well-known/agent.json) остаётся публичной по стандарту A2A.
     """
-    if request.url.path.startswith("/mcp"):
+    if _MCP_AVAILABLE and request.url.path.startswith("/mcp"):
         api_key = _get_api_key()
         if api_key:
             provided = (
@@ -1114,7 +1137,7 @@ def check_duplicate(request: Request, agent: str = Query(..., description="ID а
         raise HTTPException(status_code=400, detail="Неизвестный агент: " + repr(agent))
     dup = find_duplicate_job(agent, sender, subject)
     if dup:
-        return DuplicateResponse(duplicate=True, existing_job_id=dup["job_id"], job=dup, message="Обработано " + str(dup["created_at"])[:10] + ", решение: " + str(dup.get("decision", "--")))
+        return DuplicateResponse(duplicate=True, existing_job_id=dup["job_id"], job=dup, message="Обработано " + _format_created_at(dup["created_at"]) + ", решение: " + str(dup.get("decision", "--")))
     return DuplicateResponse(duplicate=False, message="Дубликатов не найдено")
 
 
