@@ -245,7 +245,8 @@ def _attachment_meta(attachments: list) -> list[dict]:
     for a in attachments:
         b64 = a.content_base64
         # base64: 4 символа → 3 байта; каждый '=' уменьшает на 1 байт
-        size = len(b64) * 3 // 4 - b64.count("=")
+        # max(0, ...) защищает от отрицательного значения при вырожденном b64 (напр. "=")
+        size = max(0, len(b64) * 3 // 4 - b64.count("="))
         result.append({"filename": a.filename, "mime_type": a.mime_type, "size_bytes": size})
     return result
 
@@ -1041,7 +1042,8 @@ async def _mcp_auth_guard(request: Request, call_next):
     A2A Agent Card (/.well-known/agent.json) остаётся публичной по стандарту A2A.
     OPTIONS preflight пропускается без проверки — CORS middleware должен обработать его первым.
     """
-    if _MCP_AVAILABLE and request.url.path.startswith("/mcp") and request.method != "OPTIONS":
+    path = request.url.path
+    if _MCP_AVAILABLE and (path == "/mcp" or path.startswith("/mcp/")) and request.method != "OPTIONS":
         api_key = _get_api_key()
         if api_key:
             provided = (request.headers.get("X-API-Key") or "").strip()
@@ -1096,8 +1098,11 @@ def list_agents():
 
 @app.get("/.well-known/agent.json", summary="A2A Agent Card")
 def agent_card(request: Request):
-    # Учитываем X-Forwarded-Proto от reverse-proxy (nginx передаёт Host и X-Forwarded-Proto)
+    # Учитываем X-Forwarded-Proto от reverse-proxy (nginx передаёт Host и X-Forwarded-Proto).
+    # Валидируем proto — принимаем только http/https, чтобы предотвратить host-header injection.
     proto = request.headers.get("X-Forwarded-Proto", request.url.scheme)
+    if proto not in ("http", "https"):
+        proto = request.url.scheme
     host = request.headers.get("Host", request.url.netloc)
     base_url = f"{proto}://{host}"
     return {

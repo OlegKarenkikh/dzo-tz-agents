@@ -377,7 +377,7 @@ def build_llm(temperature: float = 0.2, model_name_override: str | None = None) 
         base_url = OPENAI_API_BASE or _NOOBKEYS_BASE_URL
         has_fallback = len(FALLBACK_MODELS) > 0
         max_retries = 0 if has_fallback else 2
-        max_tokens_out = 4096  # Groq free tier TPM limit
+        max_tokens_out = 4096  # ограничение максимального числа выходных токенов
     elif LLM_BACKEND in LOCAL_BACKENDS:
         api_key = OPENAI_API_KEY or "not-needed"
         base_url = resolve_local_base_url()
