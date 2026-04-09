@@ -6,7 +6,7 @@
   deepseek      — DeepSeek API
   vllm          — vLLM (self-hosted)
   lmstudio      — LM Studio
-  github_models — GitHub Models (https://models.inference.ai.azure.com)
+  github_models — GitHub Models (https://models.github.ai/inference)
   noobkeys      — noobkeys.onrender.com OpenAI-совместимый прокси
 """
 import logging
