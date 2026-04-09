@@ -27,14 +27,14 @@ from config import (
 
 logger = logging.getLogger("llm")
 
-_GITHUB_MODELS_BASE_URL = "https://models.inference.ai.azure.com"
+_GITHUB_MODELS_BASE_URL = "https://models.github.ai/inference"
 _NOOBKEYS_BASE_URL = "https://noobkeys.onrender.com/v1"
 
 _GITHUB_MODELS_PRIORITY: list[str] = [
-    "gpt-4o-mini",
-    "Meta-Llama-3.1-405B-Instruct",
-    "gpt-4o",
-    "Meta-Llama-3.1-8B-Instruct",
+    "openai/gpt-4.1",
+    "openai/gpt-4.1-mini",
+    "openai/gpt-4o",
+    "openai/gpt-4o-mini",
 ]
 
 # RC-03 fix: единый RLock для всех 4 кешей — защищает от concurrent read-modify-write

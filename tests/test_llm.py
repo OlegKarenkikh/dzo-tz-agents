@@ -65,7 +65,7 @@ class TestGithubModelsApiKeyPriority:
             "GH_TOKEN": None,
         })
         assert kwargs.get("api_key") == "ghp_explicit_pat"
-        assert kwargs.get("base_url") == "https://models.inference.ai.azure.com"
+        assert kwargs.get("base_url") == "https://models.github.ai/inference"
 
     def test_github_token_used_as_fallback(self, monkeypatch):
         """Если OPENAI_API_KEY не задан — используется GITHUB_TOKEN."""
@@ -76,7 +76,7 @@ class TestGithubModelsApiKeyPriority:
             "GH_TOKEN": None,
         })
         assert kwargs.get("api_key") == "ghs_session_token"
-        assert kwargs.get("base_url") == "https://models.inference.ai.azure.com"
+        assert kwargs.get("base_url") == "https://models.github.ai/inference"
 
     def test_gh_token_used_as_fallback(self, monkeypatch):
         """Если OPENAI_API_KEY и GITHUB_TOKEN не заданы — используется GH_TOKEN."""
@@ -112,7 +112,7 @@ class TestGithubModelsApiKeyPriority:
                 llm_module.build_llm()
 
     def test_endpoint_always_github_models(self, monkeypatch):
-        """При github_models endpoint всегда https://models.inference.ai.azure.com,
+        """При github_models endpoint всегда https://models.github.ai/inference,
         даже если задан OPENAI_API_BASE."""
         kwargs = self._build_with_env(monkeypatch, {
             "LLM_BACKEND": "github_models",
@@ -121,7 +121,7 @@ class TestGithubModelsApiKeyPriority:
             "GITHUB_TOKEN": None,
             "GH_TOKEN": None,
         })
-        assert kwargs.get("base_url") == "https://models.inference.ai.azure.com"
+        assert kwargs.get("base_url") == "https://models.github.ai/inference"
 
     def test_openai_backend_uses_openai_api_key(self, monkeypatch):
         """Обычный openai-бэкенд использует OPENAI_API_KEY."""
