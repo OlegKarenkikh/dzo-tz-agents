@@ -76,7 +76,16 @@ from shared.database import (  # noqa: E402
     init_db,
     update_job,
 )
-from shared.mcp_server import mcp  # noqa: E402
+try:
+    from shared.mcp_server import mcp as _mcp_server  # noqa: E402
+    _MCP_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    _mcp_server = None  # type: ignore[assignment]
+    _MCP_AVAILABLE = False
+    logging.getLogger("api").warning(
+        "Пакет 'mcp' не установлен — эндпоинт /mcp недоступен. "
+        "Установите: pip install 'mcp[cli]>=1.3.0'"
+    )
 
 if not logging.getLogger().handlers:
     logging.basicConfig(
@@ -130,7 +139,8 @@ app.add_middleware(
     allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["X-API-Key", "Content-Type", "Accept"],
 )
-app.mount("/mcp", mcp.streamable_http_app())
+if _MCP_AVAILABLE:
+    app.mount("/mcp", _mcp_server.streamable_http_app())  # type: ignore[union-attr]
 
 _start_time = datetime.now(UTC)
 _run_log: deque[dict] = deque(maxlen=500)
@@ -1000,6 +1010,24 @@ def _check_and_process(agent_type: str, request: ProcessRequest, background_task
 
 
 @app.middleware("http")
+async def _mcp_auth_guard(request: Request, call_next):
+    """Защита /mcp endpoint API-ключом (если API_KEY задан).
+
+    A2A Agent Card (/.well-known/agent.json) остаётся публичной по стандарту A2A.
+    """
+    if request.url.path.startswith("/mcp"):
+        api_key = _get_api_key()
+        if api_key:
+            provided = (
+                request.headers.get("X-API-Key")
+                or request.headers.get("Authorization", "").removeprefix("Bearer ")
+            )
+            if provided != api_key:
+                return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+    return await call_next(request)
+
+
+@app.middleware("http")
 async def _log_and_measure(request: Request, call_next):
     start = time.time()
     response = await call_next(request)
@@ -1130,7 +1158,7 @@ def resolve_agent(body: ProcessRequest, request: Request, _: str = Depends(_requ
 
 @app.get("/api/v1/jobs", summary="Список заданий")
 @limiter.limit(DEFAULT_RATE_LIMIT)
-def list_jobs_endpoint(request: Request, agent: str | None = Query(default=None), status: str | None = Query(default=None), page: int = Query(default=1, ge=1), per_page: int = Query(default=100, ge=1, le=500), _: str = Depends(_require_api_key)):
+def list_jobs(request: Request, agent: str | None = Query(default=None), status: str | None = Query(default=None), page: int = Query(default=1, ge=1), per_page: int = Query(default=100, ge=1, le=500), _: str = Depends(_require_api_key)):
     offset = (page - 1) * per_page
     items = db_get_history(agent=agent, status=status, limit=per_page + 1, offset=offset)
     has_next = len(items) > per_page

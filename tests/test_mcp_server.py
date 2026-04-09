@@ -62,6 +62,17 @@ class TestInvokeAgent:
             _invoke_agent("dzo", "текст", model_name="gpt-4o")
         mock_create.assert_called_once_with(model_name="gpt-4o")
 
+    def test_invoke_agent_exception_returns_error_dict(self, mock_agent_runner):
+        """При ошибке агента _invoke_agent возвращает dict с полем error."""
+        mock_agent_runner.invoke.side_effect = RuntimeError("LLM unavailable")
+        with patch("agent1_dzo_inspector.agent.create_dzo_agent", return_value=mock_agent_runner):
+            from shared.mcp_server import _invoke_agent
+            result = _invoke_agent("dzo", "текст")
+        assert result["output"] == ""
+        assert result["steps"] == 0
+        assert "error" in result
+        assert "LLM unavailable" in result["error"]
+
     def test_invoke_returns_steps_count(self, mock_agent_runner):
         mock_agent_runner.invoke.return_value = {
             "output": "result",
@@ -198,6 +209,19 @@ class TestA2AAgentCard:
         resp = client.get("/mcp")
         # FastMCP может вернуть 200 / 405 / 406, но не 404
         assert resp.status_code != 404
+
+    def test_mcp_endpoint_requires_api_key_when_set(self, client):
+        """Проверяем что /mcp возвращает 401 при заданном API_KEY без ключа."""
+        with patch("api.app._get_api_key", return_value="secret-key"):
+            resp = client.get("/mcp")
+        assert resp.status_code == 401
+
+    def test_mcp_endpoint_accepts_valid_api_key(self, client):
+        """Проверяем что /mcp принимает валидный ключ в X-API-Key."""
+        with patch("api.app._get_api_key", return_value="secret-key"):
+            resp = client.get("/mcp", headers={"X-API-Key": "secret-key"})
+        # FastMCP возвращает 200/405/406, но не 401
+        assert resp.status_code != 401
 
 
 # ---------------------------------------------------------------------------

@@ -57,12 +57,16 @@ def _invoke_agent(agent_type: str, chat_input: str, model_name: str | None = Non
         raise ValueError(f"Неизвестный тип агента: {agent_type!r}")
 
     logger.info("[MCP] invoke agent=%s input_len=%d", agent_type, len(chat_input))
-    result = agent.invoke({"input": chat_input})
-    return {
-        "output": result.get("output", ""),
-        "agent": agent_type,
-        "steps": len(result.get("intermediate_steps", [])),
-    }
+    try:
+        result = agent.invoke({"input": chat_input})
+        return {
+            "output": result.get("output", ""),
+            "agent": agent_type,
+            "steps": len(result.get("intermediate_steps", [])),
+        }
+    except Exception as exc:
+        logger.error("[MCP] agent=%s error: %s", agent_type, exc)
+        return {"output": "", "agent": agent_type, "steps": 0, "error": str(exc)}
 
 
 @mcp.tool()
