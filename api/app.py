@@ -497,7 +497,10 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                 raise ValueError("Неизвестный агент: " + agent_type)
             from shared.llm import LOCAL_BACKENDS, build_fallback_chain, effective_openai_key, estimate_tokens, probe_local_max_context, probe_max_input_tokens, resolve_local_base_url
             fallback_chain = build_fallback_chain(MODEL_NAME)
-            _api_key = effective_openai_key() or GITHUB_TOKEN or "not-needed"
+            if LLM_BACKEND == "github_models":
+                _api_key = GITHUB_TOKEN or effective_openai_key() or "not-needed"
+            else:
+                _api_key = effective_openai_key() or GITHUB_TOKEN or "not-needed"
 
             # Для tool-агентов на GitHub Models приоритетно используем модели,
             # которые стабильно поддерживают tool-calling.
