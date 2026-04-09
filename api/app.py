@@ -726,6 +726,12 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                             and getattr(exc, "status_code", 0) == 400
                             and "model_not_found" in _exc_str.lower()
                         )
+                        # 502/503 — upstream провайдер недоступен или не прошла аутентификация
+                        # на уровне proxy; немедленно переключаемся, ретрай бесполезен.
+                        is_upstream_error = (
+                            isinstance(exc, APIStatusError)
+                            and getattr(exc, "status_code", 0) in (502, 503)
+                        )
 
                         if is_auth_error:
                             logger.error("[%s] Ошибка аутентификации на модели %s: %s", job_id, model_name, exc)
@@ -741,6 +747,20 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                             _log_event(
                                 "model_not_found",
                                 "Модель недоступна на текущем endpoint'е",
+                                model=model_name,
+                                error=str(exc),
+                            )
+                            last_exc = exc
+                            break  # немедленно перейти к следующей модели в fallback_chain
+                        if is_upstream_error:
+                            _status = getattr(exc, "status_code", 502)
+                            logger.warning(
+                                "[%s] Upstream error %d на модели %s — переключаем",
+                                job_id, _status, model_name,
+                            )
+                            _log_event(
+                                "model_upstream_error",
+                                "Ошибка upstream провайдера — переключаем на следующую модель",
                                 model=model_name,
                                 error=str(exc),
                             )
@@ -817,6 +837,8 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                     or "tokens_limit_reached" in _exc_str_sw
                     or "429" in _exc_str_sw
                     or "413" in _exc_str_sw
+                    or "502" in _exc_str_sw
+                    or "503" in _exc_str_sw
                     or "model_not_found" in _exc_str_sw.lower()
                     or "NoToolCalls" in _exc_str_sw
                 )
