@@ -43,8 +43,22 @@ api-ui: ## Запустить API + UI одновременно
 
 stop-local: ## Остановить локально запущенные API и UI (по порту)
 	@echo "Останавливаем процессы на портах 8000 и 8501..."
-	@fuser -k 8000/tcp 2>/dev/null && echo "  API (8000) остановлен" || echo "  API (8000) не запущен"
-	@fuser -k 8501/tcp 2>/dev/null && echo "  UI  (8501) остановлен" || echo "  UI  (8501) не запущен"
+	@if command -v fuser >/dev/null 2>&1; then \
+		fuser -k 8000/tcp 2>/dev/null && echo "  API (8000) остановлен" || echo "  API (8000) не запущен"; \
+	elif command -v lsof >/dev/null 2>&1; then \
+		pid=$$(lsof -ti tcp:8000 2>/dev/null); \
+		if [ -n "$$pid" ]; then kill $$pid 2>/dev/null && echo "  API (8000) остановлен" || echo "  API (8000) не запущен"; else echo "  API (8000) не запущен"; fi; \
+	else \
+		echo "  API (8000): требуется fuser (psmisc) или lsof"; \
+	fi
+	@if command -v fuser >/dev/null 2>&1; then \
+		fuser -k 8501/tcp 2>/dev/null && echo "  UI  (8501) остановлен" || echo "  UI  (8501) не запущен"; \
+	elif command -v lsof >/dev/null 2>&1; then \
+		pid=$$(lsof -ti tcp:8501 2>/dev/null); \
+		if [ -n "$$pid" ]; then kill $$pid 2>/dev/null && echo "  UI  (8501) остановлен" || echo "  UI  (8501) не запущен"; else echo "  UI  (8501) не запущен"; fi; \
+	else \
+		echo "  UI  (8501): требуется fuser (psmisc) или lsof"; \
+	fi
 
 restart-local: stop-local ## Перезапустить API + UI локально (kill по порту → запуск)
 	@sleep 1

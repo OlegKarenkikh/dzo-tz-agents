@@ -1099,7 +1099,7 @@ async def _mcp_auth_guard(request: Request, call_next):
                 scheme, _, credentials = auth_header.partition(" ")
                 if scheme.lower() == "bearer":
                     provided = credentials.strip()
-            if provided != api_key:
+            if not secrets.compare_digest(provided, api_key):
                 return JSONResponse({"detail": "Unauthorized"}, status_code=401)
     return await call_next(request)
 
@@ -1143,18 +1143,44 @@ def list_agents():
     }
 
 
+def _agent_card_base_url(request: Request) -> str:
+    """Возвращает базовый URL для A2A Agent Card.
+
+    Приоритет:
+    1. PUBLIC_BASE_URL (явная конфигурация — рекомендуется для прод-окружений).
+    2. Starlette-рассчитанный request.base_url с опциональной подстановкой
+       X-Forwarded-Proto (только http/https).  Host при этом берётся из самого
+       запроса (Starlette не доверяет Host-заголовку без ProxyHeadersMiddleware),
+       поэтому если нужна проверка допустимых доменов — задайте AGENT_CARD_ALLOWED_HOSTS.
+
+    AGENT_CARD_ALLOWED_HOSTS: через запятую список допустимых hostname.
+    Если задан и hostname запроса не входит в него — возвращается 400.
+    """
+    if PUBLIC_BASE_URL:
+        return PUBLIC_BASE_URL.rstrip("/")
+
+    allowed_hosts_raw = os.getenv("AGENT_CARD_ALLOWED_HOSTS", "").strip()
+    if allowed_hosts_raw:
+        allowed = {h.strip().lower() for h in allowed_hosts_raw.split(",") if h.strip()}
+        hostname = (request.url.hostname or "").lower()
+        if hostname not in allowed:
+            raise HTTPException(
+                status_code=400,
+                detail="Untrusted host for Agent Card. Set PUBLIC_BASE_URL or AGENT_CARD_ALLOWED_HOSTS.",
+            )
+
+    base = str(request.base_url).rstrip("/")
+    proto = request.headers.get("X-Forwarded-Proto", "").strip().lower()
+    if proto in ("http", "https"):
+        scheme, sep, rest = base.partition("://")
+        if sep and scheme.lower() != proto:
+            base = f"{proto}://{rest}"
+    return base
+
+
 @app.get("/.well-known/agent.json", summary="A2A Agent Card")
 def agent_card(request: Request):
-    # Приоритет: явный PUBLIC_BASE_URL (снимает зависимость от Host-заголовка).
-    # Если не задан — используем base_url, рассчитанный Starlette/uvicorn,
-    # с подстановкой X-Forwarded-Proto от доверенного reverse-proxy.
-    if PUBLIC_BASE_URL:
-        base_url = PUBLIC_BASE_URL.rstrip("/")
-    else:
-        proto = request.headers.get("X-Forwarded-Proto", request.url.scheme)
-        if proto not in ("http", "https"):
-            proto = request.url.scheme
-        base_url = f"{proto}://{request.url.netloc}"
+    base_url = _agent_card_base_url(request)
     return {
         "name": "DZO/TZ Inspector",
         "description": "Инспектор заявок ДЗО, технических заданий и тендерной документации",
