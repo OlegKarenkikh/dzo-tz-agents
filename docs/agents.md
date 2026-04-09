@@ -66,6 +66,28 @@
 | `generate_escalation` | Уведомление об эскалации | `subject`, `reason`, `details` | HTML для менеджера |
 | `generate_response_email` | Итоговое письмо отправителю | `decision`, `subject`, `agent_summary` | HTML-письмо |
 | `generate_corrected_application` | Проект исправленной заявки | Поля с изменениями | HTML-документ |
+| `analyze_tz_with_agent` | Делегирует анализ ТЗ агенту ТЗ и возвращает сводку | `tz_text`, `email_subject`, `source_sender` | JSON с `tzAgentAnalysis` |
+| `invoke_peer_agent` | Универсальный вызов любого другого агента | `target_agent`, `query_text`, контекст | JSON с `peerAgentResult` |
+
+### Межагентные вызовы (agent-as-tool)
+
+В проекте поддерживается универсальный bridge `shared/agent_tooling.py`, который позволяет
+одному агенту вызывать другого как tool c контролем маршрутов.
+
+- Реестр фабрик агентов настраивается через `AGENT_TOOL_REGISTRY` (JSON).
+- Разрешённые маршруты настраиваются через `AGENT_TOOL_PERMISSIONS` (JSON).
+- Глобальный флаг включения: `AGENT_TOOL_ENABLED=true/false`.
+- По умолчанию действует политика `all_except_self`: агент может вызывать любой другой агент из реестра.
+- Новые агенты, созданные по naming-convention `agentN_<id>_inspector` + `create_<id>_agent`,
+  автоматически обнаруживаются и становятся доступны для межагентных вызовов.
+
+Пример:
+
+```bash
+AGENT_TOOL_ENABLED=true
+AGENT_TOOL_REGISTRY={"dzo":"agent1_dzo_inspector.agent:create_dzo_agent","tz":"agent2_tz_inspector.agent:create_tz_agent"}
+AGENT_TOOL_PERMISSIONS={"*":["*"]}
+```
 
 ### Пример входных данных
 
@@ -144,6 +166,7 @@
 | `generate_json_report` | Структурированный JSON-отчёт по разделам | `overall_status`, `sections`, `critical_issues` | JSON со статистикой |
 | `generate_corrected_tz` | HTML-документ с исправленным ТЗ | `title`, `original_sections`, `modifications` | HTML с выделением изменений |
 | `generate_email_to_dzo` | Письмо ДЗО с результатом проверки | `decision`, `issues`, `recommendations` | HTML-письмо |
+| `invoke_peer_agent` | Универсальный вызов любого другого агента | `target_agent`, `query_text`, контекст | JSON с `peerAgentResult` |
 
 ### Пример входных данных
 
@@ -204,6 +227,13 @@
 | `output` | Текстовый результат агента |
 | `decision` | `documents_found` или `tool_error` |
 | `trace_json` (при наличии) | Трассировка шагов и источников |
+
+### Инструменты (LangChain tools)
+
+| Инструмент | Описание | Вход | Выход |
+|---|---|---|---|
+| `generate_document_list` | Извлекает структурированный перечень требуемых документов | `query` (JSON-строка) | JSON-список документов |
+| `invoke_peer_agent` | Универсальный вызов любого другого агента | `query` (JSON-строка с `target_agent`, `query_text`) | JSON с `peerAgentResult` |
 
 ### Основные риски и контроль качества
 

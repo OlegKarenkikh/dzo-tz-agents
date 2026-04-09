@@ -6,6 +6,26 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 
+class TestEstimateTokens:
+    def test_ascii_estimate(self):
+        import shared.llm as llm_module
+
+        assert llm_module.estimate_tokens("x" * 40) == 10
+
+    def test_cyrillic_is_more_conservative(self):
+        import shared.llm as llm_module
+
+        ascii_est = llm_module.estimate_tokens("x" * 20)
+        cyr_est = llm_module.estimate_tokens("т" * 20)
+        assert cyr_est > ascii_est
+        assert cyr_est == 10
+
+    def test_empty_text_minimum_one(self):
+        import shared.llm as llm_module
+
+        assert llm_module.estimate_tokens("") == 1
+
+
 class TestGithubModelsApiKeyPriority:
     """Проверяет приоритет API-ключей для LLM_BACKEND=github_models."""
 
@@ -343,6 +363,33 @@ class TestBuildLlmLocalBackend:
             "FALLBACK_MODELS": "",
         })
         assert kwargs.get("max_retries") == 2
+
+class TestProbeMaxInputTokens:
+    def test_extracts_limit_from_context_length_phrase(self):
+        import shared.llm as llm_module
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 413
+        mock_resp.text = "This model's maximum context length is 8192 tokens"
+
+        with patch.object(llm_module.httpx, "post", return_value=mock_resp):
+            with patch.object(llm_module, "_MAX_INPUT_TOKENS_CACHE", {}):
+                limit = llm_module.probe_max_input_tokens("k", "gpt-4o")
+
+        assert limit == 8192
+
+    def test_falls_back_to_conservative_default_when_unparsable(self):
+        import shared.llm as llm_module
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 413
+        mock_resp.text = "payload too large"
+
+        with patch.object(llm_module.httpx, "post", return_value=mock_resp):
+            with patch.object(llm_module, "_MAX_INPUT_TOKENS_CACHE", {}):
+                limit = llm_module.probe_max_input_tokens("k", "unknown-model")
+
+        assert limit == 8192
 
 
 class TestGithubTokenInConfig:

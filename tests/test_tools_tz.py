@@ -1,4 +1,5 @@
 import json
+from unittest.mock import patch
 
 import pytest
 from pydantic import ValidationError
@@ -7,6 +8,7 @@ from agent2_tz_inspector.tools import (
     generate_corrected_tz,
     generate_email_to_dzo,
     generate_json_report,
+    invoke_peer_agent,
 )
 
 
@@ -114,3 +116,33 @@ class TestGenerateEmailToDzo:
         assert "<script>" not in html
         assert "&lt;script&gt;" in html
         assert '<img onerror' not in html
+
+
+class TestInvokePeerAgent:
+    @patch("agent2_tz_inspector.tools.invoke_agent_as_tool")
+    def test_success(self, mock_invoke):
+        mock_invoke.return_value = {
+            "output": "ok",
+            "observations": [{"decision": "Заявка полная"}],
+            "intermediate_steps": [],
+        }
+        result = json.loads(invoke_peer_agent.invoke({
+            "target_agent": "dzo",
+            "query_text": "Проверь заявку",
+            "subject": "Тема",
+            "sender": "a@b.com",
+        }))
+        assert result["peerAgentResult"]["target_agent"] == "dzo"
+        assert result["peerAgentResult"]["output"] == "ok"
+
+    @patch("agent2_tz_inspector.tools.invoke_agent_as_tool", side_effect=RuntimeError("boom"))
+    def test_error_payload(self, _mock_invoke):
+        result = json.loads(invoke_peer_agent.invoke({
+            "target_agent": "dzo",
+            "query_text": "Проверь заявку",
+        }))
+        assert "error" in result["peerAgentResult"]
+
+    def test_validation_error_on_missing_fields(self):
+        with pytest.raises(ValidationError):
+            invoke_peer_agent.invoke({"target_agent": "dzo"})

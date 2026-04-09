@@ -74,6 +74,7 @@ pip install -e ".[ui,dev]"    # редактируемый режим
 make api                      # FastAPI  → http://localhost:8000/docs
 make ui                       # Streamlit → http://localhost:8501
 make dzo-only                 # Только агент ДЗО
+make tender-only              # Только агент Тендер
 ```
 
 ### GitHub Codespaces
@@ -134,9 +135,16 @@ make monitoring    # Prometheus + Grafana + Alertmanager
 | `TELEGRAM_CHAT_ID` | ➞ | Chat ID Telegram |
 | `CORS_ORIGINS` | ➞ | Допустимые origins (default: `localhost:8501`) |
 | `ENABLE_DOCS` | ➞ | `false` — скрыть Swagger в продакшене |
-| `AGENT_MODE` | ➞ | `dzo` \| `tz` \| `both` (default) |
+| `AGENT_MODE` | ➞ | `dzo` \| `tz` \| `tender` \| `both` (default) |
 | `POLL_INTERVAL_SEC` | ➞ | Интервал IMAP-опроса (default: 300) |
 | `FORCE_REPROCESS` | ➞ | `true` — глобальный обход дедупликации для IMAP-демонов |
+| `AGENT_TOOL_ENABLED` | ➞ | `true/false` — разрешить межагентные tool-вызовы |
+| `AGENT_TOOL_REGISTRY` | ➞ | JSON-реестр фабрик агентов: `{"dzo":"...:create_dzo_agent"}` |
+| `AGENT_TOOL_PERMISSIONS` | ➞ | JSON-matrix маршрутов: `{"dzo":["tz"],"tz":["dzo"]}` |
+
+По умолчанию межагентные вызовы работают по политике `all_except_self`: каждый агент может
+вызвать любой другой агент из реестра. `AGENT_TOOL_PERMISSIONS` используйте только если нужно
+ограничить маршруты.
 
 ## API эндпоинты
 
@@ -229,8 +237,8 @@ git push origin v1.1.0
 | `emailReadImap` | `imaplib.IMAP4_SSL` |
 | `extractFromFile (pdf)` | `pdfplumber` |
 | HTTP OCR → GPT-4o Vision | `openai.chat.completions.create` |
-| `@n8n/langchain.agent` | `create_openai_tools_agent` + `AgentExecutor` |
-| `memoryBufferWindow` | `ConversationBufferWindowMemory(k=20)` |
+| `@n8n/langchain.agent` | `langgraph.prebuilt.create_react_agent` |
+| `memoryBufferWindow` | Управление контекстом через лимиты токенов/поблочный анализ в `api/app.py` |
 | `toolCode` | `@tool`-декоратор LangChain |
 | `emailSend` | `smtplib.SMTP` |
 | `switch` / `if` | Python `if/elif` |

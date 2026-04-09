@@ -1,15 +1,18 @@
 import json
+from unittest.mock import patch
 
 import pytest
 from pydantic import ValidationError
 
 from agent1_dzo_inspector.tools import (
+    analyze_tz_with_agent,
     generate_corrected_application,
     generate_escalation,
     generate_info_request,
     generate_response_email,
     generate_tezis_form,
     generate_validation_report,
+    invoke_peer_agent,
 )
 
 
@@ -179,3 +182,91 @@ class TestGenerateCorrectedApplication:
         assert "<b>old</b>" not in html
         assert "<img src=x>" not in html
         assert "&amp;evil&lt;tag&gt;" in html
+
+
+class TestAnalyzeTzWithAgent:
+    @patch("agent1_dzo_inspector.tools.invoke_agent_as_tool")
+    def test_delegates_and_returns_summary(self, mock_invoke):
+        mock_invoke.return_value = {
+            "output": "done",
+            "observations": [
+                {
+                    "overall_status": "Требует доработки",
+                    "critical_issues": ["Нет срока поставки"],
+                    "recommendations": ["Добавить срок поставки"],
+                },
+                {"emailHtml": "<p>result</p>"},
+            ],
+            "intermediate_steps": [],
+        }
+
+        result = json.loads(analyze_tz_with_agent.invoke({
+            "tz_text": "Текст ТЗ",
+            "email_subject": "Заявка",
+            "source_sender": "dzo@test.ru",
+        }))
+        analysis = result["tzAgentAnalysis"]
+        assert analysis["overall_status"] == "Требует доработки"
+        assert analysis["critical_issues"] == ["Нет срока поставки"]
+        assert "Агент ТЗ" in analysis["summary"]
+        assert analysis["email_html"] == "<p>result</p>"
+
+    @patch("agent1_dzo_inspector.tools.invoke_agent_as_tool", side_effect=RuntimeError("boom"))
+    def test_returns_error_payload_on_exception(self, _mock_invoke):
+        result = json.loads(analyze_tz_with_agent.invoke({"tz_text": "Текст ТЗ"}))
+        analysis = result["tzAgentAnalysis"]
+        assert analysis["overall_status"] == "Ошибка анализа"
+        assert "Не удалось выполнить анализ ТЗ" in analysis["summary"]
+
+    @patch(
+        "agent1_dzo_inspector.tools.invoke_agent_as_tool",
+        side_effect=RuntimeError(
+            "Error code: 429 - {'error': {'code': 'RateLimitReached', "
+            "'message': 'Rate limit of 50 per 86400s exceeded for UserByModelByDay. "
+            "Please wait 78458 seconds before retrying.'}}"
+        ),
+    )
+    def test_rate_limit_returns_structured_fallback(self, _mock_invoke):
+        result = json.loads(analyze_tz_with_agent.invoke({
+            "tz_text": "Цель закупки. Требования. Количество. Срок поставки.",
+            "target_agent": "tz",
+        }))
+        analysis = result["tzAgentAnalysis"]
+        assert analysis["overall_status"] == "Ограничено квотой модели"
+        assert analysis["fallback"]["reason"] == "rate_limit"
+        assert analysis["fallback"]["retry_after_sec"] == 78458
+        assert "Эвристически распознано разделов" in analysis["summary"]
+
+    def test_validation_error_when_tz_text_missing(self):
+        with pytest.raises(ValidationError):
+            analyze_tz_with_agent.invoke({"email_subject": "Тема"})
+
+
+class TestInvokePeerAgent:
+    @patch("agent1_dzo_inspector.tools.invoke_agent_as_tool")
+    def test_success(self, mock_invoke):
+        mock_invoke.return_value = {
+            "output": "ok",
+            "observations": [{"overall_status": "Соответствует"}],
+            "intermediate_steps": [],
+        }
+        result = json.loads(invoke_peer_agent.invoke({
+            "target_agent": "tender",
+            "query_text": "Проверь список документов",
+            "subject": "Закупка",
+            "sender": "dzo@test.ru",
+        }))
+        assert result["peerAgentResult"]["target_agent"] == "tender"
+        assert result["peerAgentResult"]["output"] == "ok"
+
+    @patch("agent1_dzo_inspector.tools.invoke_agent_as_tool", side_effect=RuntimeError("boom"))
+    def test_error_payload(self, _mock_invoke):
+        result = json.loads(invoke_peer_agent.invoke({
+            "target_agent": "tz",
+            "query_text": "Проверь ТЗ",
+        }))
+        assert "error" in result["peerAgentResult"]
+
+    def test_validation_error_on_missing_fields(self):
+        with pytest.raises(ValidationError):
+            invoke_peer_agent.invoke({"target_agent": "tz"})

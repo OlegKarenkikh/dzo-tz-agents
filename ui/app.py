@@ -1,5 +1,5 @@
 """
-Streamlit Web UI для управления и тестирования агентов ДЗО/ТЗ.
+Streamlit Web UI для управления и тестирования документных агентов.
 
 Страницы:
   📊 Дашборд       — статистика и последние обработки
@@ -22,10 +22,10 @@ from dotenv import load_dotenv
 
 try:
     # Prefer the package-relative config when ui is available as a package
-    from ui.config import API_URL, AUTH_HEADERS, AUTO_REFRESH_SEC
+    from ui.config import API_URL, AUTH_HEADERS
 except ImportError:
     # Fallback for running from inside the ui/ directory as a simple script
-    from config import API_URL, AUTH_HEADERS, AUTO_REFRESH_SEC
+    from config import API_URL, AUTH_HEADERS
 
 load_dotenv()
 
@@ -34,7 +34,7 @@ load_dotenv()
 # ---------------------------------------------------------------------------
 
 st.set_page_config(
-    page_title="Агенты ДЗО/ТЗ",
+    page_title="Документные агенты",
     page_icon="🤖",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -147,6 +147,26 @@ def _status_icon(status: str) -> str:
     return icons.get(status, "❓")
 
 
+def _build_reprocess_payload(job: dict) -> tuple[dict, str | None]:
+    """Собрать payload для переобработки из сохранённого request_payload."""
+    result = job.get("result") or {}
+    request_payload = result.get("request_payload") if isinstance(result, dict) else None
+    if isinstance(request_payload, dict):
+        payload = dict(request_payload)
+        payload["force"] = True
+        return payload, None
+
+    # Fallback для старых записей, где request_payload ещё не сохранялся.
+    return {
+        "sender_email": job.get("sender", ""),
+        "subject": job.get("subject", ""),
+        "force": True,
+    }, (
+        "В этой записи нет исходного payload (старый формат). "
+        "Переобработка может быть неполной."
+    )
+
+
 def _show_artifacts(r: dict, expanded: bool = True, key_prefix: str = "") -> None:
     """Показать все артефакты из поля result."""
     _k = key_prefix or str(id(r))
@@ -212,6 +232,53 @@ def _show_artifacts(r: dict, expanded: bool = True, key_prefix: str = "") -> Non
         with st.expander("📊 Отчёт валидации ДЗО", expanded=False):
             st.json(r["validation_report"])
 
+    # ── Делегированный анализ ТЗ ───────────────────────────────────────
+    if r.get("tz_agent_analysis"):
+        with st.expander("🔁 Делегированный анализ ТЗ", expanded=False):
+            st.json(r["tz_agent_analysis"])
+
+    # ── Межагентные вызовы ─────────────────────────────────────────────
+    if r.get("peer_agent_results"):
+        with st.expander("🧩 Результаты межагентных вызовов", expanded=False):
+            st.json(r["peer_agent_results"])
+
+    # ── Журнал обработки ───────────────────────────────────────────────
+    if r.get("processing_log"):
+        with st.expander("🧾 Журнал обработки", expanded=expanded):
+            processing_log = r["processing_log"]
+            events = processing_log.get("events", []) if isinstance(processing_log, dict) else []
+            if events:
+                rows = []
+                for ev in events:
+                    rows.append({
+                        "Время": str(ev.get("ts", ""))[:19].replace("T", " "),
+                        "Этап": ev.get("stage", ""),
+                        "Сообщение": ev.get("message", ""),
+                    })
+                st.dataframe(rows, hide_index=True)
+            st.json(processing_log)
+
+    # ── Тендер: список документов ──────────────────────────────────────
+    if r.get("document_list"):
+        with st.expander("📑 Перечень документов участника", expanded=expanded):
+            doc_list = r["document_list"]
+            st.write(f"**Предмет закупки:** {doc_list.get('procurement_subject', '—')}")
+            summary = doc_list.get("summary") or {}
+            if summary:
+                st.write(
+                    f"**Итого:** {summary.get('total', 0)} | "
+                    f"обязательных: {summary.get('mandatory', 0)} | "
+                    f"условных: {summary.get('conditional', 0)}"
+                )
+            documents = doc_list.get("documents") or []
+            if documents:
+                st.dataframe(documents, hide_index=True)
+            st.json(doc_list)
+
+    if r.get("document_list_error"):
+        with st.expander("⚠️ Ошибка извлечения списка документов", expanded=False):
+            st.json(r["document_list_error"])
+
     # ── Сырой output агента ────────────────────────────────────────────
     if r.get("output"):
         with st.expander("💬 Ответ агента (текст)", expanded=False):
@@ -223,7 +290,7 @@ def _show_artifacts(r: dict, expanded: bool = True, key_prefix: str = "") -> Non
 # ---------------------------------------------------------------------------
 
 with st.sidebar:
-    st.title("🤖 Агенты ДЗО/ТЗ")
+    st.title("🤖 Агенты документов")
     st.caption(f"API: `{API_URL}`")
     st.divider()
     page = st.radio(
@@ -313,20 +380,38 @@ if page == "📊 Дашборд":
                 key=f"run_dashboard_{aid}",
                 width='stretch',
             ):
-                result = _api_post(f"/api/v1/process/{aid}", {"text": "(ручной запуск)", "subject": "Тестовый запуск"})
+                demo_text = (
+                    "ТЕНДЕРНАЯ ДОКУМЕНТАЦИЯ: тестовый запуск интерфейса. "
+                    "Перечень документов: выписка ЕГРЮЛ, лицензия, банковская гарантия."
+                    if aid == "tender"
+                    else "Тестовый запуск интерфейса"
+                )
+                result = _api_post(
+                    f"/api/v1/process/{aid}",
+                    {"text": demo_text, "subject": "Тестовый запуск"},
+                )
                 if result and "job" in result:
                     st.success(f"Задание создано: `{result['job']['job_id']}`")
     with run_columns[-1]:
         if st.button("▶️ Запустить все", key="run_dashboard_all", width='stretch'):
             for agent in dashboard_agents:
                 aid = str(agent.get("id", "")).strip()
-                result = _api_post(f"/api/v1/process/{aid}", {"text": "(ручной запуск)", "subject": "Тестовый запуск"})
+                demo_text = (
+                    "ТЕНДЕРНАЯ ДОКУМЕНТАЦИЯ: тестовый запуск интерфейса. "
+                    "Перечень документов: выписка ЕГРЮЛ, лицензия, банковская гарантия."
+                    if aid == "tender"
+                    else "Тестовый запуск интерфейса"
+                )
+                result = _api_post(
+                    f"/api/v1/process/{aid}",
+                    {"text": demo_text, "subject": "Тестовый запуск"},
+                )
                 if result and "job" in result:
                     st.success(f"Задание создано: `{result['job']['job_id']}`")
 
     if st.button("🔄 Обновить", key="refresh_dashboard"):
         st.rerun()
-    st.caption(f"Страница обновляется каждые {AUTO_REFRESH_SEC} сек. при нажатии кнопки.")
+    st.caption("Данные обновляются вручную кнопкой «Обновить».")
 
 # ---------------------------------------------------------------------------
 # 🧪 ТЕСТИРОВАНИЕ АГЕНТОВ
@@ -375,14 +460,34 @@ elif page == "🧪 Тестирование":
 
     def _poll_job(job_id: str):
         bar = st.progress(0, text="Ожидаем результат...")
+        live_log = st.empty()
         for i in range(60):
             time.sleep(2)
             res = _api_get(f"/api/v1/jobs/{job_id}")
+            if res and isinstance(res, dict):
+                result_obj = res.get("result") if isinstance(res.get("result"), dict) else {}
+                processing_log = result_obj.get("processing_log") if isinstance(result_obj, dict) else None
+                events = processing_log.get("events", []) if isinstance(processing_log, dict) else []
+                if events:
+                    tail = events[-8:]
+                    tail_rows = [
+                        {
+                            "Время": str(ev.get("ts", ""))[:19].replace("T", " "),
+                            "Этап": ev.get("stage", ""),
+                            "Сообщение": ev.get("message", ""),
+                        }
+                        for ev in tail
+                    ]
+                    with live_log.container():
+                        st.caption("🧾 Живой журнал обработки (последние события)")
+                        st.dataframe(tail_rows, hide_index=True, width='stretch')
             bar.progress(min(int((i + 1) / 60 * 100), 99), text=f"Обработка... {(i+1)*2} сек.")
             if res and res["status"] in ("done", "error"):
                 bar.progress(100, text="Готово")
+                live_log.empty()
                 return res
         bar.empty()
+        live_log.empty()
         return None
 
     def _show_job_result(result):
@@ -486,11 +591,12 @@ elif page == "⚙️ Настройки":
     current_api_url    = os.getenv("UI_API_URL", "http://localhost:8000")
     current_model      = os.getenv("MODEL_NAME", "gpt-4o")
     current_llm_base   = os.getenv("OPENAI_API_BASE", "")
-    current_agent_type = os.getenv("AGENT_TYPE", "openai_tools")
+    current_llm_backend = os.getenv("LLM_BACKEND", "openai")
     current_agent_mode = os.getenv("AGENT_MODE", "both")
     current_poll       = int(os.getenv("POLL_INTERVAL_SEC", "300"))
     current_manager    = os.getenv("MANAGER_EMAIL", "")
     current_force      = os.getenv("FORCE_REPROCESS", "false").lower() == "true"
+    current_agent_tool_enabled = os.getenv("AGENT_TOOL_ENABLED", "true").lower() == "true"
 
     # ── Блок 1: Текущая конфигурация (read-only) ──────────────────────────
     st.subheader("🔍 Текущая конфигурация")
@@ -511,14 +617,17 @@ elif page == "⚙️ Настройки":
         st.code(current_llm_base or "(по умолчанию: api.openai.com/v1)", language=None)
 
     with col2:
-        st.markdown("**⚙️ AGENT_TYPE** — тип фреймворка агента")
-        st.code(current_agent_type, language=None)
+        st.markdown("**🧠 LLM_BACKEND** — бэкенд модели")
+        st.code(current_llm_backend, language=None)
 
         st.markdown("**🎛️ AGENT_MODE** — режим запуска")
         st.code(current_agent_mode, language=None)
 
         st.markdown("**🔁 FORCE_REPROCESS** — обход дедупликации")
         st.code(str(current_force).lower(), language=None)
+
+        st.markdown("**🧩 AGENT_TOOL_ENABLED** — межагентные вызовы")
+        st.code(str(current_agent_tool_enabled).lower(), language=None)
 
     st.divider()
 
@@ -529,18 +638,19 @@ elif page == "⚙️ Настройки":
     # Бэкенд LLM
     llm_backend = st.selectbox(
         "🖥️ Бэкенд LLM",
-        options=["☁️ OpenAI", "🦙 Ollama (локально)", "🌊 DeepSeek", "⚡ vLLM", "🏠 LM Studio", "✏️ Произвольный"],
+        options=["☁️ OpenAI", "🐙 GitHub Models", "🦙 Ollama (локально)", "🌊 DeepSeek", "⚡ vLLM", "🏠 LM Studio", "✏️ Произвольный"],
         index=0,
     )
 
     # Предзаполняем значения по выбранному бэкенду
     _backend_defaults: dict[str, dict] = {
-        "☁️ OpenAI":           {"base": "",                              "type": "openai_tools", "models": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo"]},
-        "🦙 Ollama (локально)": {"base": "http://localhost:11434/v1",     "type": "react",        "models": ["llama3", "qwen2.5", "mistral", "deepseek-r1:8b", "phi4"]},
-        "🌊 DeepSeek":         {"base": "https://api.deepseek.com/v1",   "type": "openai_tools", "models": ["deepseek-chat", "deepseek-reasoner"]},
-        "⚡ vLLM":             {"base": "http://localhost:8000/v1",       "type": "openai_tools", "models": ["microsoft/phi-4", "Qwen/Qwen2.5-72B-Instruct"]},
-        "🏠 LM Studio":        {"base": "http://localhost:1234/v1",       "type": "openai_tools", "models": ["local-model"]},
-        "✏️ Произвольный":     {"base": "",                              "type": "openai_tools", "models": []},
+        "☁️ OpenAI":           {"base": "",                            "backend": "openai",        "models": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo"]},
+        "🐙 GitHub Models":    {"base": "",                            "backend": "github_models", "models": ["gpt-4o", "gpt-4o-mini", "Phi-4", "DeepSeek-V3"]},
+        "🦙 Ollama (локально)": {"base": "http://localhost:11434/v1",   "backend": "ollama",        "models": ["llama3", "qwen2.5", "mistral", "deepseek-r1:8b", "phi4"]},
+        "🌊 DeepSeek":         {"base": "https://api.deepseek.com/v1", "backend": "deepseek",      "models": ["deepseek-chat", "deepseek-reasoner"]},
+        "⚡ vLLM":             {"base": "http://localhost:8000/v1",     "backend": "vllm",          "models": ["microsoft/phi-4", "Qwen/Qwen2.5-72B-Instruct"]},
+        "🏠 LM Studio":        {"base": "http://localhost:1234/v1",     "backend": "lmstudio",      "models": ["local-model"]},
+        "✏️ Произвольный":     {"base": "",                            "backend": "openai",        "models": []},
     }
     bd = _backend_defaults[llm_backend]
 
@@ -565,29 +675,21 @@ elif page == "⚙️ Настройки":
         )
 
     with col_b:
-        # AGENT_TYPE
-        agent_type_idx = 0 if bd["type"] == "openai_tools" else 1
-        agent_type_val = st.radio(
-            "⚙️ AGENT_TYPE — тип фреймворка",
-            options=["openai_tools", "react"],
-            index=agent_type_idx,
-            horizontal=True,
-            help=(
-                "openai_tools: native function-calling (GPT-4o, DeepSeek V3+, Qwen2.5-72B+)\n"
-                "react: ReAct prompting, работает с любой LLM без function-calling"
-            ),
+        llm_backend_val = st.selectbox(
+            "🧠 LLM_BACKEND",
+            options=["openai", "github_models", "ollama", "deepseek", "vllm", "lmstudio"],
+            index=["openai", "github_models", "ollama", "deepseek", "vllm", "lmstudio"].index(bd["backend"])
+            if bd["backend"] in ["openai", "github_models", "ollama", "deepseek", "vllm", "lmstudio"] else 0,
+            help="Основной бэкенд LLM, используемый функцией build_llm()",
         )
-        st.caption(
-            "✅ `openai_tools` — быстрее, требует поддержки tool-calls моделью\n"
-            "✅ `react` — универсальный, работает с Ollama/Mistral/локальными моделями"
-        )
+        st.caption("Все агенты используют единый build_llm() и LangGraph create_react_agent.")
 
         # AGENT_MODE
         agent_mode_val = st.radio(
             "🎛️ AGENT_MODE — какие агенты запускать",
-            options=["both", "dzo", "tz"],
-            index=["both", "dzo", "tz"].index(current_agent_mode)
-            if current_agent_mode in ["both", "dzo", "tz"] else 0,
+            options=["both", "dzo", "tz", "tender"],
+            index=["both", "dzo", "tz", "tender"].index(current_agent_mode)
+            if current_agent_mode in ["both", "dzo", "tz", "tender"] else 0,
             horizontal=True,
         )
 
@@ -609,6 +711,10 @@ elif page == "⚙️ Настройки":
                 "🔁 FORCE_REPROCESS — обходить дедупликацию (отладка)",
                 value=current_force,
             )
+            agent_tool_enabled_val = st.checkbox(
+                "🧩 AGENT_TOOL_ENABLED — разрешить межагентные вызовы",
+                value=current_agent_tool_enabled,
+            )
             openai_key_placeholder = st.text_input(
                 "🔑 OPENAI_API_KEY (только для сниппета, не сохраняется)",
                 value="sk-...",
@@ -621,18 +727,19 @@ elif page == "⚙️ Настройки":
             "# ── LLM ──────────────────────────────────────────────────────────────",
             f"OPENAI_API_KEY={openai_key_placeholder}",
             f"MODEL_NAME={model_val}",
+            f"LLM_BACKEND={llm_backend_val}",
         ]
         if api_base_val:
             lines.append(f"OPENAI_API_BASE={api_base_val}")
         else:
             lines.append("OPENAI_API_BASE=")
         lines += [
-            f"AGENT_TYPE={agent_type_val}",
             "",
             "# ── Режим агентов ────────────────────────────────────────────────────",
             f"AGENT_MODE={agent_mode_val}",
             f"POLL_INTERVAL_SEC={poll_val}",
             f"FORCE_REPROCESS={'true' if force_val else 'false'}",
+            f"AGENT_TOOL_ENABLED={'true' if agent_tool_enabled_val else 'false'}",
         ]
         if manager_val:
             lines.append(f"MANAGER_EMAIL={manager_val}")
@@ -649,22 +756,32 @@ elif page == "⚙️ Настройки":
 
     # ── Блок 3: Справочник моделей ────────────────────────────────────────
     st.subheader("📋 Справочник моделей и эндпоинтов")
-    tab_openai, tab_ollama, tab_deepseek, tab_vllm = st.tabs(
-        ["☁️ OpenAI", "🦙 Ollama", "🌊 DeepSeek", "⚡ vLLM / LM Studio"]
+    tab_openai, tab_github, tab_ollama, tab_deepseek, tab_vllm = st.tabs(
+        ["☁️ OpenAI", "🐙 GitHub Models", "🦙 Ollama", "🌊 DeepSeek", "⚡ vLLM / LM Studio"]
     )
 
     with tab_openai:
         st.markdown("**OPENAI_API_BASE** — оставить пустым")
-        st.markdown("**AGENT_TYPE** = `openai_tools`")
+        st.markdown("**LLM_BACKEND** = `openai`")
         st.table([
             {"MODEL_NAME": "gpt-4o",      "Описание": "Флагман, лучшее качество"},
             {"MODEL_NAME": "gpt-4o-mini", "Описание": "Быстрый и экономичный"},
             {"MODEL_NAME": "gpt-4-turbo", "Описание": "Предыдущее поколение"},
         ])
 
+    with tab_github:
+        st.markdown("**OPENAI_API_BASE** — не требуется, endpoint встроен в backend")
+        st.markdown("**LLM_BACKEND** = `github_models`")
+        st.table([
+            {"MODEL_NAME": "gpt-4o",      "Описание": "Лучшее качество через GitHub Models"},
+            {"MODEL_NAME": "gpt-4o-mini", "Описание": "Быстрый и дешёвый вариант"},
+            {"MODEL_NAME": "Phi-4",       "Описание": "Компактная reasoning-модель"},
+            {"MODEL_NAME": "DeepSeek-V3", "Описание": "Сильная универсальная модель"},
+        ])
+
     with tab_ollama:
         st.markdown("**OPENAI_API_BASE** = `http://localhost:11434/v1`")
-        st.markdown("**AGENT_TYPE** = `react` — работает без function-calling")
+        st.markdown("**LLM_BACKEND** = `ollama`")
         st.table([
             {"MODEL_NAME": "llama3",         "Описание": "Meta Llama 3 8B/70B"},
             {"MODEL_NAME": "mistral",         "Описание": "Mistral 7B"},
@@ -676,7 +793,7 @@ elif page == "⚙️ Настройки":
 
     with tab_deepseek:
         st.markdown("**OPENAI_API_BASE** = `https://api.deepseek.com/v1`")
-        st.markdown("**AGENT_TYPE** = `openai_tools` (DeepSeek V3+ поддерживает function-calling)")
+        st.markdown("**LLM_BACKEND** = `deepseek`")
         st.table([
             {"MODEL_NAME": "deepseek-chat",     "Описание": "DeepSeek V3 (рекомендуется)"},
             {"MODEL_NAME": "deepseek-reasoner",  "Описание": "DeepSeek R1 (reasoning)"},
@@ -684,7 +801,7 @@ elif page == "⚙️ Настройки":
 
     with tab_vllm:
         st.markdown("**OPENAI_API_BASE** = `http://localhost:8000/v1` (vLLM) или `http://localhost:1234/v1` (LM Studio)")
-        st.markdown("**AGENT_TYPE** = `openai_tools` если модель поддерживает tools, иначе `react`")
+        st.markdown("**LLM_BACKEND** = `vllm` или `lmstudio`")
         st.table([
             {"MODEL_NAME": "microsoft/phi-4",            "Описание": "Phi-4 через vLLM"},
             {"MODEL_NAME": "Qwen/Qwen2.5-72B-Instruct",  "Описание": "Qwen 2.5 72B через vLLM"},
@@ -733,7 +850,9 @@ elif page == "📋 История":
 
     col_f1, col_f2, col_f3, col_f4 = st.columns(4)
     with col_f1:
-        filter_agent = st.selectbox("Агент", ["Все", "ДЗО", "ТЗ"])
+        history_agents = _get_ui_agents()
+        filter_labels = ["Все"] + [f"{str(a.get('name', a.get('id', '') or '')).strip()} ({str(a.get('id', '')).strip()})" for a in history_agents]
+        filter_agent = st.selectbox("Агент", filter_labels)
     with col_f2:
         filter_status = st.selectbox("Статус", ["Все", "done", "error", "running", "pending"])
     with col_f3:
@@ -743,7 +862,7 @@ elif page == "📋 История":
 
     params: dict = {"per_page": int(filter_per_page), "page": int(filter_page)}
     if filter_agent != "Все":
-        params["agent"] = filter_agent.lower()
+        params["agent"] = filter_agent.rsplit("(", 1)[-1].rstrip(")")
     if filter_status != "Все":
         params["status"] = filter_status
 
@@ -778,11 +897,10 @@ elif page == "📋 История":
                 for jid in st.session_state.selected_jobs:
                     j_info = _api_get(f"/api/v1/jobs/{jid}")
                     if j_info:
-                        res = _api_post(f"/api/v1/process/{j_info['agent']}", {
-                            "sender_email": j_info.get("sender", ""),
-                            "subject": j_info.get("subject", ""),
-                            "force": True,
-                        })
+                        payload, warning = _build_reprocess_payload(j_info)
+                        if warning:
+                            st.warning(warning)
+                        res = _api_post(f"/api/v1/process/{j_info['agent']}", payload)
                         if res and "job" in res:
                             new_jobs.append(res["job"]["job_id"])
                 st.success(f"Запущено {len(new_jobs)} новых заданий.")
@@ -862,11 +980,10 @@ elif page == "📋 История":
                         unsafe_allow_html=True,
                     )
                 if c2.button("🔁 Переобработать", key=f"reproc_{item['job_id']}", width='stretch'):
-                    res = _api_post(f"/api/v1/process/{item['agent']}", {
-                        "sender_email": item.get("sender", ""),
-                        "subject": item.get("subject", ""),
-                        "force": True,
-                    })
+                    payload, warning = _build_reprocess_payload(item)
+                    if warning:
+                        st.warning(warning)
+                    res = _api_post(f"/api/v1/process/{item['agent']}", payload)
                     if res and "job" in res:
                         st.success(f"Создано новое задание: `{res['job']['job_id']}`")
                         time.sleep(0.5)
@@ -881,6 +998,8 @@ elif page == "📋 История":
                 if any(r.get(k) for k in (
                     "email_html", "tezis_form_html", "corrected_html", "escalation_html",
                     "corrected_tz_html", "json_report", "validation_report", "output",
+                    "tz_agent_analysis", "peer_agent_results", "document_list", "document_list_error",
+                    "processing_log",
                 )):
                     st.divider()
                     _show_artifacts(r, expanded=False, key_prefix=item["job_id"])
@@ -908,7 +1027,7 @@ elif page == "📋 История":
 elif page == "📖 Документация":
     st.header("📖 Документация")
 
-    tab1, tab2, tab3 = st.tabs(["Агент ДЗО", "Агент ТЗ", "API"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["Агент ДЗО", "Агент ТЗ", "Агент Тендер", "Межагентные вызовы", "API"])
 
     with tab1:
         st.markdown(
@@ -949,6 +1068,10 @@ elif page == "📖 Документация":
 | ✅ Заявка полная | Все реквизиты заполнены, формируется форма Тезис |
 | ⚠️ Требуется доработка | Отсутствуют обязательные поля, отправляется запрос |
 | 🔴 Требуется эскалация | Критические противоречия, передаётся руководителю |
+
+### Межагентная логика
+- При обнаружении ТЗ агент ДЗО может делегировать анализ агенту ТЗ.
+- Дополнительно доступен универсальный tool `invoke_peer_agent` для вызова других агентов.
             """
         )
 
@@ -976,10 +1099,48 @@ elif page == "📖 Документация":
 | ✅ Соответствует | ТЗ полное и корректное |
 | ⚠️ Требует доработки | Некоторые разделы отсутствуют или неполные |
 | 🔴 Не соответствует | Критические нарушения требований |
+
+### Дополнительно
+- Агент ТЗ поддерживает универсальный вызов peer-агентов через `invoke_peer_agent`.
             """
         )
 
     with tab3:
+        st.markdown(
+            """
+## 📑 Агент Тендер — Парсер тендерной документации
+
+**Назначение:** Извлекает из закупочной документации полный перечень документов,
+которые должен предоставить участник закупки.
+
+### Выходные артефакты
+- `document_list` — структурированный список документов
+- `document_list_error` — ошибка tool-парсинга, если есть
+
+### Возможные решения
+| Решение | Описание |
+|---|---|
+| ✅ documents_found | Список документов успешно извлечён |
+| 🔴 tool_error | Инструмент не смог построить структурированный результат |
+
+### Дополнительно
+- Агент Тендер также поддерживает `invoke_peer_agent`.
+            """
+        )
+
+    with tab4:
+        st.markdown(
+            """
+## 🧩 Межагентные вызовы
+
+- В проекте работает единый bridge `shared/agent_tooling.py`.
+- По умолчанию используется политика `all_except_self`: агент может вызвать любой другой агент, кроме самого себя.
+- Новые агенты автоматически обнаруживаются по naming convention `agentN_<id>_inspector` и фабрике `create_<id>_agent`.
+- Для ограничения маршрутов используются env-переменные `AGENT_TOOL_ENABLED`, `AGENT_TOOL_REGISTRY`, `AGENT_TOOL_PERMISSIONS`.
+            """
+        )
+
+    with tab5:
         # Таблицы с символом | внутри ячеек вынесены в отдельные переменные
         # чтобы избежать W605 (invalid escape sequence) в f-строках.
         _history_params_table = (

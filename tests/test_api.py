@@ -3,12 +3,19 @@
 Используется TestClient из fastapi.testclient.
 """
 import os
+import time
 
 import pytest
 from fastapi.testclient import TestClient
 
 # API_KEY устанавлен в conftest.py (значение: "test-secret")
-from api.app import app  # noqa: E402
+from api.app import (  # noqa: E402
+    _has_tz_agent_analysis_observation,
+    _is_token_limit_error_text,
+    _is_result_usable_for_agent,
+    _looks_like_tz_content,
+    app,
+)
 from shared.database import _memory_store  # noqa: E402
 
 
@@ -252,6 +259,125 @@ class TestStatus:
         data = resp.json()
         assert "runs" in data
         assert "last_runs" in data
+
+
+class TestModelResultUsability:
+    def test_tool_agents_require_tool_steps(self):
+        ok, reason = _is_result_usable_for_agent("dzo", {"output": "ok", "intermediate_steps": []})
+        assert ok is False
+        assert reason == "NoToolCalls"
+
+    def test_tool_agents_accept_non_empty_steps(self):
+        ok, reason = _is_result_usable_for_agent("tz", {"output": "ok", "intermediate_steps": [["tool", "{}"]]})
+        assert ok is True
+        assert reason == ""
+
+    def test_any_agent_requires_tool_steps(self):
+        ok, reason = _is_result_usable_for_agent("custom", {"output": "ok", "intermediate_steps": []})
+        assert ok is False
+        assert reason == "NoToolCalls"
+
+    def test_invalid_result_type_rejected(self):
+        ok, reason = _is_result_usable_for_agent("dzo", "not-a-dict")
+        assert ok is False
+        assert reason == "InvalidResultType"
+
+
+class TestDzoTzSignalHeuristics:
+    def test_detects_tz_signal_by_attachment_name(self):
+        assert _looks_like_tz_content(
+            text="",
+            subject="",
+            attachment_names=["ТЗ на ноутбук.docx"],
+        )
+
+    def test_detects_tz_signal_by_text_and_subject(self):
+        assert _looks_like_tz_content(
+            text="Во вложении technical specification",
+            subject="Проверка TZ",
+            attachment_names=[],
+        )
+
+    def test_no_tz_signal_for_unrelated_content(self):
+        assert not _looks_like_tz_content(
+            text="Счет на оплату",
+            subject="Коммерческое предложение",
+            attachment_names=["invoice.pdf"],
+        )
+
+    def test_observation_contains_tz_agent_analysis(self):
+        result = {
+            "intermediate_steps": [
+                ("generate_validation_report", {"decision": "Требуется доработка"}),
+                ("analyze_tz_with_agent", {"tzAgentAnalysis": {"overall_status": "ОК"}}),
+            ]
+        }
+        assert _has_tz_agent_analysis_observation(result)
+
+    def test_observation_handles_json_tool_output(self):
+        result = {
+            "intermediate_steps": [
+                ("analyze_tz_with_agent", '{"tzAgentAnalysis": {"overall_status": "ОК"}}'),
+            ]
+        }
+        assert _has_tz_agent_analysis_observation(result)
+
+    def test_observation_returns_false_when_missing(self):
+        result = {"intermediate_steps": [("tool", {"emailHtml": "<p>x</p>"})]}
+        assert not _has_tz_agent_analysis_observation(result)
+
+
+class TestTokenLimitClassifier:
+    def test_detects_tokens_limit_keyword(self):
+        assert _is_token_limit_error_text("tokens_limit_reached")
+
+    def test_detects_413_phrase(self):
+        assert _is_token_limit_error_text("Error code: 413 - Request body too large")
+
+    def test_detects_max_size_hint(self):
+        assert _is_token_limit_error_text("Max size: 8000 tokens")
+
+    def test_non_token_error_returns_false(self):
+        assert not _is_token_limit_error_text("Rate limit reached 429")
+
+
+class TestRateLimitHandling:
+    def test_rate_limit_exhausted_is_saved_as_decision(self, client, monkeypatch):
+        import api.app as api_module
+
+        class _RateLimitedAgent:
+            def invoke(self, _: dict):
+                raise Exception("429 rate limit reached")
+
+        monkeypatch.setattr(api_module, "AGENT_MAX_RETRIES", 1)
+        monkeypatch.setattr(api_module, "AGENT_RATE_LIMIT_BACKOFF", 0)
+        monkeypatch.setattr(
+            "agent1_dzo_inspector.agent.create_dzo_agent",
+            lambda model_name=None: _RateLimitedAgent(),
+        )
+
+        resp = client.post(
+            "/api/v1/process/dzo",
+            json={"text": "Тест на 429", "subject": "rate-limit", "force": True},
+            headers=HEADERS,
+        )
+        assert resp.status_code == 200
+        job_id = resp.json()["job"]["job_id"]
+
+        deadline = time.time() + 3
+        job = None
+        while time.time() < deadline:
+            job_resp = client.get(f"/api/v1/jobs/{job_id}", headers=HEADERS)
+            assert job_resp.status_code == 200
+            job = job_resp.json()
+            if job["status"] in {"done", "error"}:
+                break
+            time.sleep(0.05)
+
+        assert job is not None
+        assert job["status"] == "done"
+        assert job["result"]["decision"] == "rate_limit_exhausted"
+        assert job["result"]["model_error"]["code"] == "RateLimitExhausted"
 
 
 class TestDeduplicate:

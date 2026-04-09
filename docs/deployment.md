@@ -5,7 +5,7 @@
 - Python 3.11+
 - Docker и Docker Compose (для контейнерного деплоя)
 - Доступ к IMAP/SMTP серверу
-- API-ключ OpenAI
+- Доступ к одному из LLM backend: OpenAI API key, GitHub token или локальный OpenAI-compatible endpoint
 
 ---
 
@@ -21,11 +21,14 @@ cp .env.example .env
 
 | Переменная | Обязательная | Описание | Пример |
 |------------|:---:|---------|--------|
-| `OPENAI_API_KEY` | ✅ | Ключ OpenAI API | `sk-...` |
+| `OPENAI_API_KEY` | ➞ | Ключ OpenAI API | `sk-...` |
+| `GITHUB_TOKEN` | ➞ | Токен GitHub Models | `github_pat_...` |
 | `API_KEY` | ✅ | Секретный ключ для REST API | `strong-random-secret` |
-| `AGENT_MODE` | | Режим запуска: `dzo`, `tz`, `both` | `both` |
+| `AGENT_MODE` | | Режим запуска: `dzo`, `tz`, `tender`, `both` | `both` |
 | `MODEL_NAME` | | Модель OpenAI | `gpt-4o` |
+| `LLM_BACKEND` | | Бэкенд LLM | `openai` |
 | `POLL_INTERVAL_SEC` | | Интервал опроса почты (сек) | `300` |
+| `RUN_ON_START` | | Немедленный запуск poller при старте | `true` |
 | `MANAGER_EMAIL` | ✅ | Email для эскалаций | `manager@company.ru` |
 | `DZO_IMAP_HOST` | ✅ | IMAP-сервер агента ДЗО | `mail.company.ru` |
 | `DZO_IMAP_USER` | ✅ | Логин IMAP агента ДЗО | `dzo@company.ru` |
@@ -43,6 +46,9 @@ cp .env.example .env
 | `TELEGRAM_CHAT_ID` | | ID чата Telegram | `-100123456789` |
 | `UI_API_URL` | | URL REST API для UI | `http://localhost:8000` |
 | `UI_API_KEY` | | API-ключ для UI | `strong-random-secret` |
+| `AGENT_TOOL_ENABLED` | | Разрешить межагентные вызовы | `true` |
+| `AGENT_TOOL_REGISTRY` | | JSON-реестр фабрик агентов | `{}` |
+| `AGENT_TOOL_PERMISSIONS` | | JSON-матрица маршрутов | `{"*":["*"]}` |
 
 ---
 
@@ -94,6 +100,7 @@ python main.py
 # или отдельно:
 make dzo-only   # только агент ДЗО
 make tz-only    # только агент ТЗ
+make tender-only # только агент Тендер
 ```
 
 ### 6. Запуск API и UI одновременно
@@ -121,6 +128,7 @@ docker-compose up -d
 Сервисы:
 - `agent-dzo` — агент-поллер ДЗО
 - `agent-tz` — агент-поллер ТЗ
+- `agent-tender` — агент-парсер тендерной документации
 - `api` — REST API на порту 8000
 - `ui` — Streamlit UI на порту 8501
 

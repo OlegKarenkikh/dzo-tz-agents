@@ -315,7 +315,7 @@ curl -X DELETE -H "X-API-Key: your-secret-key" \
 
 | Параметр | Тип | Описание |
 |---|---|---|
-| `agent` | str | `dzo` или `tz` |
+| `agent` | str | `dzo`, `tz` или `tender` |
 | `status` | str | `pending`, `running`, `done`, `error` |
 | `decision` | str | Фильтр по тексту решения |
 | `date_from` | str | ISO 8601, начало периода |
@@ -385,7 +385,7 @@ curl -H "X-API-Key: your-secret-key" http://localhost:8000/api/v1/stats
 |---|---|---|
 | `job_id` | `str` | UUID задания |
 | `status` | `str` | `pending`, `running`, `done`, `error` |
-| `agent` | `str` | `dzo` или `tz` |
+| `agent` | `str` | `dzo`, `tz` или `tender` |
 | `created_at` | `str` | ISO 8601 timestamp |
 | `result` | `dict или null` | Результат (после завершения) |
 | `error` | `str или null` | Описание ошибки |
@@ -397,6 +397,32 @@ curl -H "X-API-Key: your-secret-key" http://localhost:8000/api/v1/stats
 | `output` | `str` | Текстовый вывод агента |
 | `decision` | `str` | Решение (например «Заявка полная») |
 | `email_html` | `str` | HTML-письмо для отправки |
+| `response_email_html` | `str` | Опциональный общий шаблон письма (если decision-специфичное письмо уже сформировано) |
+| `request_payload` | `dict` | Исходный payload запроса (для корректной переобработки из истории) |
+| `request_payload_preview` | `dict` | Безопасный preview payload без base64-вложений (метаданные файлов) |
+| `processing_log` | `dict` | Пошаговый журнал обработки (этапы, tool-вызовы, маршрутизация, итог) |
+| `model_error` | `dict` | Техническая причина деградации модели (например `NoToolCalls`) |
+| `missing_recommended_tool` | `dict` | Мягкое предупреждение: рекомендуемый tool не вызван (например `analyze_tz_with_agent`) |
+| `tz_agent_analysis` | `dict` | Результат делегированного анализа ТЗ |
+| `peer_agent_results` | `list[dict]` | Результаты вызовов других агентов |
+| `document_list` | `dict` | Структурированный список документов по тендеру |
+| `document_list_error` | `dict` | Ошибка построения списка документов |
+
+Примечание по `decision`:
+- `tool_calls_missing` — все модели из fallback-цепочки вернули ответ без обязательных tool-вызовов (универсально для любого агента API-пайплайна).
+- `token_limit_exhausted` — все попытки обработки завершились ошибкой `413` / `tokens_limit_reached`.
+
+Примечание по `processing_log.events` (stage=`routing`):
+- `estimated_input_tokens` — оценка размера входа в токенах.
+- `tools_overhead_tokens` — заложенный budget под system/tool schema overhead.
+- `model_context_tokens` — карта лимитов контекста по моделям fallback-цепочки.
+- `chunking_threshold_tokens` — порог, после которого включается поблочный анализ.
+
+Дополнительные этапы `processing_log.events`:
+- `chunking_applied` — документ был преобразован в map-reduce резюме (поля `before_*` / `after_*`).
+- `token_limit_compaction` — после `413 TokenLimit` выполнено экстренное сжатие input и повтор на той же модели.
+- `model_token_limit_exhausted` — после всех ретраев и fallback модельный token limit остался непреодолимым.
+- `postcheck_warning` — мягкое предупреждение о пропуске рекомендуемого tool.
 
 ---
 

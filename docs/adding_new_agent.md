@@ -12,8 +12,8 @@
 | `emailReadImap` | `imaplib.IMAP4_SSL` | `runner.py` → `_poll_once()` |
 | `extractFromFile (pdf/docx/xlsx)` | `pdfplumber` / `python-docx` / `openpyxl` | `runner.py` → `_extract_text()` |
 | HTTP → GPT-4o Vision (OCR) | `openai.chat.completions.create` | `runner.py` → `_ocr_image()` |
-| `@n8n/langchain.agent` | `create_openai_tools_agent` + `AgentExecutor` | `agent.py` → `create_<name>_agent()` |
-| `memoryBufferWindow (k=20)` | `ConversationBufferWindowMemory(k=20)` | `agent.py` → `create_<name>_agent()` |
+| `@n8n/langchain.agent` | `langgraph.prebuilt.create_react_agent` | `agent.py` → `create_<name>_agent()` |
+| `memoryBufferWindow (k=20)` | обычно не требуется, агент stateless | `agent.py` |
 | `toolCode` (inline JS) | `@tool`-декоратор LangChain | `tools.py` |
 | `switch` / `if` | Python `if/elif` | `runner.py` → `_process_email()` |
 | `emailSend` | `smtplib.SMTP` | `runner.py` → `_send_reply()` |
@@ -35,7 +35,12 @@ agent3_<name>_inspector/
     runner.py         — IMAP-петля + отправка ответов
 ```
 
-> **Правило:** номер 3, 4, 5... сохраняет порядок в `docker-compose.yml` и `AGENT_MODE`.
+> **Правило:** номер 3, 4, 5... сохраняет порядок в `docker-compose.yml` и naming-convention модулей.
+>
+> **Важно для межагентных вызовов:** соблюдайте naming-convention
+> `agentN_<id>_inspector` и фабрику `create_<id>_agent` в `agent.py`.
+> Тогда агент автоматически попадёт в межагентный реестр и будет доступен
+> для `invoke_peer_agent` из других агентов.
 
 ---
 
@@ -43,18 +48,16 @@ agent3_<name>_inspector/
 
 ```python
 # agent3_<name>_inspector/agent.py
-import os
+from typing import Any
 
-from langchain.agents import AgentExecutor, create_openai_tools_agent, create_react_agent
-from langchain.memory import ConversationBufferWindowMemory
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder, PromptTemplate
-from langchain_openai import ChatOpenAI
+from langgraph.prebuilt import create_react_agent
 
 from agent3_<name>_inspector.tools import (
-    # импортируйте ваши инструменты
+    invoke_peer_agent,
     generate_validation_report,
     generate_response_email,
 )
+from shared.llm import build_llm
 
 # Системный промпт: портируйте System Message вашего n8n Chat-нода.
 # Структура разделов (SLA / Чек-листы / Инструкции) остаётся прежней —
@@ -86,65 +89,34 @@ SLA
 
 ОГРАНИЧЕНИЯ: вежливый деловой тон."""
 
-# ReAct-шаблон (для AGENT_TYPE=react, например Ollama)
-_REACT_TEMPLATE = (
-    "Assistant is a helpful AI agent.\n\n"
-    "Has access to the following tools:\n"
-    "{{tools}}\n\n"
-    "Use the following format:\n"
-    "Thought: what to do next\n"
-    "Action: tool name (one of [{{tool_names}}])\n"
-    "Action Input: input to the tool\n"
-    "Observation: result\n"
-    "Thought: I now know the final answer\n"
-    "Final Answer: the final answer\n\n"
-    "System: {system_prompt}\n\n"
-    "Question: {{input}}\n"
-    "{{agent_scratchpad}}"
-)
-REACT_TEMPLATE = _REACT_TEMPLATE.format(system_prompt=SYSTEM_PROMPT)
+class AgentRunner:
+    """Adapter for legacy invoke({"input": ...}) contract."""
+
+    def __init__(self, graph_agent: Any):
+        self._agent = graph_agent
+
+    def invoke(self, payload: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
+        chat_input = payload.get("input", "")
+        return self._agent.invoke(
+            {"messages": [{"role": "user", "content": chat_input}]},
+            **kwargs,
+        )
 
 
-def _build_llm() -> ChatOpenAI:
-    return ChatOpenAI(
-        model=os.getenv("MODEL_NAME", "gpt-4o"),
-        temperature=0.2,
-        max_tokens=8192,
-        api_key=os.getenv("OPENAI_API_KEY") or "ollama",
-        base_url=os.getenv("OPENAI_API_BASE") or None,
-    )
-
-
-def create_<name>_agent() -> AgentExecutor:
-    llm = _build_llm()
+def create_<name>_agent(model_name: str | None = None) -> AgentRunner:
+    llm = build_llm(temperature=0.2, model_name_override=model_name)
     tools = [
+        invoke_peer_agent,
         generate_validation_report,
         generate_response_email,
-        # добавьте свои
+        # добавьте свои инструменты
     ]
-    memory = ConversationBufferWindowMemory(k=20, return_messages=True, memory_key="chat_history")
-
-    agent_type = os.getenv("AGENT_TYPE", "openai_tools").lower()
-    if agent_type == "react":
-        prompt = PromptTemplate.from_template(REACT_TEMPLATE)
-        agent = create_react_agent(llm, tools, prompt)
-    else:
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", SYSTEM_PROMPT),
-            MessagesPlaceholder("chat_history", optional=True),
-            ("human", "{input}"),
-            MessagesPlaceholder("agent_scratchpad"),
-        ])
-        agent = create_openai_tools_agent(llm, tools, prompt)
-
-    return AgentExecutor(
-        agent=agent,
+    graph_agent = create_react_agent(
+        model=llm,
         tools=tools,
-        memory=memory,
-        verbose=True,
-        max_iterations=15,
-        return_intermediate_steps=True,
+        prompt=SYSTEM_PROMPT,
     )
+    return AgentRunner(graph_agent)
 ```
 
 > **Правило промпта:** всегда добавляйте SLA, чек-листы и пошаговые инструкции.
@@ -356,6 +328,14 @@ AGENT_REGISTRY = {
 - универсальный запуск через `POST /api/v1/process/{agent}` начнёт принимать новый ID без добавления отдельного route;
 - `POST /api/v1/process/auto` и `POST /api/v1/resolve-agent` начнут учитывать его профиль `auto_detect`.
 
+### 7.3 Межагентные вызовы (по умолчанию)
+
+- Встроенный bridge `shared/agent_tooling.py` автоматически обнаруживает новых агентов
+    по naming-convention и добавляет их в реестр вызовов.
+- Политика по умолчанию: `all_except_self` (любой агент может вызвать любой другой).
+- Чтобы ограничить маршруты, задайте `AGENT_TOOL_PERMISSIONS`.
+- Для явного переопределения import path используйте `AGENT_TOOL_REGISTRY`.
+
 ---
 
 ## 8. Docker Compose — новый сервис
@@ -510,6 +490,7 @@ class TestTools<Name>:
 [ ] agent3_<name>_inspector/runner.py    — process_text + run_forever + FORCE_REPROCESS
 [ ] api/app.py                           — агент в AGENTS[] и _run_agent()
 [ ] docker-compose.yml                  — новый сервис agent3-<name>
+[ ] shared/agent_tooling.py             — naming-convention соблюдён для auto-discovery
 [ ] .env.example                         — <NAME>_IMAP_* переменные
 [ ] tests/test_agent_<name>.py           — минимум: API + unit process_text + tools
 [ ] CHANGELOG.md                         — версия поднята

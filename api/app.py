@@ -21,6 +21,7 @@ FastAPI REST API для обработки документов агентами
 """
 import base64
 import concurrent.futures
+import html
 import importlib.metadata
 import json
 import logging
@@ -290,14 +291,130 @@ class PaginatedResponse(BaseModel):
 # не в event loop, поэтому blocking sleep не заблокирует uvicorn.
 # ---------------------------------------------------------------------------
 
+
+def _is_result_usable_for_agent(agent_type: str, model_result: dict) -> tuple[bool, str]:
+    if not isinstance(model_result, dict):
+        return False, "InvalidResultType"
+    steps = model_result.get("intermediate_steps", []) or []
+    # Универсальная защита: для любого агента API-пайплайна ожидаем хотя бы один
+    # tool-вызов. Пустые steps обычно означают деградацию модели/несовместимость.
+    if len(steps) == 0:
+        return False, "NoToolCalls"
+    return True, ""
+
+
+def _looks_like_tz_content(*, text: str, subject: str, attachment_names: list[str]) -> bool:
+    keywords = ("тз", "tz", "техзад", "technical specification", "техническое задание")
+    haystacks = [text or "", subject or "", " ".join(attachment_names or [])]
+    joined = "\n".join(haystacks).lower()
+    return any(k in joined for k in keywords)
+
+
+def _has_tz_agent_analysis_observation(model_result: dict) -> bool:
+    if not isinstance(model_result, dict):
+        return False
+    for step in model_result.get("intermediate_steps", []) or []:
+        if not isinstance(step, (list, tuple)) or len(step) < 2:
+            continue
+        obs = step[1]
+        if isinstance(obs, str):
+            try:
+                obs = json.loads(obs)
+            except json.JSONDecodeError:
+                continue
+        if isinstance(obs, dict) and isinstance(obs.get("tzAgentAnalysis"), dict):
+            return True
+    return False
+
+
+def _is_token_limit_error_text(error_text: str) -> bool:
+    text = (error_text or "").lower()
+    return (
+        "tokens_limit_reached" in text
+        or "413" in text
+        or "too large" in text
+        or "max size" in text
+    )
+
+
+def _apply_email_artifact(artifacts: dict, tool_name: str, email_html: str) -> None:
+    """Сохраняет email-артефакт с приоритетом decision-специфичных шаблонов.
+
+    generate_info_request / generate_escalation имеют более конкретный
+    бизнес-контент, чем общий generate_response_email.
+    """
+    if not email_html:
+        return
+
+    if tool_name == "generate_response_email" and artifacts.get("email_html"):
+        artifacts["response_email_html"] = email_html
+        return
+
+    artifacts["email_html"] = email_html
+
 def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -> None:
     job = db_get_job(job_id)
     if not job:
         return
 
+    processing_log: dict = {
+        "started_at": datetime.now(UTC).isoformat(),
+        "agent": agent_type,
+        "events": [],
+    }
+
+    def _log_event(stage: str, message: str, **details) -> None:
+        processing_log["events"].append({
+            "ts": datetime.now(UTC).isoformat(),
+            "stage": stage,
+            "message": message,
+            "details": details,
+        })
+
+    _last_flush_ts: list[float] = [0.0]
+    _flush_min_interval = 1.0  # секунды: не чаще одного UPDATE в секунду
+
+    def _flush_running_log() -> None:
+        # Публикуем промежуточный лог, чтобы UI мог показывать прогресс во время обработки.
+        # Троттлинг: не более одного UPDATE в секунду, чтобы снизить нагрузку на БД.
+        now = time.monotonic()
+        if now - _last_flush_ts[0] < _flush_min_interval:
+            return
+        _last_flush_ts[0] = now
+        update_job(
+            job_id,
+            status="running",
+            result={
+                "processing_log": processing_log,
+                "request_preview": {
+                    "sender_email": request.sender_email,
+                    "subject": request.subject,
+                    "text_chars": len(request.text or ""),
+                    "attachments_count": len(request.attachments or []),
+                },
+            },
+        )
+
     update_job(job_id, status="running")
     ts = datetime.now(UTC).isoformat()
     logger.info("[%s] Запуск агента %s", job_id, agent_type.upper())
+
+    _log_event(
+        "received",
+        "Получен запрос на обработку",
+        sender=request.sender_email,
+        subject=request.subject,
+        text_chars=len(request.text or ""),
+        attachments_count=len(request.attachments or []),
+        attachment_names=[a.filename for a in (request.attachments or [])],
+    )
+    _flush_running_log()
+
+    _has_tz_signal = _looks_like_tz_content(
+        text=request.text or "",
+        subject=request.subject or "",
+        attachment_names=[a.filename for a in (request.attachments or [])],
+    )
 
     with JobTimer(agent_type):
         try:
@@ -315,6 +432,19 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                     attachment_texts.append("---- " + att.filename + " ----\n" + text)
                 except Exception as e:
                     logger.warning("[%s] Ошибка извлечения %s: %s", job_id, att.filename, e)
+                    _log_event(
+                        "extract_attachment_error",
+                        "Ошибка извлечения текста вложения",
+                        filename=att.filename,
+                        error=str(e),
+                    )
+
+            _log_event(
+                "extract_attachments_done",
+                "Извлечение текста из вложений завершено",
+                extracted_count=len(attachment_texts),
+            )
+            _flush_running_log()
 
             parts: list[str] = []
             if request.sender_email:
@@ -326,6 +456,13 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
             if attachment_texts:
                 parts.append("\n-- ВЛОЖЕНИЯ --\n" + "\n\n".join(attachment_texts))
             chat_input = "\n".join(parts) if parts else "(пустой запрос)"
+
+            _log_event(
+                "prepare_input",
+                "Сформирован input для агента",
+                input_chars=len(chat_input),
+            )
+            _flush_running_log()
 
             if agent_type not in AGENT_REGISTRY:
                 raise ValueError("Неизвестный агент: " + agent_type)
@@ -341,13 +478,27 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
             )
 
             fallback_chain = build_fallback_chain(MODEL_NAME)
+            _api_key = effective_openai_key() or GITHUB_TOKEN or "not-needed"
+
+            # Для tool-агентов на GitHub Models приоритетно используем модели,
+            # которые стабильно поддерживают tool-calling.
+            if LLM_BACKEND == "github_models":
+                _preferred_tool_models = {"gpt-4o", "gpt-4o-mini"}
+                _preferred = [m for m in fallback_chain if m in _preferred_tool_models]
+                if _preferred:
+                    _skipped_non_tool = [m for m in fallback_chain if m not in _preferred]
+                    fallback_chain = _preferred
+                    if _skipped_non_tool:
+                        logger.info(
+                            "[%s] Пропущены low-confidence tool-calling модели: %s",
+                            job_id,
+                            ", ".join(_skipped_non_tool),
+                        )
 
             if LLM_BACKEND == "github_models" or LLM_BACKEND in LOCAL_BACKENDS:
-                if LLM_BACKEND == "github_models":
-                    _api_key = effective_openai_key() or GITHUB_TOKEN or ""
-                else:
+                if LLM_BACKEND != "github_models":
                     _api_key = effective_openai_key() or "not-needed"
-                _TOOLS_OVERHEAD = 3000
+                _TOOLS_OVERHEAD = 6000 if LLM_BACKEND == "github_models" else 3000
                 _est_input = estimate_tokens(chat_input)
 
                 def _get_ctx(m: str) -> int:
@@ -360,9 +511,12 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                 _best_model = max(fallback_chain, key=lambda m: _get_ctx(m) or 0)
                 _best_ctx = _get_ctx(_best_model) or 0
                 _chunking_threshold_tok = max(1, (_best_ctx - _TOOLS_OVERHEAD) // 2)
+                _ctx_map = {m: (_get_ctx(m) or 0) for m in fallback_chain}
 
                 if _est_input > _chunking_threshold_tok:
                     from shared.chunked_analysis import analyze_document_in_chunks
+                    _before_chars = len(chat_input)
+                    _before_tokens = _est_input
                     logger.info(
                         "[%s] Документ ~%d токенов > порог %d — поблочный анализ",
                         job_id, _est_input, _chunking_threshold_tok,
@@ -373,6 +527,17 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                         )
                         if _summary:
                             chat_input = _summary
+                            _after_tokens = estimate_tokens(chat_input)
+                            _log_event(
+                                "chunking_applied",
+                                "Включён поблочный анализ документа",
+                                before_chars=_before_chars,
+                                after_chars=len(chat_input),
+                                before_tokens=_before_tokens,
+                                after_tokens=_after_tokens,
+                                model=_best_model,
+                            )
+                            _flush_running_log()
                         else:
                             logger.warning("[%s] Поблочный анализ не дал результата", job_id)
                     except Exception as _chunk_err:
@@ -398,15 +563,49 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                     fallback_chain = [_best] + [m for m in fallback_chain if m != _best]
 
             logger.info("[%s] Fallback-цепочка: %s", job_id, " → ".join(fallback_chain))
+            _log_event(
+                "routing",
+                "Определена цепочка моделей",
+                fallback_chain=fallback_chain,
+                llm_backend=LLM_BACKEND,
+                estimated_input_tokens=_est_input if LLM_BACKEND == "github_models" or LLM_BACKEND in LOCAL_BACKENDS else None,
+                tools_overhead_tokens=_TOOLS_OVERHEAD if LLM_BACKEND == "github_models" or LLM_BACKEND in LOCAL_BACKENDS else None,
+                model_context_tokens=_ctx_map if LLM_BACKEND == "github_models" or LLM_BACKEND in LOCAL_BACKENDS else None,
+                chunking_threshold_tokens=_chunking_threshold_tok if LLM_BACKEND == "github_models" or LLM_BACKEND in LOCAL_BACKENDS else None,
+            )
+            _flush_running_log()
 
             result: dict = {}
             last_exc: BaseException | None = None
+            no_tool_calls_exhausted = False
+            token_limit_exhausted = False
+            rate_limit_exhausted = False
 
             for model_idx, model_name in enumerate(fallback_chain):
                 attempt_log = f"модель {model_name} ({model_idx + 1}/{len(fallback_chain)})"
+                soft_tz_retry_used = False
+                token_limit_compaction_used = False
+                model_input = chat_input
                 logger.info("[%s] Запуск с %s", job_id, attempt_log)
+                _log_event(
+                    "model_attempt",
+                    "Запуск обработки на модели",
+                    model=model_name,
+                    attempt=model_idx + 1,
+                    total=len(fallback_chain),
+                )
+                _flush_running_log()
 
-                for retry in range(max(1, AGENT_MAX_RETRIES)):
+                max_retries = max(1, AGENT_MAX_RETRIES)
+                retry = 0
+                compaction_bonus_retry_available = False
+
+                while True:
+                    if retry >= max_retries:
+                        if compaction_bonus_retry_available:
+                            compaction_bonus_retry_available = False
+                        else:
+                            break
                     try:
                         if agent_type == "dzo":
                             from agent1_dzo_inspector.agent import create_dzo_agent
@@ -424,7 +623,7 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
 
                         if AGENT_JOB_TIMEOUT_SEC > 0:
                             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
-                                future = ex.submit(agent.invoke, {"input": chat_input})
+                                future = ex.submit(agent.invoke, {"input": model_input})
                                 try:
                                     result = future.result(timeout=AGENT_JOB_TIMEOUT_SEC)
                                 except concurrent.futures.TimeoutError:
@@ -432,8 +631,59 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                                         f"Агент не завершился за {AGENT_JOB_TIMEOUT_SEC}с"
                                     )
                         else:
-                            result = agent.invoke({"input": chat_input})
+                            result = agent.invoke({"input": model_input})
 
+                        usable, unusable_reason = _is_result_usable_for_agent(agent_type, result)
+                        if not usable:
+                            last_exc = RuntimeError(unusable_reason)
+                            logger.warning(
+                                "[%s] Модель %s вернула невалидный результат для %s: %s",
+                                job_id,
+                                model_name,
+                                agent_type,
+                                unusable_reason,
+                            )
+                            _log_event(
+                                "model_retry",
+                                "Требуется повтор/переключение модели",
+                                model=model_name,
+                                reason=unusable_reason,
+                                retry=retry + 1,
+                                intermediate_steps=len(
+                                    (result.get("intermediate_steps", []) or [])
+                                    if isinstance(result, dict) else []
+                                ),
+                            )
+                            _flush_running_log()
+                            break
+
+                        if agent_type == "dzo" and _has_tz_signal and not _has_tz_agent_analysis_observation(result):
+                            if not soft_tz_retry_used:
+                                soft_tz_retry_used = True
+                                model_input = (
+                                    f"{chat_input}\n\n"
+                                    "[СЛУЖЕБНОЕ УТОЧНЕНИЕ]\n"
+                                    "В заявке обнаружено ТЗ (текст/вложение). "
+                                    "Перед финальным решением сначала вызови analyze_tz_with_agent, "
+                                    "затем продолжи стандартные шаги ДЗО."
+                                )
+                                _log_event(
+                                    "model_retry",
+                                    "Мягкий повтор модели для выполнения рекомендуемого tool",
+                                    model=model_name,
+                                    reason="MissingRecommendedTool: analyze_tz_with_agent",
+                                    retry=retry + 1,
+                                )
+                                _flush_running_log()
+                                retry += 1
+                                continue
+
+                        _log_event(
+                            "model_result",
+                            "Модель вернула ответ",
+                            model=model_name,
+                            intermediate_steps=len(result.get("intermediate_steps", []) or []),
+                        )
                         last_exc = None
                         break
 
@@ -449,8 +699,7 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                         )
                         is_token_limit = (
                             (isinstance(exc, APIStatusError) and getattr(exc, "status_code", 0) == 413)
-                            or "tokens_limit_reached" in _exc_str
-                            or ("413" in _exc_str and "too large" in _exc_str.lower())
+                            or _is_token_limit_error_text(_exc_str)
                         )
                         is_auth_error = isinstance(exc, AuthenticationError) or (
                             isinstance(exc, APIStatusError)
@@ -459,19 +708,75 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
 
                         if is_auth_error:
                             logger.error("[%s] Ошибка аутентификации на модели %s: %s", job_id, model_name, exc)
+                            _log_event(
+                                "model_auth_error",
+                                "Ошибка аутентификации модели",
+                                model=model_name,
+                                error=str(exc),
+                            )
                             raise
 
                         if not is_rate_limit and not is_token_limit:
+                            _log_event(
+                                "model_error",
+                                "Критическая ошибка модели",
+                                model=model_name,
+                                error=str(exc),
+                            )
                             raise
 
                         last_exc = exc
                         reason = "429 RateLimit" if is_rate_limit else "413 TokenLimit"
                         logger.warning("[%s] %s на %s (попытка %d/%d)",
                                        job_id, reason, model_name, retry + 1, max(1, AGENT_MAX_RETRIES))
+                        _log_event(
+                            "model_retry",
+                            "Требуется повтор/переключение модели",
+                            model=model_name,
+                            reason=reason,
+                            retry=retry + 1,
+                        )
+                        _flush_running_log()
                         if is_token_limit:
+                            if not token_limit_compaction_used:
+                                token_limit_compaction_used = True
+                                try:
+                                    from shared.chunked_analysis import analyze_document_in_chunks
+
+                                    _before_chars_413 = len(model_input)
+                                    _before_tokens_413 = estimate_tokens(model_input)
+
+                                    _summary_413 = analyze_document_in_chunks(
+                                        model_input,
+                                        _api_key,
+                                        model_name,
+                                        agent_type,
+                                    )
+                                    if _summary_413 and len(_summary_413) < len(model_input):
+                                        model_input = _summary_413
+                                        _log_event(
+                                            "token_limit_compaction",
+                                            "Экстренное сжатие input после 413",
+                                            model=model_name,
+                                            before_chars=_before_chars_413,
+                                            after_chars=len(model_input),
+                                            before_tokens=_before_tokens_413,
+                                            after_tokens=estimate_tokens(model_input),
+                                        )
+                                        _flush_running_log()
+                                        compaction_bonus_retry_available = True
+                                        retry += 1
+                                        continue
+                                except Exception as _compact_err:
+                                    logger.warning(
+                                        "[%s] Экстренное сжатие после 413 не удалось: %s",
+                                        job_id,
+                                        _compact_err,
+                                    )
                             break
-                        if retry + 1 < max(1, AGENT_MAX_RETRIES):
+                        if retry + 1 < max_retries or compaction_bonus_retry_available:
                             time.sleep(AGENT_RATE_LIMIT_BACKOFF)
+                        retry += 1
 
                 if last_exc is None:
                     break
@@ -484,6 +789,7 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                     or "tokens_limit_reached" in _exc_str_sw
                     or "429" in _exc_str_sw
                     or "413" in _exc_str_sw
+                    or "NoToolCalls" in _exc_str_sw
                 )
                 if _switchable and model_idx + 1 < len(fallback_chain):
                     next_model = fallback_chain[model_idx + 1]
@@ -492,24 +798,69 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                     continue
 
             if last_exc is not None:
-                raise last_exc
+                if "NoToolCalls" in str(last_exc):
+                    no_tool_calls_exhausted = True
+                    _log_event(
+                        "model_no_tools_exhausted",
+                        "Модель(и) вернули ответ без обязательных tool-вызовов",
+                        fallback_chain=fallback_chain,
+                    )
+                    _flush_running_log()
+                elif _is_token_limit_error_text(str(last_exc)):
+                    token_limit_exhausted = True
+                    _log_event(
+                        "model_token_limit_exhausted",
+                        "Модель(и) не смогли обработать input в рамках token limit",
+                        fallback_chain=fallback_chain,
+                        error=str(last_exc),
+                    )
+                    _flush_running_log()
+                elif "429" in str(last_exc) and "rate" in str(last_exc).lower():
+                    rate_limit_exhausted = True
+                    _log_event(
+                        "model_rate_limit_exhausted",
+                        "Модель(и) исчерпали лимит запросов (429)",
+                        fallback_chain=fallback_chain,
+                        error=str(last_exc),
+                    )
+                    _flush_running_log()
+                else:
+                    raise last_exc
 
             decision = ""
             artifacts: dict = {}
 
             for step_idx, step in enumerate(result.get("intermediate_steps", []), start=1):
                 try:
+                    tool_name = "tool"
+                    if isinstance(step, (list, tuple)) and len(step) > 0:
+                        raw_name = step[0]
+                        if isinstance(raw_name, str):
+                            tool_name = raw_name
+                        else:
+                            tool_name = getattr(raw_name, "name", type(raw_name).__name__)
+
                     obs = json.loads(step[1]) if isinstance(step[1], str) else step[1]
                     if not isinstance(obs, dict):
                         continue
+
+                    _log_event(
+                        "tool_result",
+                        "Получен результат tool-вызова",
+                        step=step_idx,
+                        tool=tool_name,
+                        keys=sorted(obs.keys())[:20],
+                    )
 
                     if obs.get("decision"):
                         decision = obs["decision"]
 
                     if obs.get("emailHtml"):
-                        if "email_html" in artifacts:
-                            logger.warning("[%s] email_html перезаписывается (шаг %d)", job_id, step_idx)
-                        artifacts["email_html"] = obs["emailHtml"]
+                        _apply_email_artifact(
+                            artifacts,
+                            tool_name=tool_name,
+                            email_html=obs["emailHtml"],
+                        )
                     if obs.get("tezisFormHtml"):
                         artifacts["tezis_form_html"] = obs["tezisFormHtml"]
                     if obs.get("correctedHtml"):
@@ -522,6 +873,10 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                         artifacts["json_report"] = obs
                     if "html" in obs and "title" in obs:
                         artifacts["corrected_tz_html"] = obs["html"]
+                    if obs.get("tzAgentAnalysis") and isinstance(obs.get("tzAgentAnalysis"), dict):
+                        artifacts["tz_agent_analysis"] = obs["tzAgentAnalysis"]
+                    if obs.get("peerAgentResult") and isinstance(obs.get("peerAgentResult"), dict):
+                        artifacts.setdefault("peer_agent_results", []).append(obs["peerAgentResult"])
 
                     if (
                         agent_type == "tender"
@@ -542,13 +897,65 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
 
                 except Exception as _step_err:
                     logger.warning("[%s] step parse error: %s", job_id, _step_err)
+                    _log_event(
+                        "step_parse_error",
+                        "Ошибка разбора intermediate шага",
+                        step=step_idx,
+                        error=str(_step_err),
+                    )
+
+            tz_summary = (artifacts.get("tz_agent_analysis") or {}).get("summary", "")
+            if tz_summary and artifacts.get("email_html"):
+                safe_summary = html.escape(str(tz_summary))
+                if safe_summary not in artifacts["email_html"]:
+                    artifacts["email_html"] += (
+                        "<hr><div style='font-family:Arial'>"
+                        "<p><strong>Результат анализа технического задания:</strong></p>"
+                        f"<p>{safe_summary}</p>"
+                        "</div>"
+                    )
 
             if not decision:
-                logger.warning(
-                    "[%s] decision не установлен агентом — intermediate_steps пусты или нет decision",
-                    job_id,
+                if no_tool_calls_exhausted:
+                    decision = "tool_calls_missing"
+                    artifacts["model_error"] = {
+                        "code": "NoToolCalls",
+                        "message": "Модель не выполнила обязательные tool-вызовы для данного агента",
+                    }
+                    logger.warning("[%s] Завершено с технической ошибкой: NoToolCalls", job_id)
+                elif token_limit_exhausted:
+                    decision = "token_limit_exhausted"
+                    artifacts["model_error"] = {
+                        "code": "TokenLimitExhausted",
+                        "message": "Все попытки обработки завершились ошибкой token limit (413)",
+                    }
+                    logger.warning("[%s] Завершено с технической ошибкой: TokenLimitExhausted", job_id)
+                elif rate_limit_exhausted:
+                    decision = "rate_limit_exhausted"
+                    artifacts["model_error"] = {
+                        "code": "RateLimitExhausted",
+                        "message": "Все попытки обработки завершились ошибкой rate limit (429)",
+                    }
+                    logger.warning("[%s] Завершено с технической ошибкой: RateLimitExhausted", job_id)
+                else:
+                    logger.warning(
+                        "[%s] decision не установлен агентом — intermediate_steps пусты или нет decision",
+                        job_id,
+                    )
+                    decision = "Неизвестно"
+
+            if agent_type == "dzo" and _has_tz_signal and not artifacts.get("tz_agent_analysis"):
+                artifacts["missing_recommended_tool"] = {
+                    "code": "MissingRecommendedTool",
+                    "tool": "analyze_tz_with_agent",
+                    "message": "Обнаружен ТЗ-контент, но делегированный анализ ТЗ не был вызван.",
+                }
+                _log_event(
+                    "postcheck_warning",
+                    "Рекомендуемый tool не был вызван",
+                    tool="analyze_tz_with_agent",
+                    tz_signal_detected=True,
                 )
-                decision = "Неизвестно"
 
             if artifacts:
                 logger.info("[%s] Артефакты: %s", job_id, ", ".join(artifacts.keys()))
@@ -556,11 +963,33 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
             if decision:
                 DECISIONS_TOTAL.labels(agent=agent_type, decision=decision).inc()
 
+            processing_log["completed_at"] = datetime.now(UTC).isoformat()
+            _log_event(
+                "completed",
+                "Обработка завершена",
+                decision=decision,
+                artifacts=sorted(artifacts.keys()),
+            )
+
             update_job(
                 job_id, status="done", decision=decision,
                 result={
                     "output": result.get("output", ""),
                     "decision": decision,
+                    # Attachments are stored as metadata only (no content_base64)
+                    # to avoid bloating JSONB with up to 7 MB per attachment.
+                    "request_payload": {
+                        **{k: v for k, v in request.model_dump().items() if k != "attachments"},
+                        "attachments": [
+                            {
+                                "filename": a.filename,
+                                "mime_type": a.mime_type,
+                                "size_bytes": len(a.content_base64) * 3 // 4,
+                            }
+                            for a in (request.attachments or [])
+                        ],
+                    },
+                    "processing_log": processing_log,
                     **artifacts,
                 },
             )
@@ -569,12 +998,23 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
             logger.info("[%s] Завершено. Решение: %s", job_id, decision)
 
         except Exception as e:
-            update_job(job_id, status="error", error=str(e))
+            _log_event("failed", "Обработка завершилась ошибкой", error=str(e))
+            processing_log["failed_at"] = datetime.now(UTC).isoformat()
+            update_job(
+                job_id,
+                status="error",
+                error=str(e),
+                result={
+                    "request_payload": request.model_dump(),
+                    "processing_log": processing_log,
+                },
+            )
             with _run_log_lock:
                 _run_log.append({"agent": agent_type, "ts": ts, "status": "error",
                                   "job_id": job_id, "error": str(e)})
             logger.error("[%s] Ошибка: %s", job_id, e)
-            raise
+            # Фоновая задача уже записала статус/ошибку в БД, повторный raise лишь шумит traceback в ASGI логах.
+            return
 
 
 def _detect_agent_type(request: ProcessRequest) -> str:

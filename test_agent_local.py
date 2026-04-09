@@ -12,6 +12,7 @@ import sys
 
 from agent1_dzo_inspector.agent import create_dzo_agent
 from agent2_tz_inspector.agent import create_tz_agent
+from agent21_tender_inspector.agent import create_tender_agent
 
 # Настройка логирования на уровень DEBUG
 logging.basicConfig(
@@ -25,7 +26,7 @@ def test_agent(agent_type: str, input_text: str) -> None:
     """Тестировать агент с полным логированием.
 
     Args:
-        agent_type: "dzo" или "tz"
+        agent_type: "dzo", "tz" или "tender"
         input_text: текст для обработки
     """
     print(f"\n{'='*80}")
@@ -38,6 +39,8 @@ def test_agent(agent_type: str, input_text: str) -> None:
             agent = create_dzo_agent()
         elif agent_type == "tz":
             agent = create_tz_agent()
+        elif agent_type == "tender":
+            agent = create_tender_agent()
         else:
             print(f"❌ Неизвестный тип агента: {agent_type}")
             sys.exit(1)
@@ -110,9 +113,11 @@ if __name__ == "__main__":
         print("Использование:")
         print("  python test_agent_local.py dzo <текст заявки>")
         print("  python test_agent_local.py tz <текст ТЗ>")
+        print("  python test_agent_local.py tender <текст тендерной документации>")
         print("\nПримеры:")
         print('  python test_agent_local.py dzo "От: dzo@company.ru\\nТема: Закупка серверов\\nТекст заявки"')
         print('  AGENT_DEBUG=1 python test_agent_local.py tz "Техническое задание..."')
+        print('  AGENT_DEBUG=1 python test_agent_local.py tender "Тендерная документация..."')
         sys.exit(1)
 
     agent_type = sys.argv[1]

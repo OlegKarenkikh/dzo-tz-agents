@@ -43,14 +43,42 @@ _DEFAULT_MAX_OUTPUT_TOKENS = 4096
 
 _MAX_INPUT_TOKENS_CACHE: dict[str, int] = {}
 _DEFAULT_MAX_INPUT_TOKENS = 128_000
+_DEFAULT_GITHUB_MAX_INPUT_TOKENS = 8_192
 
 _LOCAL_MAX_CTX_CACHE: dict[tuple[str, str], int] = {}
 _LOCAL_MODELS_CACHE: dict[str, list] = {}
 
 
 def estimate_tokens(text: str) -> int:
-    """Грубая оценка числа токенов (1 токен ≈ 4 символа)."""
-    return max(1, len(text) // 4)
+    """Консервативная оценка токенов для mixed ASCII/Unicode текста.
+
+    Для кириллицы и иных non-ASCII символов плотность токенов обычно выше,
+    чем 1 токен на 4 символа, поэтому считаем их как ~1 токен на 2 символа.
+    """
+    if not text:
+        return 1
+    ascii_chars = sum(1 for ch in text if ord(ch) < 128)
+    non_ascii_chars = len(text) - ascii_chars
+    est = (ascii_chars // 4) + (non_ascii_chars // 2)
+    return max(1, est)
+
+
+def _extract_max_tokens_from_error(error_text: str) -> int | None:
+    """Пытается извлечь лимит токенов из текста ошибки провайдера."""
+    patterns = [
+        r"Max size[:\s]+(\d+)\s+tokens",
+        r"maximum context length is\s*(\d+)\s*tokens",
+        r"at most\s*(\d+)\s*(?:input\s*)?tokens",
+        r"(?:input|context)\s*limit[:\s]+(\d+)\s*tokens",
+    ]
+    for p in patterns:
+        m = re.search(p, error_text, re.IGNORECASE)
+        if m:
+            try:
+                return int(m.group(1))
+            except (TypeError, ValueError):
+                continue
+    return None
 
 
 def probe_max_input_tokens(api_key: str, model_name: str) -> int:
@@ -74,21 +102,27 @@ def probe_max_input_tokens(api_key: str, model_name: str) -> int:
             timeout=15,
         )
         if resp.status_code == 413:
-            m = re.search(r"Max size[:\s]+(\d+)\s+tokens", resp.text, re.IGNORECASE)
-            if m:
-                limit = int(m.group(1))
+            limit = _extract_max_tokens_from_error(resp.text)
+            if limit:
                 with _llm_cache_lock:
                     _MAX_INPUT_TOKENS_CACHE[model_name] = limit
                 logger.info("📐 Модель %s: max_input_tokens = %d", model_name, limit)
                 return limit
+        elif resp.status_code == 400:
+            limit = _extract_max_tokens_from_error(resp.text)
+            if limit:
+                with _llm_cache_lock:
+                    _MAX_INPUT_TOKENS_CACHE[model_name] = limit
+                logger.info("📐 Модель %s: max_input_tokens = %d (из 400)", model_name, limit)
+                return limit
     except Exception as exc:
         logger.warning(
-            "⚠️ Не удалось определить max_input_tokens для %s: %s. Используется %d.",
-            model_name, exc, _DEFAULT_MAX_INPUT_TOKENS,
+            "⚠️ Не удалось определить max_input_tokens для %s: %s. Используется %d (консервативно для GitHub Models).",
+            model_name, exc, _DEFAULT_GITHUB_MAX_INPUT_TOKENS,
         )
 
     with _llm_cache_lock:
-        return _MAX_INPUT_TOKENS_CACHE.setdefault(model_name, _DEFAULT_MAX_INPUT_TOKENS)
+        return _MAX_INPUT_TOKENS_CACHE.setdefault(model_name, _DEFAULT_GITHUB_MAX_INPUT_TOKENS)
 
 
 def probe_max_output_tokens(api_key: str, model_name: str) -> int:

@@ -178,6 +178,36 @@ services:
           memory: 1g
           cpus: "1.0"
 
+  # ─── Агент Тендер ─────────────────────────────────────────────
+  agent-tender:
+    image: dzo-tz-agents:latest
+    container_name: agent_tender_inspector
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      AGENT_MODE: tender
+      DATABASE_URL: postgresql://${POSTGRES_USER:-dzo}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-dzo_agents}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - backend
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /tmp/pycache
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+          cpus: "1.0"
+
   # ─── Nginx reverse proxy ──────────────────────────────────────
   nginx:
     image: nginx:1.27-alpine

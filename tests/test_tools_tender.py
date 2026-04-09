@@ -1,6 +1,8 @@
 import json
+from unittest.mock import patch
 
 from agent21_tender_inspector.tools import generate_document_list
+from agent21_tender_inspector.tools import invoke_peer_agent
 
 
 class TestGenerateDocumentList:
@@ -161,3 +163,30 @@ class TestGenerateDocumentList:
             })
             result = json.loads(generate_document_list.invoke(payload))
             assert result["documents"][0]["type"] == doc_type, f"Тип {doc_type!r} должен приниматься"
+
+
+class TestInvokePeerAgent:
+    @patch("agent21_tender_inspector.tools.invoke_agent_as_tool")
+    def test_success(self, mock_invoke):
+        mock_invoke.return_value = {
+            "output": "ok",
+            "observations": [{"overall_status": "Соответствует"}],
+            "intermediate_steps": [],
+        }
+        payload = json.dumps({
+            "target_agent": "tz",
+            "query_text": "Проверь ТЗ",
+            "subject": "Тема",
+            "sender": "x@y.com",
+        })
+        result = json.loads(invoke_peer_agent.invoke(payload))
+        assert result["peerAgentResult"]["target_agent"] == "tz"
+        assert result["peerAgentResult"]["output"] == "ok"
+
+    def test_requires_json(self):
+        result = json.loads(invoke_peer_agent.invoke("not-json"))
+        assert "error" in result
+
+    def test_requires_required_fields(self):
+        result = json.loads(invoke_peer_agent.invoke(json.dumps({"target_agent": "tz"})))
+        assert "error" in result
