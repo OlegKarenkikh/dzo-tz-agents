@@ -1,0 +1,223 @@
+"""
+tests/test_mcp_server.py
+Unit-тесты для MCP-сервера и A2A Agent Card.
+"""
+from __future__ import annotations
+
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+
+# ---------------------------------------------------------------------------
+# Фикстуры
+# ---------------------------------------------------------------------------
+
+@pytest.fixture()
+def mock_agent_runner():
+    """Возвращает мок AgentRunner с предустановленным результатом."""
+    runner = MagicMock()
+    runner.invoke.return_value = {
+        "output": "Тестовый результат агента",
+        "intermediate_steps": [("tool1", {"decision": "OK"})],
+    }
+    return runner
+
+
+# ---------------------------------------------------------------------------
+# Тесты shared/mcp_server.py — _invoke_agent
+# ---------------------------------------------------------------------------
+
+class TestInvokeAgent:
+    def test_invoke_dzo_calls_create_dzo_agent(self, mock_agent_runner):
+        with patch("agent1_dzo_inspector.agent.create_dzo_agent", return_value=mock_agent_runner) as mock_create:
+            from shared.mcp_server import _invoke_agent
+            result = _invoke_agent("dzo", "текст заявки")
+        mock_create.assert_called_once_with(model_name=None)
+        mock_agent_runner.invoke.assert_called_once_with({"input": "текст заявки"})
+        assert result["agent"] == "dzo"
+        assert result["output"] == "Тестовый результат агента"
+        assert result["steps"] == 1
+
+    def test_invoke_tz_calls_create_tz_agent(self, mock_agent_runner):
+        with patch("agent2_tz_inspector.agent.create_tz_agent", return_value=mock_agent_runner):
+            from shared.mcp_server import _invoke_agent
+            result = _invoke_agent("tz", "текст тз")
+        assert result["agent"] == "tz"
+
+    def test_invoke_tender_calls_create_tender_agent(self, mock_agent_runner):
+        with patch("agent21_tender_inspector.agent.create_tender_agent", return_value=mock_agent_runner):
+            from shared.mcp_server import _invoke_agent
+            result = _invoke_agent("tender", "тендерная документация")
+        assert result["agent"] == "tender"
+
+    def test_invoke_unknown_agent_raises(self):
+        from shared.mcp_server import _invoke_agent
+        with pytest.raises(ValueError, match="Неизвестный тип агента"):
+            _invoke_agent("unknown_agent", "текст")
+
+    def test_invoke_with_model_name(self, mock_agent_runner):
+        with patch("agent1_dzo_inspector.agent.create_dzo_agent", return_value=mock_agent_runner) as mock_create:
+            from shared.mcp_server import _invoke_agent
+            _invoke_agent("dzo", "текст", model_name="gpt-4o")
+        mock_create.assert_called_once_with(model_name="gpt-4o")
+
+    def test_invoke_returns_steps_count(self, mock_agent_runner):
+        mock_agent_runner.invoke.return_value = {
+            "output": "result",
+            "intermediate_steps": ["step1", "step2", "step3"],
+        }
+        with patch("agent1_dzo_inspector.agent.create_dzo_agent", return_value=mock_agent_runner):
+            from shared.mcp_server import _invoke_agent
+            result = _invoke_agent("dzo", "текст")
+        assert result["steps"] == 3
+
+
+# ---------------------------------------------------------------------------
+# Тесты MCP tools (inspect_dzo, inspect_tz, inspect_tender, list_agents)
+# ---------------------------------------------------------------------------
+
+class TestMcpTools:
+    def test_inspect_dzo_builds_chat_input_with_email_and_subject(self, mock_agent_runner):
+        with patch("agent1_dzo_inspector.agent.create_dzo_agent", return_value=mock_agent_runner):
+            from shared.mcp_server import inspect_dzo
+            result = inspect_dzo(
+                text="тело заявки",
+                sender_email="test@example.com",
+                subject="Закупка ноутбуков",
+            )
+        call_args = mock_agent_runner.invoke.call_args[0][0]["input"]
+        assert "От: test@example.com" in call_args
+        assert "Тема: Закупка ноутбуков" in call_args
+        assert "тело заявки" in call_args
+        assert result["agent"] == "dzo"
+
+    def test_inspect_dzo_without_optional_fields(self, mock_agent_runner):
+        with patch("agent1_dzo_inspector.agent.create_dzo_agent", return_value=mock_agent_runner):
+            from shared.mcp_server import inspect_dzo
+            result = inspect_dzo(text="только текст")
+        call_args = mock_agent_runner.invoke.call_args[0][0]["input"]
+        assert call_args == "только текст"
+        assert result["agent"] == "dzo"
+
+    def test_inspect_tz_passes_text_directly(self, mock_agent_runner):
+        with patch("agent2_tz_inspector.agent.create_tz_agent", return_value=mock_agent_runner):
+            from shared.mcp_server import inspect_tz
+            result = inspect_tz(text="техническое задание")
+        call_args = mock_agent_runner.invoke.call_args[0][0]["input"]
+        assert call_args == "техническое задание"
+        assert result["agent"] == "tz"
+
+    def test_inspect_tender_passes_text_directly(self, mock_agent_runner):
+        with patch("agent21_tender_inspector.agent.create_tender_agent", return_value=mock_agent_runner):
+            from shared.mcp_server import inspect_tender
+            result = inspect_tender(text="тендерная документация")
+        assert result["agent"] == "tender"
+
+    def test_inspect_dzo_passes_model_name(self, mock_agent_runner):
+        with patch("agent1_dzo_inspector.agent.create_dzo_agent", return_value=mock_agent_runner) as mock_create:
+            from shared.mcp_server import inspect_dzo
+            inspect_dzo(text="текст", model_name="gpt-4o-mini")
+        mock_create.assert_called_once_with(model_name="gpt-4o-mini")
+
+    def test_inspect_dzo_empty_model_name_passes_none(self, mock_agent_runner):
+        """Пустая строка model_name должна передаваться как None."""
+        with patch("agent1_dzo_inspector.agent.create_dzo_agent", return_value=mock_agent_runner) as mock_create:
+            from shared.mcp_server import inspect_dzo
+            inspect_dzo(text="текст", model_name="")
+        mock_create.assert_called_once_with(model_name=None)
+
+    def test_list_agents_returns_all_three(self):
+        from shared.mcp_server import list_agents
+        result = list_agents()
+        assert "agents" in result
+        ids = [a["id"] for a in result["agents"]]
+        assert "dzo" in ids
+        assert "tz" in ids
+        assert "tender" in ids
+
+    def test_list_agents_has_required_fields(self):
+        from shared.mcp_server import list_agents
+        result = list_agents()
+        for agent in result["agents"]:
+            assert "id" in agent
+            assert "name" in agent
+            assert "description" in agent
+            assert "tool" in agent
+
+
+# ---------------------------------------------------------------------------
+# Тесты A2A Agent Card (/.well-known/agent.json)
+# ---------------------------------------------------------------------------
+
+class TestA2AAgentCard:
+    @pytest.fixture()
+    def client(self):
+        """FastAPI test client."""
+        import os
+        os.environ.setdefault("DATABASE_URL", "sqlite:///test_mcp.db")
+        os.environ.setdefault("API_KEY", "")
+        from fastapi.testclient import TestClient
+        # Патчим init_db чтобы не создавать реальную БД
+        with patch("shared.database.init_db"), patch("shared.database.close_db"):
+            from api.app import app
+            return TestClient(app)
+
+    def test_agent_card_endpoint_returns_200(self, client):
+        resp = client.get("/.well-known/agent.json")
+        assert resp.status_code == 200
+
+    def test_agent_card_has_required_a2a_fields(self, client):
+        resp = client.get("/.well-known/agent.json")
+        data = resp.json()
+        assert "name" in data
+        assert "description" in data
+        assert "version" in data
+        assert "capabilities" in data
+        assert "skills" in data
+
+    def test_agent_card_skills_contains_all_agents(self, client):
+        resp = client.get("/.well-known/agent.json")
+        data = resp.json()
+        skill_ids = [s["id"] for s in data["skills"]]
+        assert "inspect_dzo" in skill_ids
+        assert "inspect_tz" in skill_ids
+        assert "inspect_tender" in skill_ids
+
+    def test_agent_card_capabilities_structure(self, client):
+        resp = client.get("/.well-known/agent.json")
+        data = resp.json()
+        caps = data["capabilities"]
+        assert "streaming" in caps
+        assert "pushNotifications" in caps
+
+    def test_mcp_endpoint_mounted(self, client):
+        """Проверяем что /mcp смонтирован (возвращает не 404)."""
+        resp = client.get("/mcp")
+        # FastMCP может вернуть 200 / 405 / 406, но не 404
+        assert resp.status_code != 404
+
+
+# ---------------------------------------------------------------------------
+# Тесты на импорт без mcp пакета
+# ---------------------------------------------------------------------------
+
+class TestMcpImportError:
+    def test_import_error_without_mcp_package(self, monkeypatch):
+        """Если mcp не установлен — должен подняться ImportError с понятным сообщением."""
+        import sys
+        # Убираем mcp из sys.modules чтобы имитировать отсутствие пакета
+        mcp_modules = [k for k in sys.modules if k.startswith("mcp")]
+        saved = {k: sys.modules.pop(k) for k in mcp_modules}
+        # Блокируем реимпорт
+        monkeypatch.setitem(sys.modules, "mcp", None)  # type: ignore[arg-type]
+        monkeypatch.setitem(sys.modules, "mcp.server", None)  # type: ignore[arg-type]
+        monkeypatch.setitem(sys.modules, "mcp.server.fastmcp", None)  # type: ignore[arg-type]
+        try:
+            import importlib
+            # shared.mcp_server уже в sys.modules — удаляем для чистого реимпорта
+            sys.modules.pop("shared.mcp_server", None)
+            with pytest.raises((ImportError, TypeError)):
+                importlib.import_module("shared.mcp_server")
+        finally:
+            sys.modules.update(saved)
