@@ -77,7 +77,9 @@ class TestInvokeAgent:
         """Входной текст сверх _MCP_MAX_INPUT_CHARS должен вернуть error без вызова агента."""
         from shared.mcp_server import _MCP_MAX_INPUT_CHARS, _invoke_agent
         oversized = "x" * (_MCP_MAX_INPUT_CHARS + 1)
-        result = _invoke_agent("dzo", oversized)
+        with patch("agent1_dzo_inspector.agent.create_dzo_agent") as mock_create:
+            result = _invoke_agent("dzo", oversized)
+        mock_create.assert_not_called()
         assert result["output"] == ""
         assert result["steps"] == 0
         assert "error" in result

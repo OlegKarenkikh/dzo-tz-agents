@@ -137,7 +137,7 @@ app.add_middleware(
     allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["GET", "POST", "DELETE"],
-    allow_headers=["X-API-Key", "Content-Type", "Accept"],
+    allow_headers=["X-API-Key", "Authorization", "Content-Type", "Accept"],
 )
 if _MCP_AVAILABLE:
     app.mount("/mcp", _mcp_server.streamable_http_app())  # type: ignore[union-attr]
@@ -1041,10 +1041,12 @@ async def _mcp_auth_guard(request: Request, call_next):
     if _MCP_AVAILABLE and request.url.path.startswith("/mcp"):
         api_key = _get_api_key()
         if api_key:
-            provided = (
-                request.headers.get("X-API-Key")
-                or request.headers.get("Authorization", "").removeprefix("Bearer ")
-            )
+            provided = (request.headers.get("X-API-Key") or "").strip()
+            if not provided:
+                auth_header = request.headers.get("Authorization", "").strip()
+                scheme, _, credentials = auth_header.partition(" ")
+                if scheme.lower() == "bearer":
+                    provided = credentials.strip()
             if provided != api_key:
                 return JSONResponse({"detail": "Unauthorized"}, status_code=401)
     return await call_next(request)
@@ -1091,7 +1093,10 @@ def list_agents():
 
 @app.get("/.well-known/agent.json", summary="A2A Agent Card")
 def agent_card(request: Request):
-    base_url = str(request.base_url).rstrip("/")
+    # Учитываем X-Forwarded-Proto от reverse-proxy (nginx передаёт Host и X-Forwarded-Proto)
+    proto = request.headers.get("X-Forwarded-Proto", request.url.scheme)
+    host = request.headers.get("Host", request.url.netloc)
+    base_url = f"{proto}://{host}"
     return {
         "name": "DZO/TZ Inspector",
         "description": "Инспектор заявок ДЗО, технических заданий и тендерной документации",
