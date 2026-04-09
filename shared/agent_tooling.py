@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import os
 import pkgutil
 import re
 import time
@@ -22,6 +23,9 @@ from shared.logger import setup_logger
 from shared.llm import build_fallback_chain
 
 logger = setup_logger("agent_tooling")
+
+# Корень проекта — директория, в которой находится этот файл's parent (shared/../).
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 _DEFAULT_AGENT_FACTORY_REGISTRY: dict[str, str] = {
     "dzo": "agent1_dzo_inspector.agent:create_dzo_agent",
@@ -60,9 +64,13 @@ def _get_permissions() -> dict[str, list[str]]:
 
 @lru_cache(maxsize=1)
 def _discover_agent_factories() -> dict[str, str]:
-    """Автообнаружение фабрик create_<agent_id>_agent по naming-convention."""
+    """Автообнаружение фабрик create_<agent_id>_agent по naming-convention.
+
+    Сканируется только корень проекта (не весь sys.path), чтобы исключить
+    случайный импорт сторонних пакетов с совпадающим именем.
+    """
     discovered: dict[str, str] = {}
-    for m in pkgutil.iter_modules():
+    for m in pkgutil.iter_modules([_PROJECT_ROOT]):
         match = _AUTO_DISCOVER_PATTERN.match(m.name)
         if not match:
             continue

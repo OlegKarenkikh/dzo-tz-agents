@@ -976,8 +976,9 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                 result={
                     "output": result.get("output", ""),
                     "decision": decision,
-                    "request_payload": request.model_dump(),
-                    "request_payload_preview": {
+                    # Attachments are stored as metadata only (no content_base64)
+                    # to avoid bloating JSONB with up to 7 MB per attachment.
+                    "request_payload": {
                         **{k: v for k, v in request.model_dump().items() if k != "attachments"},
                         "attachments": [
                             {
