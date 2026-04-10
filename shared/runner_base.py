@@ -5,6 +5,7 @@ BaseEmailRunner (email-раннер для ДЗО/ТЗ).
 """
 from __future__ import annotations
 
+import concurrent.futures
 import json
 from abc import ABC, abstractmethod
 from typing import Any
@@ -17,6 +18,10 @@ from shared.file_extractor import extract_text_from_attachment
 from shared.logger import setup_logger
 from shared.telegram_notify import notify
 from shared.tracing import get_langfuse_callback, log_agent_steps
+
+AGENT_INVOKE_TIMEOUT_SECONDS: int = int(
+    __import__("os").getenv("AGENT_INVOKE_TIMEOUT_SECONDS", "300")
+)
 
 
 class BaseAgentRunner:
@@ -169,6 +174,111 @@ class BaseEmailRunner(ABC):
     # Общая логика обработки
     # ------------------------------------------------------------------
 
+    def _process_single_mail(
+        self,
+        mail: dict,
+        agent: Any,
+        logger: Any,
+        force_reprocess: bool,
+    ) -> None:
+        """Обработка одного письма (извлечено из process_emails для тестируемости)."""
+        sender = mail["from"]
+        subject = mail["subject"]
+        logger.info("Обрабатываю: '%s' от %s", subject, sender)
+
+        if not force_reprocess:
+            dup = db.find_duplicate_job(self.agent_id, sender, subject)
+            if dup:
+                created_at = dup.get("created_at")
+                if created_at is None:
+                    created_at_display = "N/A"
+                elif hasattr(created_at, "date"):
+                    created_at_display = created_at.date().isoformat()
+                else:
+                    created_at_display = str(created_at)[:10]
+                logger.info(
+                    "[dedup] Пропускаем дубль: '%s' от %s "
+                    "(ранее обработано %s, решение: %s)",
+                    subject, sender,
+                    created_at_display, dup.get("decision", "?"),
+                )
+                return
+
+        job_id = db.create_job(self.agent_id, sender=sender, subject=subject)
+        try:
+            if not mail.get("attachments"):
+                if self.handle_no_attachments(sender, subject, job_id):
+                    EMAILS_PROCESSED.labels(agent=self.agent_id).inc()
+                    return
+
+            attachment_texts: list[str] = []
+            for att in mail.get("attachments", []):
+                text = extract_text_from_attachment(att)
+                attachment_texts.append(f"---- Файл: {att['filename']} ----\n{text}")
+
+            chat_input = self.build_chat_input(mail, attachment_texts)
+
+            lf_cb = get_langfuse_callback()
+            callbacks = [lf_cb] if lf_cb is not None else []
+
+            invoke_kwargs: dict[str, Any] = {}
+            if callbacks:
+                invoke_kwargs["config"] = {
+                    "callbacks": callbacks,
+                    "metadata": {"session_id": job_id},
+                }
+
+            with JobTimer(self.agent_id):
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                    future = pool.submit(
+                        agent.invoke, {"input": chat_input}, **invoke_kwargs,
+                    )
+                    result = future.result(timeout=AGENT_INVOKE_TIMEOUT_SECONDS)
+
+            steps = result.get("intermediate_steps", [])
+            trace = log_agent_steps(job_id=job_id, agent=self.agent_id, steps=steps)
+
+            decision, artifacts, reply_subject = self.parse_steps(steps, result, job_id)
+
+            if not decision:
+                logger.warning(
+                    "[%s] decision не установлен агентом — intermediate_steps пусты",
+                    job_id,
+                )
+                decision = "Требуется доработка"
+
+            self.send_reply(sender, subject, reply_subject, decision, artifacts)
+
+            db.update_job(
+                job_id,
+                status="done",
+                decision=decision,
+                result=self.db_result_fields(mail, artifacts),
+                trace=trace,
+            )
+            EMAILS_PROCESSED.labels(agent=self.agent_id).inc()
+            logger.info("Обработано. Решение: %s", decision)
+
+        except concurrent.futures.TimeoutError:
+            EMAILS_ERRORS.labels(agent=self.agent_id, error_type="TimeoutError").inc()
+            db.update_job(job_id, status="error",
+                          error=f"Agent invoke timeout ({AGENT_INVOKE_TIMEOUT_SECONDS}s)")
+            logger.error("Таймаут агента (%ds) для '%s' от %s",
+                         AGENT_INVOKE_TIMEOUT_SECONDS, subject, sender)
+            notify(
+                f"🔴 Таймаут Агент-{self.agent_id.upper()}\nОт: {sender}\n"
+                f"Timeout {AGENT_INVOKE_TIMEOUT_SECONDS}s",
+                level="error",
+            )
+        except Exception as e:
+            EMAILS_ERRORS.labels(agent=self.agent_id, error_type=type(e).__name__).inc()
+            db.update_job(job_id, status="error", error=str(e))
+            logger.error("Критическая ошибка: %s", e)
+            notify(
+                f"🔴 Ошибка Агент-{self.agent_id.upper()}\nОт: {sender}\n{e}",
+                level="error",
+            )
+
     def process_emails(self) -> None:
         """Единая точка обработки email-потока для всех email-агентов."""
         logger = setup_logger(f"agent_{self.agent_id}")
@@ -189,87 +299,7 @@ class BaseEmailRunner(ABC):
             return
 
         force_reprocess = getattr(config, "FORCE_REPROCESS", False)
+        agent = self.create_agent()
 
         for mail in emails:
-            sender = mail["from"]
-            subject = mail["subject"]
-            logger.info("Обрабатываю: '%s' от %s", subject, sender)
-
-            if not force_reprocess:
-                dup = db.find_duplicate_job(self.agent_id, sender, subject)
-                if dup:
-                    created_at = dup.get("created_at")
-                    if created_at is None:
-                        created_at_display = "N/A"
-                    elif hasattr(created_at, "date"):
-                        created_at_display = created_at.date().isoformat()
-                    else:
-                        created_at_display = str(created_at)[:10]
-                    logger.info(
-                        "[dedup] Пропускаем дубль: '%s' от %s "
-                        "(ранее обработано %s, решение: %s)",
-                        subject, sender,
-                        created_at_display, dup.get("decision", "?"),
-                    )
-                    continue
-
-            job_id = db.create_job(self.agent_id, sender=sender, subject=subject)
-            try:
-                if not mail.get("attachments"):
-                    if self.handle_no_attachments(sender, subject, job_id):
-                        EMAILS_PROCESSED.labels(agent=self.agent_id).inc()
-                        continue
-
-                attachment_texts: list[str] = []
-                for att in mail.get("attachments", []):
-                    text = extract_text_from_attachment(att)
-                    attachment_texts.append(f"---- Файл: {att['filename']} ----\n{text}")
-
-                chat_input = self.build_chat_input(mail, attachment_texts)
-
-                agent = self.create_agent()
-
-                lf_cb = get_langfuse_callback()
-                callbacks = [lf_cb] if lf_cb is not None else []
-
-                with JobTimer(self.agent_id):
-                    result = agent.invoke(
-                        {"input": chat_input},
-                        config={
-                            "callbacks": callbacks,
-                            "metadata": {"session_id": job_id},
-                        } if callbacks else {},
-                    )
-
-                steps = result.get("intermediate_steps", [])
-                trace = log_agent_steps(job_id=job_id, agent=self.agent_id, steps=steps)
-
-                decision, artifacts, reply_subject = self.parse_steps(steps, result, job_id)
-
-                if not decision:
-                    logger.warning(
-                        "[%s] decision не установлен агентом — intermediate_steps пусты",
-                        job_id,
-                    )
-                    decision = "Требуется доработка"
-
-                self.send_reply(sender, subject, reply_subject, decision, artifacts)
-
-                db.update_job(
-                    job_id,
-                    status="done",
-                    decision=decision,
-                    result=self.db_result_fields(mail, artifacts),
-                    trace=trace,
-                )
-                EMAILS_PROCESSED.labels(agent=self.agent_id).inc()
-                logger.info("Обработано. Решение: %s", decision)
-
-            except Exception as e:
-                EMAILS_ERRORS.labels(agent=self.agent_id, error_type=type(e).__name__).inc()
-                db.update_job(job_id, status="error", error=str(e))
-                logger.error("Критическая ошибка: %s", e)
-                notify(
-                    f"🔴 Ошибка Агент-{self.agent_id.upper()}\nОт: {sender}\n{e}",
-                    level="error",
-                )
+            self._process_single_mail(mail, agent, logger, force_reprocess)
