@@ -15,6 +15,26 @@
 
 ## Архитектура
 
+```mermaid
+graph TD
+    A[runner.py — process_single_document] --> B{Источник?}
+    B -->|URL| C[_download_document — httpx, ≤50 МБ, Content-Disposition]
+    B -->|Локальный файл| D[pathlib.Path.read_bytes]
+    C --> E[Дедупликация — db.find_duplicate_job]
+    D --> E
+    E -->|Дубль| F[Вернуть кешированный результат]
+    E -->|Новый| G[_extract_text — shared.file_extractor]
+    G --> H{estimate_tokens > threshold?}
+    H -->|Да| I[analyze_document_in_chunks — map-reduce]
+    H -->|Нет| J[Исходный chat_input]
+    I --> J
+    J --> K[agent.py — create_react_agent LangGraph ReAct]
+    K --> L[generate_document_list — tools.py]
+    K --> M[invoke_peer_agent — shared.agent_tooling]
+    L --> N[_extract_document_list_from_steps]
+    N --> O[Сохранение: JSON + БД + Prometheus]
+```
+
 ```
 runner.py (process_single_document / process_tender_documents)
     │
@@ -46,14 +66,15 @@ runner.py (process_single_document / process_tender_documents)
 
 ---
 
-### Шаг 1 — Загрузка и валидация файла (`runner.py`)
+### Шаг 1 — Дедупликация и загрузка файла (`runner.py`)
 
-1. Определить тип источника (`_is_url` / локальный путь).
-2. **URL:** скачать через `httpx.stream`, проверить ≤ 50 МБ, определить имя файла из `Content-Disposition` или URL.
-3. **Локальный файл:** прочитать, проверить размер ≤ 50 МБ.
-4. Проверить расширение: `{.pdf, .docx, .xlsx, .xls}` — отклонить прочие.
-5. **Дедупликация:** `db.find_duplicate_job("tender", "", subject)` — если уже обработан и `FORCE_REPROCESS=False`, вернуть кешированный результат.
-6. Создать запись в БД: `db.create_job("tender", sender="", subject=dedup_subject)`.
+1. Вычислить `dedup_subject`: для URL — сама ссылка, для локального файла — абсолютный путь (`pathlib.Path.resolve()`).
+2. **Единая дедупликация:** `db.find_duplicate_job("tender", "", dedup_subject)` — если уже обработан и `FORCE_REPROCESS=False`, вернуть кешированный результат.
+3. Определить тип источника (`_is_url` / локальный путь).
+4. **URL-источники:** скачать через `httpx.stream` (потоковая загрузка), проверить ≤ 50 МБ. Имя файла определяется из заголовка `Content-Disposition`; fallback — из пути URL. Расширение определяется по `Content-Type`, если отсутствует в имени.
+5. **Локальный файл:** прочитать `pathlib.Path.read_bytes()`, проверить размер ≤ 50 МБ.
+6. Проверить расширение: `{.pdf, .docx, .xlsx, .xls}` — отклонить прочие.
+7. Создать запись в БД: `db.create_job("tender", sender="", subject=dedup_subject)`.
 
 ---
 
@@ -68,6 +89,28 @@ extract_text_from_attachment(attachment_dict)
 ```
 
 Результат: строка с содержимым документа, переданная в агент как `chat_input`.
+
+---
+
+### Шаг 2а — Fallback chain и выбор модели (GitHub Models backend)
+
+При `LLM_BACKEND=github_models` runner строит цепочку моделей с различными контекстными окнами:
+
+```
+build_github_fallback_chain(api_key, model_name) → [model_1, model_2, ...]
+probe_max_input_tokens(api_key, model)           → max_tokens (int)
+```
+
+**Thread-safe кеш** (`_fallback_chain_cache`):
+- Ключ: `(sha256(api_key)[:16], model_name)`
+- Значение: `(chain: list[str], model_ctx: int, tokens_map: dict[str, int])`
+- Защита: `threading.Lock` + double-checked locking
+- `tokens_map` содержит `probe_max_input_tokens` для каждой модели цепочки — избегает повторных HTTP-запросов
+
+**Выбор лучшей модели** (`_best_model`):
+```python
+_best_model = max(_chain, key=lambda m: _tokens_map.get(m, 0))
+```
 
 ---
 
@@ -88,7 +131,7 @@ threshold = max(1, (min(best_ctx, model_ctx) - TOOLS_TOKEN_OVERHEAD) // 2)
 ```
 где `_TOOLS_TOKEN_OVERHEAD = 3000` — запас на системный промпт и инструменты.
 
-> **Кеширование:** конфигурация `_fallback_chain_cache` потокобезопасна (double-checked locking через `threading.Lock`).
+> **Кеширование:** конфигурация `_fallback_chain_cache` потокобезопасна (double-checked locking через `threading.Lock`). Результаты `probe_max_input_tokens` кешируются в `tokens_map` при первом построении цепочки.
 
 ---
 
@@ -239,4 +282,4 @@ agent2_tz_inspector
 2. **OCR не встроен**: качество извлечения текста из отсканированных PDF зависит от `shared/document_parser.py`.
 3. **Косвенные требования** — нечёткое понятие; агент может пропустить специфичные отраслевые требования.
 4. **Лимит размера файла:** 50 МБ. Файлы большего размера — ошибка.
-5. **Нет runner.py-аналога в agent3** — агент3 (collector) имеет собственную логику обработки email без общего base-runner.
+5. **agent3 (collector)** использует как файловый runner (`process_single_input`), так и `CollectorEmailRunner(BaseEmailRunner)` для IMAP-polling.

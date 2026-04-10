@@ -18,11 +18,14 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+import config  # noqa: E402
 import shared.database as db  # noqa: E402
 from agent3_collector_inspector.agent import create_collector_agent  # noqa: E402
 from api.metrics import EMAILS_ERRORS, EMAILS_PROCESSED, POLL_CYCLES, JobTimer  # noqa: E402
 from config import FORCE_REPROCESS  # noqa: E402
+from shared.email_sender import send_email  # noqa: E402
 from shared.logger import setup_logger  # noqa: E402
+from shared.runner_base import BaseEmailRunner  # noqa: E402
 from shared.telegram_notify import notify  # noqa: E402
 from shared.tracing import get_langfuse_callback, log_agent_steps  # noqa: E402
 
@@ -265,6 +268,74 @@ def process_collector_inputs(
 
     logger.info("Пакетная обработка завершена: %d файлов", len(results))
     return results
+
+
+class CollectorEmailRunner(BaseEmailRunner):
+    """Email-раннер для агента Collector — IMAP-polling сбор документов ТО.
+
+    Наследует BaseEmailRunner и реализует абстрактные хуки:
+    build_chat_input, parse_steps, send_reply.
+    """
+
+    @property
+    def agent_id(self) -> str:
+        return "collector"
+
+    @property
+    def imap_config(self) -> dict:
+        return {
+            "host": config.EMAIL_HOST,
+            "user": config.EMAIL_USER,
+            "password": config.EMAIL_PASSWORD,
+            "port": config.EMAIL_PORT,
+            "folder": os.getenv("COLLECTOR_IMAP_FOLDER", "INBOX"),
+        }
+
+    def create_agent(self):
+        return create_collector_agent()
+
+    def build_chat_input(self, mail: dict, attachment_texts: list[str]) -> str:
+        return (
+            "ВХОДЯЩЕЕ ПИСЬМО ДЛЯ СБОРА ДОКУМЕНТОВ ТО\n"
+            "===========================================\n"
+            f"От: {mail['from']}\nТема: {mail['subject']}\n"
+            f"Дата: {mail.get('date', '')}\n\n"
+            f"-- ТЕЛО ПИСЬМА --\n{mail.get('body', '')}\n\n"
+            f"-- ВЛОЖЕНИЯ ({len(mail.get('attachments', []))}) --\n"
+            + "\n\n".join(attachment_texts)
+        )
+
+    def parse_steps(
+        self, steps: list, result: dict, job_id: str,
+    ) -> tuple[str, dict, str]:
+        collector_result = _extract_collector_result(steps)
+        if not collector_result:
+            return "Требуется доработка", {"raw_output": result.get("output", "")}, ""
+        received = collector_result.get("received_count", 0)
+        total = collector_result.get("total_expected_participants", 0)
+        decision = f"Собрано {received}/{total} участников"
+        return decision, collector_result, ""
+
+    def send_reply(
+        self,
+        sender: str,
+        subject: str,
+        reply_subject: str,
+        decision: str,
+        artifacts: dict,
+    ) -> None:
+        report_text = artifacts.get("report_text", decision)
+        send_email(
+            to=sender,
+            subject=reply_subject or f"Результат сбора документов: {subject}",
+            html_body=f"<pre>{report_text}</pre>",
+            from_addr=config.EMAIL_USER or config.SMTP_USER or "",
+        )
+
+
+def process_collector_emails() -> None:
+    """Точка входа для IMAP-polling сбора документов ТО."""
+    CollectorEmailRunner().process_emails()
 
 
 def main() -> None:

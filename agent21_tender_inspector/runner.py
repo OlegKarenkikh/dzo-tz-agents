@@ -37,7 +37,7 @@ SUPPORTED_EXTS = {".pdf", ".docx", ".xlsx", ".xls"}
 
 _TOOLS_TOKEN_OVERHEAD = 3000
 
-_fallback_chain_cache: dict[tuple[str, str], tuple[list[str], int]] = {}
+_fallback_chain_cache: dict[tuple[str, str], tuple[list[str], int, dict[str, int]]] = {}
 _fallback_chain_cache_lock = threading.Lock()
 
 
@@ -116,8 +116,9 @@ def _build_output_path(
         parts.append(ext)
     parts.append(hash_suffix)
     out_filename = "_".join(parts) + ".json"
-    if output_dir:
-        out = pathlib.Path(output_dir)
+    eff_output_dir = output_dir or TENDER_OUTPUT_DIR
+    if eff_output_dir:
+        out = pathlib.Path(eff_output_dir)
         out.mkdir(parents=True, exist_ok=True)
         return out / out_filename
     return source.parent / out_filename
@@ -159,15 +160,18 @@ def process_single_document(
 ) -> dict:
     logger.info("📄 Обрабатываю документ: %s", source)
 
+    # Единая точка дедупликации (Fix #4): одна проверка для URL и локальных файлов
+    dedup_subject = source if _is_url(source) else str(pathlib.Path(source).resolve())
+    if not FORCE_REPROCESS:
+        dup = db.find_duplicate_job("tender", "", dedup_subject)
+        if dup:
+            _ca = dup.get("created_at")
+            _ca_str = _ca.date().isoformat() if hasattr(_ca, "date") else str(_ca)[:10] if _ca else "N/A"
+            logger.info("[dedup] Пропускаем дубль: '%s' (ранее обработано %s)",
+                        dedup_subject, _ca_str)
+            return dup.get("result") or {}
+
     if _is_url(source):
-        if not FORCE_REPROCESS:
-            dup = db.find_duplicate_job("tender", "", source)
-            if dup:
-                _ca = dup.get("created_at")
-                _ca_str = _ca.date().isoformat() if hasattr(_ca, "date") else str(_ca)[:10] if _ca else "N/A"
-                logger.info("[dedup] Пропускаем дубль: '%s' (ранее обработано %s)",
-                            source, _ca_str)
-                return dup.get("result") or {}
         file_data, filename = _download_document(source)
         eff_url_dir = output_dir or TENDER_OUTPUT_DIR or os.getcwd()
         file_path = os.path.join(eff_url_dir, filename)
@@ -194,22 +198,6 @@ def process_single_document(
                     "error": f"File '{filename}' exceeds max size ({_MAX_LOCAL_BYTES // (1024 * 1024)} MB).",
                     "filename": filename, "source": source}
         file_data = pathlib.Path(source).read_bytes()
-
-    if _is_url(source):
-        dedup_subject = source
-    else:
-        try:
-            dedup_subject = str(pathlib.Path(source).resolve())
-        except Exception:
-            dedup_subject = filename
-        if not FORCE_REPROCESS:
-            dup = db.find_duplicate_job("tender", "", dedup_subject)
-            if dup:
-                _ca = dup.get("created_at")
-                _ca_str = _ca.date().isoformat() if hasattr(_ca, "date") else str(_ca)[:10] if _ca else "N/A"
-                logger.info("[dedup] Пропускаем дубль: '%s' (ранее обработано %s)",
-                            dedup_subject, _ca_str)
-                return dup.get("result") or {}
 
     job_id = db.create_job("tender", sender="", subject=dedup_subject)
 
@@ -242,20 +230,18 @@ def process_single_document(
             if cached is None:
                 _chain = build_github_fallback_chain(_api_key, MODEL_NAME)
                 _model_ctx = probe_max_input_tokens(_api_key, MODEL_NAME)
+                _tokens_map = {m: probe_max_input_tokens(_api_key, m) for m in _chain}
                 with _fallback_chain_cache_lock:
                     # double-check: другой поток мог уже записать
                     if _cache_key not in _fallback_chain_cache:
-                        _fallback_chain_cache[_cache_key] = (_chain, _model_ctx)
+                        _fallback_chain_cache[_cache_key] = (_chain, _model_ctx, _tokens_map)
                     else:
-                        _chain, _model_ctx = _fallback_chain_cache[_cache_key]
+                        _chain, _model_ctx, _tokens_map = _fallback_chain_cache[_cache_key]
             else:
-                _chain, _model_ctx = cached
+                _chain, _model_ctx, _tokens_map = cached
 
-            _best_model = max(
-                _chain,
-                key=lambda m: probe_max_input_tokens(_api_key, m),
-            )
-            _best_ctx = probe_max_input_tokens(_api_key, _best_model)
+            _best_model = max(_chain, key=lambda m: _tokens_map.get(m, 0))
+            _best_ctx = _tokens_map.get(_best_model, _model_ctx)
             _threshold_ctx = min(_best_ctx, _model_ctx)
             _threshold = max(1, (_threshold_ctx - _TOOLS_TOKEN_OVERHEAD) // 2)
 
@@ -311,7 +297,7 @@ def process_single_document(
             eff_output_dir = output_dir or TENDER_OUTPUT_DIR
             output_path = _build_output_path(
                 file_path, eff_output_dir,
-                hash_source=source if _is_url(source) else None,
+                hash_source=source if _is_url(source) else dedup_subject,
             )
             _save_json_result(document_list, output_path)
 
