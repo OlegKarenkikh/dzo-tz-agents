@@ -132,6 +132,8 @@ make build && make up
 | `TELEGRAM_BOT_TOKEN` | ➞ | Уведомления + алерты |
 | `TELEGRAM_CHAT_ID` | ➞ | Chat ID Telegram |
 | `CORS_ORIGINS` | ➞ | Допустимые origins |
+| `PUBLIC_BASE_URL` | ➞ | Публичный базовый URL сервиса (A2A Agent Card, внешние ссылки) |
+| `AGENT_CARD_ALLOWED_HOSTS` | ➞ | Допустимые hostname для A2A Agent Card (обязателен если `PUBLIC_BASE_URL` не задан) |
 | `ENABLE_DOCS` | ➞ | `false` — скрыть Swagger в продакшене |
 | `AGENT_MODE` | ➞ | `dzo` \| `tz` \| `tender` \| `both` (default) |
 | `POLL_INTERVAL_SEC` | ➞ | Интервал IMAP-опроса (default: 300) |

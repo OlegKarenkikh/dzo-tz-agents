@@ -1087,7 +1087,7 @@ async def _mcp_auth_guard(request: Request, call_next):
     """Защита /mcp endpoint API-ключом (если API_KEY задан).
 
     A2A Agent Card (/.well-known/agent.json) остаётся публичной по стандарту A2A.
-    OPTIONS preflight пропускается без проверки — CORS middleware должен обработать его первым.
+    OPTIONS preflight пропускается без проверки.
     """
     path = request.url.path
     if _MCP_AVAILABLE and (path == "/mcp" or path.startswith("/mcp/")) and request.method != "OPTIONS":
@@ -1148,26 +1148,35 @@ def _agent_card_base_url(request: Request) -> str:
 
     Приоритет:
     1. PUBLIC_BASE_URL (явная конфигурация — рекомендуется для прод-окружений).
-    2. Starlette-рассчитанный request.base_url с опциональной подстановкой
-       X-Forwarded-Proto (только http/https).  Host при этом берётся из самого
-       запроса (Starlette не доверяет Host-заголовку без ProxyHeadersMiddleware),
-       поэтому если нужна проверка допустимых доменов — задайте AGENT_CARD_ALLOWED_HOSTS.
+    2. request.base_url с опциональной подстановкой X-Forwarded-Proto
+       (только http/https), но только если явно задан AGENT_CARD_ALLOWED_HOSTS.
+
+    Важно: request.base_url зависит от данных входящего запроса, включая Host.
+    Поэтому fallback без PUBLIC_BASE_URL допускается только при обязательной
+    проверке hostname по AGENT_CARD_ALLOWED_HOSTS.
 
     AGENT_CARD_ALLOWED_HOSTS: через запятую список допустимых hostname.
-    Если задан и hostname запроса не входит в него — возвращается 403.
+    Если PUBLIC_BASE_URL не задан и AGENT_CARD_ALLOWED_HOSTS пуст — ошибка
+    конфигурации (HTTP 500). Если hostname запроса не входит в allowlist —
+    возвращается 403.
     """
     if PUBLIC_BASE_URL:
         return PUBLIC_BASE_URL.rstrip("/")
 
     allowed_hosts_raw = os.getenv("AGENT_CARD_ALLOWED_HOSTS", "").strip()
-    if allowed_hosts_raw:
-        allowed = {h.strip().lower() for h in allowed_hosts_raw.split(",") if h.strip()}
-        hostname = (request.url.hostname or "").lower()
-        if hostname not in allowed:
-            raise HTTPException(
-                status_code=403,
-                detail="Untrusted host for Agent Card. Set PUBLIC_BASE_URL or AGENT_CARD_ALLOWED_HOSTS.",
-            )
+    if not allowed_hosts_raw:
+        raise HTTPException(
+            status_code=500,
+            detail="Agent Card base URL is not configured securely. Set PUBLIC_BASE_URL or AGENT_CARD_ALLOWED_HOSTS.",
+        )
+
+    allowed = {h.strip().lower() for h in allowed_hosts_raw.split(",") if h.strip()}
+    hostname = (request.url.hostname or "").lower()
+    if hostname not in allowed:
+        raise HTTPException(
+            status_code=403,
+            detail="Untrusted host for Agent Card. Set PUBLIC_BASE_URL or AGENT_CARD_ALLOWED_HOSTS.",
+        )
 
     base = str(request.base_url).rstrip("/")
     proto = request.headers.get("X-Forwarded-Proto", "").strip().lower()

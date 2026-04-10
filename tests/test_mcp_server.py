@@ -179,6 +179,9 @@ class TestA2AAgentCard:
         """FastAPI test client."""
         monkeypatch.setenv("DATABASE_URL", "sqlite:///test_mcp.db")
         monkeypatch.setenv("API_KEY", "")
+        # PUBLIC_BASE_URL must be set; without it _agent_card_base_url() requires
+        # AGENT_CARD_ALLOWED_HOSTS, which is also not set here → HTTP 500.
+        monkeypatch.setenv("PUBLIC_BASE_URL", "http://testserver")
         from fastapi.testclient import TestClient
         # Import api.app here (after monkeypatch.setenv) so that any module-level
         # code that reads env vars picks up the patched values on first import.
@@ -187,6 +190,8 @@ class TestA2AAgentCard:
         # оставалась корректной даже если api.app уже был импортирован ранее.
         monkeypatch.setattr(api_app, "init_db", MagicMock())
         monkeypatch.setattr(api_app, "close_db", MagicMock())
+        # PUBLIC_BASE_URL is bound at import time; patch the module attribute directly.
+        monkeypatch.setattr(api_app, "PUBLIC_BASE_URL", "http://testserver")
         # raise_server_exceptions=False: MCP sub-app требует asyncio lifespan (run()),
         # поэтому в unit-тестах возвращает 500, а не 404 — нас это устраивает.
         return TestClient(api_app.app, raise_server_exceptions=False)
@@ -237,6 +242,18 @@ class TestA2AAgentCard:
             resp = client.get("/mcp", headers={"X-API-Key": "secret-key"})
         # FastMCP возвращает 200/405/406, но не 401
         assert resp.status_code != 401
+
+    def test_agent_card_returns_500_without_base_url_config(self, monkeypatch):
+        """_agent_card_base_url() должен вернуть 500, если не заданы ни PUBLIC_BASE_URL,
+        ни AGENT_CARD_ALLOWED_HOSTS — защита от небезопасной конфигурации."""
+        monkeypatch.delenv("PUBLIC_BASE_URL", raising=False)
+        monkeypatch.delenv("AGENT_CARD_ALLOWED_HOSTS", raising=False)
+        import api.app as api_app
+        monkeypatch.setattr(api_app, "PUBLIC_BASE_URL", None)
+        from fastapi.testclient import TestClient
+        c = TestClient(api_app.app, raise_server_exceptions=False)
+        resp = c.get("/.well-known/agent.json")
+        assert resp.status_code == 500
 
 
 # ---------------------------------------------------------------------------
