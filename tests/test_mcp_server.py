@@ -192,9 +192,10 @@ class TestA2AAgentCard:
         monkeypatch.setattr(api_app, "close_db", MagicMock())
         # PUBLIC_BASE_URL is bound at import time; patch the module attribute directly.
         monkeypatch.setattr(api_app, "PUBLIC_BASE_URL", "http://testserver")
-        # raise_server_exceptions=False: MCP sub-app требует asyncio lifespan (run()),
-        # поэтому в unit-тестах возвращает 500, а не 404 — нас это устраивает.
-        return TestClient(api_app.app, raise_server_exceptions=False)
+        # Не подавляем серверные исключения — тесты должны явно падать при ошибках
+        # приложения. Тесты на /mcp используют follow_redirects=False, чтобы
+        # остановиться на 307-редиректе и не попасть в FastMCP (которому нужен lifespan).
+        return TestClient(api_app.app)
 
     def test_agent_card_endpoint_returns_200(self, client):
         resp = client.get("/.well-known/agent.json")
@@ -225,10 +226,12 @@ class TestA2AAgentCard:
         assert "pushNotifications" in caps
 
     def test_mcp_endpoint_mounted(self, client):
-        """Проверяем что /mcp смонтирован (возвращает не 404)."""
-        resp = client.get("/mcp")
-        # FastMCP может вернуть 200 / 405 / 406, но не 404
-        assert resp.status_code != 404
+        """Проверяем что /mcp смонтирован и отвечает допустимым статусом."""
+        resp = client.get("/mcp", follow_redirects=False)
+        # FastMCP монтируется как sub-app → redirect 307 к /mcp/; без lifespan дальше
+        # не идём (follow_redirects=False), чтобы не вызвать RuntimeError от FastMCP.
+        # 5xx здесь означает сломанный endpoint — тест должен упасть.
+        assert resp.status_code in {200, 307, 405, 406}
 
     def test_mcp_endpoint_requires_api_key_when_set(self, client):
         """Проверяем что /mcp возвращает 401 при заданном API_KEY без ключа."""
@@ -239,9 +242,10 @@ class TestA2AAgentCard:
     def test_mcp_endpoint_accepts_valid_api_key(self, client):
         """Проверяем что /mcp принимает валидный ключ в X-API-Key."""
         with patch("api.app._get_api_key", return_value="secret-key"):
-            resp = client.get("/mcp", headers={"X-API-Key": "secret-key"})
-        # FastMCP возвращает 200/405/406, но не 401
-        assert resp.status_code != 401
+            resp = client.get("/mcp", headers={"X-API-Key": "secret-key"}, follow_redirects=False)
+        # Auth guard пропустил запрос → получаем redirect 307 (не 401).
+        # follow_redirects=False исключает RuntimeError от FastMCP (нет lifespan).
+        assert resp.status_code in {200, 307, 405, 406}
 
     def test_agent_card_returns_500_without_base_url_config(self, monkeypatch):
         """_agent_card_base_url() должен вернуть 500, если не заданы ни PUBLIC_BASE_URL,
@@ -251,7 +255,7 @@ class TestA2AAgentCard:
         import api.app as api_app
         monkeypatch.setattr(api_app, "PUBLIC_BASE_URL", None)
         from fastapi.testclient import TestClient
-        c = TestClient(api_app.app, raise_server_exceptions=False)
+        c = TestClient(api_app.app)
         resp = c.get("/.well-known/agent.json")
         assert resp.status_code == 500
 
