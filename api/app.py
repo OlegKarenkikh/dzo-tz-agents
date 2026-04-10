@@ -1154,7 +1154,7 @@ def _agent_card_base_url(request: Request) -> str:
        поэтому если нужна проверка допустимых доменов — задайте AGENT_CARD_ALLOWED_HOSTS.
 
     AGENT_CARD_ALLOWED_HOSTS: через запятую список допустимых hostname.
-    Если задан и hostname запроса не входит в него — возвращается 400.
+    Если задан и hostname запроса не входит в него — возвращается 403.
     """
     if PUBLIC_BASE_URL:
         return PUBLIC_BASE_URL.rstrip("/")

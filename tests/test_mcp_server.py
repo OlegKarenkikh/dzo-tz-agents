@@ -175,18 +175,19 @@ class TestMcpTools:
 
 class TestA2AAgentCard:
     @pytest.fixture()
-    def client(self):
+    def client(self, monkeypatch):
         """FastAPI test client."""
-        import os
-        os.environ.setdefault("DATABASE_URL", "sqlite:///test_mcp.db")
-        os.environ.setdefault("API_KEY", "")
+        monkeypatch.setenv("DATABASE_URL", "sqlite:///test_mcp.db")
+        monkeypatch.setenv("API_KEY", "")
         from fastapi.testclient import TestClient
-        # Патчим init_db чтобы не создавать реальную БД
-        with patch("shared.database.init_db"), patch("shared.database.close_db"):
-            from api.app import app
-            # raise_server_exceptions=False: MCP sub-app требует asyncio lifespan (run()),
-            # поэтому в unit-тестах возвращает 500, а не 404 — нас это устраивает.
-            return TestClient(app, raise_server_exceptions=False)
+        import api.app as api_app
+        # Патчим init_db/close_db на самом модуле api.app, чтобы фикстура
+        # оставалась корректной даже если api.app уже был импортирован ранее.
+        monkeypatch.setattr(api_app, "init_db", MagicMock())
+        monkeypatch.setattr(api_app, "close_db", MagicMock())
+        # raise_server_exceptions=False: MCP sub-app требует asyncio lifespan (run()),
+        # поэтому в unit-тестах возвращает 500, а не 404 — нас это устраивает.
+        return TestClient(api_app.app, raise_server_exceptions=False)
 
     def test_agent_card_endpoint_returns_200(self, client):
         resp = client.get("/.well-known/agent.json")
@@ -254,5 +255,5 @@ class TestMcpImportError:
         monkeypatch.setitem(sys.modules, "mcp.server.fastmcp", None)  # type: ignore[arg-type]
         # Удаляем shared.mcp_server для чистого реимпорта; monkeypatch восстановит его.
         monkeypatch.delitem(sys.modules, "shared.mcp_server", raising=False)
-        with pytest.raises((ImportError, TypeError)):
+        with pytest.raises(ImportError, match="mcp"):
             importlib.import_module("shared.mcp_server")
