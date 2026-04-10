@@ -4,6 +4,38 @@
 Формат соответствует [Keep a Changelog](https://keepachangelog.com/ru/1.0.0/).
 Проект использует [Semantic Versioning](https://semver.org/lang/ru/).
 
+## [1.6.0] — 2026-04-10
+
+### Added
+- `agent3_collector_inspector/` — новый агент сбора документов тендерного отбора (collector):
+  - `agent.py` — `create_collector_agent()` на базе LangGraph `create_react_agent`
+  - `tools.py` — инструменты: `collect_tender_documents`, `invoke_peer_agent`
+  - Глубокие знания домена: структура анкеты УЦЗ (15 полей), формат email-переписки, правила валидации ИНН/наименований
+  - Классификация вложений: анкета / NDA / прочее
+  - Нечёткое сопоставление наименований организаций (разные орг. формы, кавычки)
+  - Генерация структуры папок и отчёта о сборе
+- `api/app.py`:
+  - Агент `collector` в `AGENT_REGISTRY` (приоритет 90, ключевые слова: тендерный отбор, анкета участника, NDA и др.)
+  - `POST /api/v1/process/collector` — dedicated endpoint
+  - A2A Agent Card: skill `collect_documents`
+- `shared/mcp_server.py`:
+  - MCP tool `collect_documents` для сбора документов через MCP-клиенты
+  - Маппинг `collector` → `collect_documents` в `_AGENT_TOOL_MAP`
+- `shared/agent_tooling.py`: `collector` в `_DEFAULT_AGENT_FACTORY_REGISTRY`
+- `tests/test_collector.py` — 82 unit-теста:
+  - Классификация документов (анкета/NDA/прочее)
+  - Сопоставление участников (по email, ИНН, наименованию)
+  - Извлечение номера ТО из темы письма
+  - Валидация ИНН и наименований (расхождения)
+  - Генерация отчёта и структуры папок
+  - Edge cases (пустые данные, неизвестные отправители, несколько писем от одного участника)
+  - Интеграция с AGENT_REGISTRY, MCP, A2A, API endpoints
+- `tests/fixtures/collector/` — тестовые анкеты и сводная таблица из Khakaton.7z
+
+### Changed
+- `pyproject.toml`: добавлен `agent3_collector_inspector` в packages, isort, coverage
+- `tests/conftest.py`: мокинг `agent3_collector_inspector.agent` в тестах
+
 ## [1.5.0] — 2026-04-09
 
 ### Added

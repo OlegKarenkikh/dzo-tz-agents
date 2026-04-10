@@ -11,6 +11,7 @@ FastAPI REST API для обработки документов агентами
   POST /api/v1/process/dzo             — обработать заявку ДЗО
   POST /api/v1/process/tz              — обработать ТЗ
   POST /api/v1/process/tender          — парсинг тендерной документации
+  POST /api/v1/process/collector       — сбор документов тендерного отбора
   POST /api/v1/process/{agent}         — обработать документ указанным агентом
   POST /api/v1/resolve-agent           — определить агента по содержимому
   POST /api/v1/process/auto            — автоопределение типа
@@ -185,6 +186,22 @@ AGENT_REGISTRY: dict[str, dict] = {
                 "техническое задание", "техзадание", "технического задания",
                 "terms of reference", "tor", "тз №", "тз к",
                 "требования к поставке", "технические требования", "тз",
+            ],
+        },
+    },
+    "collector": {
+        "name": "Сборщик документов ТО",
+        "description": "Автоматизирует сбор и проверку анкет участников тендерного отбора: идентификация участников, классификация вложений (анкета/NDA), валидация ИНН, формирование отчёта",
+        "decisions": ["documents_collected", "tool_error"],
+        "auto_detect": {
+            "priority": 90,
+            "keywords": [
+                "тендерный отбор", "анкета участника", "nda",
+                "приглашение на участие", "сбор документов", "сбор анкет",
+                "участники тендера", "участники то",
+                "анкета участника тендерного отбора",
+                "соглашение о неразглашении",
+                "3115", "дит",
             ],
         },
     },
@@ -652,6 +669,9 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                         elif agent_type == "tender":
                             from agent21_tender_inspector.agent import create_tender_agent
                             agent = create_tender_agent(model_name=model_name)
+                        elif agent_type == "collector":
+                            from agent3_collector_inspector.agent import create_collector_agent
+                            agent = create_collector_agent(model_name=model_name)
                         else:
                             import importlib
                             mod = importlib.import_module("agent_" + agent_type + ".agent")
@@ -1248,6 +1268,10 @@ _A2A_SKILL_META: dict[str, dict] = {
         "tags": ["tender", "documents", "223-fz", "44-fz"],
         "examples": ["Извлеки список документов из конкурсной документации"],
     },
+    "collector": {
+        "tags": ["collector", "anketa", "nda", "tender-selection"],
+        "examples": ["Собери анкеты участников ТО 3115-ДИТ-Сервер"],
+    },
 }
 
 # MCP tool name mapping (same as shared.mcp_server._AGENT_TOOL_MAP).
@@ -1255,6 +1279,7 @@ _A2A_TOOL_MAP: dict[str, str] = {
     "dzo": "inspect_dzo",
     "tz": "inspect_tz",
     "tender": "inspect_tender",
+    "collector": "collect_documents",
 }
 
 
@@ -1315,6 +1340,12 @@ def process_tz(body: ProcessRequest, background_tasks: BackgroundTasks, request:
 @limiter.limit(PROCESS_RATE_LIMIT)
 def process_tender(body: ProcessRequest, background_tasks: BackgroundTasks, request: Request, _: str = Depends(_require_api_key)):
     return _check_and_process("tender", body, background_tasks)
+
+
+@app.post("/api/v1/process/collector", summary="Сбор документов тендерного отбора")
+@limiter.limit(PROCESS_RATE_LIMIT)
+def process_collector(body: ProcessRequest, background_tasks: BackgroundTasks, request: Request, _: str = Depends(_require_api_key)):
+    return _check_and_process("collector", body, background_tasks)
 
 
 @app.post("/api/v1/process/auto", summary="Автоопределение типа")

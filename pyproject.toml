@@ -71,6 +71,7 @@ include = [
     "agent1_dzo_inspector*",
     "agent2_tz_inspector*",
     "agent21_tender_inspector*",
+    "agent3_collector_inspector*",
     "shared*",
     "api*",
 ]
@@ -92,11 +93,12 @@ ignore = ["E501", "B008", "B904"]
 "agent1_dzo_inspector/runner.py" = ["I001", "E402"]
 "agent2_tz_inspector/runner.py" = ["I001", "E402"]
 "agent21_tender_inspector/runner.py" = ["I001", "E402"]
+"agent3_collector_inspector/agent.py" = ["I001", "E402"]
 "api/app.py" = ["I001", "E402"]
 "shared/*.py" = ["UP006", "UP035", "I001"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["shared", "agent1_dzo_inspector", "agent2_tz_inspector", "agent21_tender_inspector", "api", "ui"]
+known-first-party = ["shared", "agent1_dzo_inspector", "agent2_tz_inspector", "agent21_tender_inspector", "agent3_collector_inspector", "api", "ui"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -107,7 +109,7 @@ addopts = "-v --tb=short"
 filterwarnings = ["ignore::DeprecationWarning"]
 
 [tool.coverage.run]
-source = ["agent1_dzo_inspector", "agent2_tz_inspector", "agent21_tender_inspector", "shared", "api"]
+source = ["agent1_dzo_inspector", "agent2_tz_inspector", "agent21_tender_inspector", "agent3_collector_inspector", "shared", "api"]
 omit = ["tests/*", "ui/*", "*/migrations/*"]
 
 [tool.coverage.report]

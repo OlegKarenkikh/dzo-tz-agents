@@ -85,6 +85,7 @@ def _install_mocks() -> None:
         "agent1_dzo_inspector.agent",
         "agent2_tz_inspector.agent",
         "agent21_tender_inspector.agent",
+        "agent3_collector_inspector.agent",
     ):
         try:
             mod = importlib.import_module(mod_name)

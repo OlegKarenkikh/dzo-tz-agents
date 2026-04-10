@@ -1,8 +1,8 @@
 """
 shared/mcp_server.py
-MCP (Model Context Protocol) server — предоставляет агентов ДЗО, ТЗ и Тендер
-как инструменты для любых MCP-совместимых клиентов (Claude Desktop, Cursor,
-Copilot, Continue и др.).
+MCP (Model Context Protocol) server — предоставляет агентов ДЗО, ТЗ, Тендер
+и Collector как инструменты для любых MCP-совместимых клиентов (Claude Desktop,
+Cursor, Copilot, Continue и др.).
 
 Депендансы: mcp[cli]>=1.3.0 (fastmcp)
 
@@ -37,7 +37,8 @@ mcp = FastMCP(
     instructions=(
         "Инструменты для проверки документов корпоративных закупок. "
         "Используй inspect_dzo для заявок ДЗО, inspect_tz для технических заданий, "
-        "inspect_tender для тендерной документации."
+        "inspect_tender для тендерной документации, "
+        "collect_documents для сбора анкет участников тендерного отбора."
     ),
     streamable_http_path="/",
 )
@@ -52,6 +53,7 @@ _AGENT_TOOL_MAP: dict[str, str] = {
     "dzo": "inspect_dzo",
     "tz": "inspect_tz",
     "tender": "inspect_tender",
+    "collector": "collect_documents",
 }
 
 
@@ -75,6 +77,9 @@ def _invoke_agent(agent_type: str, chat_input: str, model_name: str | None = Non
     elif agent_type == "tender":
         from agent21_tender_inspector.agent import create_tender_agent
         agent = create_tender_agent(model_name=model_name)
+    elif agent_type == "collector":
+        from agent3_collector_inspector.agent import create_collector_agent
+        agent = create_collector_agent(model_name=model_name)
     else:
         raise ValueError(f"Неизвестный тип агента: {agent_type!r}")
 
@@ -202,6 +207,25 @@ async def inspect_tender(
         dict с полями: output (текстовый результат), agent, steps, job_id
     """
     return await _create_mcp_job_async("tender", text, model_name or None)
+
+
+@mcp.tool()
+async def collect_documents(
+    text: str,
+    model_name: str = "",
+) -> dict[str, Any]:
+    """Собирает и проверяет документы участников тендерного отбора (анкеты, NDA).
+
+    Автоматизирует процесс:
+    - Идентификация участников по email/ИНН/наименованию
+    - Классификация вложений (анкета / NDA / прочее)
+    - Валидация ИНН и наименования из анкеты
+    - Формирование структуры папок и отчёта о сборе
+
+    Returns:
+        dict с полями: output (текстовый результат), agent, steps, job_id
+    """
+    return await _create_mcp_job_async("collector", text, model_name or None)
 
 
 @mcp.tool()

@@ -31,6 +31,7 @@ _DEFAULT_AGENT_FACTORY_REGISTRY: dict[str, str] = {
     "dzo": "agent1_dzo_inspector.agent:create_dzo_agent",
     "tz": "agent2_tz_inspector.agent:create_tz_agent",
     "tender": "agent21_tender_inspector.agent:create_tender_agent",
+    "collector": "agent3_collector_inspector.agent:create_collector_agent",
 }
 
 _DEFAULT_AGENT_TOOL_PERMISSIONS: dict[str, list[str]] = {
