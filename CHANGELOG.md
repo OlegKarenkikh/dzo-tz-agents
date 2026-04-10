@@ -4,6 +4,27 @@
 Формат соответствует [Keep a Changelog](https://keepachangelog.com/ru/1.0.0/).
 Проект использует [Semantic Versioning](https://semver.org/lang/ru/).
 
+## [1.5.0] — 2026-04-09
+
+### Added
+- `shared/mcp_server.py` — MCP (Model Context Protocol) server на базе `FastMCP`:
+  - `inspect_dzo(text, sender_email, subject, model_name)` — проверка заявки ДЗО как MCP tool
+  - `inspect_tz(text, model_name)` — анализ ТЗ как MCP tool
+  - `inspect_tender(text, model_name)` — парсинг тендерной документации как MCP tool
+  - `list_agents()` — список доступных агентов
+  - поддержка двух транспортов: `stdio` (Claude Desktop / Cursor) и `streamable-http`
+- `api/app.py`:
+  - MCP endpoint `GET/POST /mcp` через `app.mount("/mcp", mcp.streamable_http_app())`
+  - A2A Agent Card `GET /.well-known/agent.json` с описанием capabilities и skills
+- `tests/test_mcp_server.py` — unit-тесты MCP tools, A2A Agent Card и MCP mount
+- `docs/mcp-a2a.md` — документация по интеграции с MCP-клиентами и A2A consumers
+- `requirements.txt`, `pyproject.toml`: зависимость `mcp[cli]>=1.3.0`
+
+### Changed
+- `pyproject.toml`: версия пакета повышена до `1.5.0`
+- `pyproject.toml`: keywords дополнены `mcp`, `a2a`
+- `api/app.py`: заголовок модуля синхронизирован с новыми endpoint'ами
+
 ## [1.4.0] — 2026-03-26
 
 ### Added

@@ -426,6 +426,8 @@ elif page == "🧪 Тестирование":
         st.session_state.test_duplicate = None
     if "test_payload" not in st.session_state:
         st.session_state.test_payload = None
+    if "test_pending_job_id" not in st.session_state:
+        st.session_state.test_pending_job_id = None
 
     registered_agents = _get_ui_agents()
 
@@ -459,10 +461,21 @@ elif page == "🧪 Тестирование":
         )
 
     def _poll_job(job_id: str):
+        """Опрашивает задание до завершения (до 10 минут).
+
+        Сохраняет job_id в session_state, чтобы при переключении страницы и
+        возврате обратно продолжить показ результата.
+        """
+        st.session_state.test_pending_job_id = job_id
+        # Максимум 300 итераций × 2с = 600с (10 мин).
+        # При 413/token_limit агент может потратить ~5-7 мин на chunked compaction.
+        max_iters = 300
+        _poll_interval = 2  # секунд между запросами
+        total_seconds = max_iters * _poll_interval
         bar = st.progress(0, text="Ожидаем результат...")
         live_log = st.empty()
-        for i in range(60):
-            time.sleep(2)
+        for i in range(max_iters):
+            time.sleep(_poll_interval)
             res = _api_get(f"/api/v1/jobs/{job_id}")
             if res and isinstance(res, dict):
                 result_obj = res.get("result") if isinstance(res.get("result"), dict) else {}
@@ -481,13 +494,24 @@ elif page == "🧪 Тестирование":
                     with live_log.container():
                         st.caption("🧾 Живой журнал обработки (последние события)")
                         st.dataframe(tail_rows, hide_index=True, width='stretch')
-            bar.progress(min(int((i + 1) / 60 * 100), 99), text=f"Обработка... {(i+1)*2} сек.")
-            if res and res["status"] in ("done", "error"):
+            elapsed = (i + 1) * _poll_interval
+            bar.progress(
+                min(int(elapsed / total_seconds * 100), 99),
+                text=f"Обработка... {elapsed} сек.",
+            )
+            if res and res.get("status") in ("done", "error"):
                 bar.progress(100, text="Готово")
                 live_log.empty()
+                st.session_state.test_pending_job_id = None
                 return res
         bar.empty()
         live_log.empty()
+        # Таймаут UI — обработка может продолжаться на сервере.
+        # Сохраняем job_id, чтобы пользователь мог вернуться и получить результат.
+        st.warning(
+            f"⏳ Обработка ещё не завершена (задание `{job_id}`). "
+            "Вернитесь на эту страницу позже — результат подгрузится автоматически."
+        )
         return None
 
     def _show_job_result(result):
@@ -496,19 +520,47 @@ elif page == "🧪 Тестирование":
         if result["status"] == "done":
             r = result.get("result") or {}
             decision = r.get("decision", "")
-            st.markdown(
-                f"**Решение:** {_decision_badge(decision)}",
-                unsafe_allow_html=True,
-            )
+            # Технические решения — отображаем как предупреждение/ошибку, не как бейдж
+            technical_decisions = {
+                "token_limit_exhausted": "❌ Документ слишком большой — агент не смог обработать его в рамках лимита токенов модели (413). Попробуйте сократить текст или разбить на части.",
+                "rate_limit_exhausted": "⏳ Лимит запросов к модели исчерпан (429). Попробуйте позже.",
+                "tool_calls_missing": "⚠️ Модель не выполнила обязательные инструменты (no tool calls). Попробуйте ещё раз или смените модель.",
+            }
+            if decision in technical_decisions:
+                st.warning(technical_decisions[decision])
+                model_err = r.get("model_error", {})
+                if model_err:
+                    st.caption(f"Код: `{model_err.get('code','')}` — {model_err.get('message','')}")
+            else:
+                st.markdown(
+                    f"**Решение:** {_decision_badge(decision)}",
+                    unsafe_allow_html=True,
+                )
             _show_artifacts(r, expanded=True, key_prefix="test")
         else:
             st.error(f"Ошибка: {result.get('error', 'неизвестная ошибка')}")
 
     with col_right:
         st.subheader("Результат")
+
+        # Если при прошлом запуске UI вышел по таймауту, но обработка продолжалась —
+        # при возврате на страницу пробуем подтянуть результат.
+        if st.session_state.test_pending_job_id and not st.session_state.test_result:
+            resume_id = st.session_state.test_pending_job_id
+            resumed = _api_get(f"/api/v1/jobs/{resume_id}")
+            if resumed and resumed.get("status") in ("done", "error"):
+                st.session_state.test_result = resumed
+                st.session_state.test_pending_job_id = None
+                st.rerun()
+            elif resumed:
+                st.info(f"⏳ Задание `{resume_id}` ещё обрабатывается (статус: {resumed.get('status','...')}). Нажмите «Обновить» для проверки.")
+                if st.button("🔄 Обновить статус"):
+                    st.rerun()
+
         if st.button("🔍 Проверить", type="primary", width='stretch'):
             st.session_state.test_result = None
             st.session_state.test_duplicate = None
+            st.session_state.test_pending_job_id = None
 
             attachments = []
             for f in (uploaded_files or []):

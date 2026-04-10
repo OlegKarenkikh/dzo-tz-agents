@@ -6,7 +6,7 @@
   deepseek      — DeepSeek API
   vllm          — vLLM (self-hosted)
   lmstudio      — LM Studio
-  github_models — GitHub Models (https://models.inference.ai.azure.com)
+  github_models — GitHub Models (https://models.github.ai/inference)
 """
 import logging
 import re
@@ -26,13 +26,13 @@ from config import (
 
 logger = logging.getLogger("llm")
 
-_GITHUB_MODELS_BASE_URL = "https://models.inference.ai.azure.com"
+_GITHUB_MODELS_BASE_URL = "https://models.github.ai/inference"
 
 _GITHUB_MODELS_PRIORITY: list[str] = [
-    "gpt-4o-mini",
-    "Meta-Llama-3.1-405B-Instruct",
-    "gpt-4o",
-    "Meta-Llama-3.1-8B-Instruct",
+    "openai/gpt-4.1",
+    "openai/gpt-4.1-mini",
+    "openai/gpt-4o",
+    "openai/gpt-4o-mini",
 ]
 
 # RC-03 fix: единый RLock для всех 4 кешей — защищает от concurrent read-modify-write
@@ -341,10 +341,12 @@ _effective_openai_key = effective_openai_key
 
 def build_fallback_chain(primary: str) -> list[str]:
     if LLM_BACKEND == "github_models":
-        api_key = effective_openai_key() or GITHUB_TOKEN or ""
+        # Приоритет GITHUB_TOKEN → effective_openai_key() — совпадает с build_llm().
+        api_key = GITHUB_TOKEN or effective_openai_key() or ""
         return build_github_fallback_chain(api_key, primary)
     if LLM_BACKEND in LOCAL_BACKENDS:
         return build_local_fallback_chain(primary)
+    # openai / deepseek / any custom OpenAI-compatible endpoint
     chain: list[str] = [primary]
     for m in FALLBACK_MODELS:
         if m not in chain:
@@ -355,7 +357,7 @@ def build_fallback_chain(primary: str) -> list[str]:
 def build_llm(temperature: float = 0.2, model_name_override: str | None = None) -> ChatOpenAI:
     model = model_name_override or MODEL_NAME
     if LLM_BACKEND == "github_models":
-        api_key = effective_openai_key() or GITHUB_TOKEN
+        api_key = GITHUB_TOKEN or effective_openai_key()
         if not api_key:
             raise ValueError(
                 "Для LLM_BACKEND='github_models' необходимо задать OPENAI_API_KEY "

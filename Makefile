@@ -1,4 +1,4 @@
-.PHONY: help install test lint fmt build up down logs clean api ui api-ui dzo-only tz-only tender-only test-agent-dzo test-agent-tz test-agent-tender monitoring monitoring-down
+.PHONY: help install test lint fmt build up down logs clean api ui api-ui stop-local restart-local dzo-only tz-only tender-only test-agent-dzo test-agent-tz test-agent-tender monitoring monitoring-down
 
 help: ## Показать доступные команды
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -40,6 +40,26 @@ ui: ## Запустить Streamlit локально
 
 api-ui: ## Запустить API + UI одновременно
 	$(MAKE) -j2 api ui
+
+stop-local: ## Остановить локально запущенные API и UI (по порту)
+	@echo "Останавливаем процессы на портах 8000 и 8501..."
+	@_stop_port() { \
+		port=$$1; name=$$2; \
+		if command -v fuser >/dev/null 2>&1; then \
+			fuser -k $${port}/tcp 2>/dev/null && echo "  $${name} ($${port}) остановлен" || echo "  $${name} ($${port}) не запущен"; \
+		elif command -v lsof >/dev/null 2>&1; then \
+			pid=$$(lsof -ti tcp:$${port} 2>/dev/null); \
+			if [ -n "$$pid" ]; then kill $$pid 2>/dev/null && echo "  $${name} ($${port}) остановлен" || echo "  $${name} ($${port}) не запущен"; else echo "  $${name} ($${port}) не запущен"; fi; \
+		else \
+			echo "  $${name} ($${port}): требуется fuser (psmisc) или lsof"; \
+		fi; \
+	}; \
+	_stop_port 8000 API; \
+	_stop_port 8501 UI
+
+restart-local: stop-local ## Перезапустить API + UI локально (kill по порту → запуск)
+	@sleep 1
+	$(MAKE) api-ui
 
 dzo-only: ## Запустить только Агент ДЗО
 	AGENT_MODE=dzo python main.py

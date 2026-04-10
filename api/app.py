@@ -5,12 +5,14 @@ FastAPI REST API для обработки документов агентами
   GET  /health                         — статус сервиса
   GET  /status                         — последние N запусков агентов
   GET  /agents                         — список доступных агентов
+  GET  /.well-known/agent.json         — A2A Agent Card
+  GET/POST /mcp                        — MCP streamable HTTP endpoint
   GET  /metrics                        — Prometheus scrape
   POST /api/v1/process/dzo             — обработать заявку ДЗО
   POST /api/v1/process/tz              — обработать ТЗ
-    POST /api/v1/process/tender          — парсинг тендерной документации
-    POST /api/v1/process/{agent}         — обработать документ указанным агентом
-    POST /api/v1/resolve-agent           — определить агента по содержимому
+  POST /api/v1/process/tender          — парсинг тендерной документации
+  POST /api/v1/process/{agent}         — обработать документ указанным агентом
+  POST /api/v1/resolve-agent           — определить агента по содержимому
   POST /api/v1/process/auto            — автоопределение типа
   GET  /api/v1/check-duplicate         — проверить дубликат без обработки
   GET  /api/v1/jobs                    — список всех заданий (с пагинацией)
@@ -58,9 +60,10 @@ from config import (  # noqa: E402
     AGENT_JOB_TIMEOUT_SEC,
     AGENT_MAX_RETRIES,
     AGENT_RATE_LIMIT_BACKOFF,
+    GITHUB_TOKEN,
     LLM_BACKEND,
     MODEL_NAME,
-    GITHUB_TOKEN,
+    PUBLIC_BASE_URL,
 )
 from shared.database import (  # noqa: E402
     close_db,
@@ -74,6 +77,16 @@ from shared.database import (  # noqa: E402
     init_db,
     update_job,
 )
+try:
+    from shared.mcp_server import mcp as _mcp_server  # noqa: E402
+    _MCP_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    _mcp_server = None  # type: ignore[assignment]
+    _MCP_AVAILABLE = False
+    logging.getLogger("api").warning(
+        "Пакет 'mcp' не установлен — эндпоинт /mcp недоступен. "
+        "Установите: pip install 'mcp[cli]>=1.3.0'"
+    )
 
 if not logging.getLogger().handlers:
     logging.basicConfig(
@@ -116,6 +129,23 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# ---------------------------------------------------------------------------
+# Middleware registration order
+# ---------------------------------------------------------------------------
+# Starlette processes middleware in LIFO order: the LAST add_middleware call
+# is the OUTERMOST wrapper (first to see the request, last to see the
+# response). @app.middleware("http") decorators run even further outside.
+#
+# Effective request execution order (outermost → innermost):
+#   1. _log_and_measure    — timing + Prometheus metrics
+#   2. _mcp_auth_guard     — /mcp auth (attaches CORS headers on 401)
+#   3. CORSMiddleware      — CORS preflight & response headers
+#   4. SlowAPIMiddleware   — rate limiting
+#   5. Route handlers / mounted sub-apps (/mcp)
+#
+# IMPORTANT: _mcp_auth_guard returns 401 *before* CORSMiddleware sees the
+# request, so it explicitly attaches CORS headers to its 401 response.
+# ---------------------------------------------------------------------------
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
@@ -125,15 +155,14 @@ app.add_middleware(
     allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["GET", "POST", "DELETE"],
-    allow_headers=["X-API-Key", "Content-Type", "Accept"],
+    allow_headers=["X-API-Key", "Authorization", "Content-Type", "Accept", "X-Requested-With"],
 )
+if _MCP_AVAILABLE:
+    app.mount("/mcp", _mcp_server.streamable_http_app())  # type: ignore[union-attr]
 
 _start_time = datetime.now(UTC)
-
-# FIX RC-02: _run_log + дедикированный lock
 _run_log: deque[dict] = deque(maxlen=500)
 _run_log_lock = threading.Lock()
-
 _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 AGENT_REGISTRY: dict[str, dict] = {
@@ -143,9 +172,7 @@ AGENT_REGISTRY: dict[str, dict] = {
         "decisions": ["Заявка полная", "Требуется доработка", "Требуется эскалация"],
         "auto_detect": {
             "priority": 10,
-            "keywords": [
-                "заявка на закупку", "инициатор", "форма тезис", "обоснование закупки", "дзо",
-            ],
+            "keywords": ["заявка на закупку", "инициатор", "форма тезис", "обоснование закупки", "дзо"],
         },
     },
     "tz": {
@@ -157,24 +184,19 @@ AGENT_REGISTRY: dict[str, dict] = {
             "keywords": [
                 "техническое задание", "техзадание", "технического задания",
                 "terms of reference", "tor", "тз №", "тз к",
-                "требования к поставке", "технические требования",
-                "тз",
+                "требования к поставке", "технические требования", "тз",
             ],
         },
     },
     "tender": {
         "name": "Парсер тендерной документации",
-        "description": (
-            "Извлекает полный список документов, требуемых от участника закупки, "
-            "с указанием раздела документации и требований к содержанию"
-        ),
+        "description": "Извлекает полный список документов, требуемых от участника закупки, с указанием раздела документации и требований к содержанию",
         "decisions": ["documents_found", "tool_error"],
         "auto_detect": {
             "priority": 100,
             "keywords": [
-                "тендерная документация", "закупочная документация",
-                "конкурсная документация", "аукционная документация",
-                "извещение о закупке", "документация о закупке",
+                "тендерная документация", "закупочная документация", "конкурсная документация",
+                "аукционная документация", "извещение о закупке", "документация о закупке",
                 "44-фз", "223-фз", "тендер",
                 # Insurance-specific keywords for tender routing
                 "страхование", "осаго", "каско", "дмс", "омс",
@@ -199,12 +221,7 @@ def _fallback_agent_id() -> str:
 
 
 def _resolve_agent(request: "ProcessRequest") -> tuple[str, str | None]:
-    combined = (
-        request.text[:2000] + " "
-        + request.subject + " "
-        + request.filename
-    ).lower()
-
+    combined = (request.text[:2000] + " " + request.subject + " " + request.filename).lower()
     profiles: list[tuple[int, str, list[str]]] = []
     for agent_id, info in AGENT_REGISTRY.items():
         auto_detect = info.get("auto_detect") or {}
@@ -214,16 +231,42 @@ def _resolve_agent(request: "ProcessRequest") -> tuple[str, str | None]:
             continue
         priority = int(auto_detect.get("priority", 0))
         profiles.append((priority, agent_id, sorted(keywords, key=len, reverse=True)))
-
     profiles.sort(key=lambda x: x[0], reverse=True)
-
     for _priority, agent_id, keywords in profiles:
         for kw in keywords:
             if kw in combined:
                 logger.debug("_resolve_agent: '%s' → %s (ключ: '%s')", request.subject[:50], agent_id, kw)
                 return agent_id, kw
-
     return _fallback_agent_id(), None
+
+
+def _format_created_at(created_at: object) -> str:
+    """Форматирует дату создания задачи в строку YYYY-MM-DD.
+
+    Корректно обрабатывает PG datetime, ISO-строки и None.
+    """
+    if created_at is None:
+        return "N/A"
+    if hasattr(created_at, "date"):
+        return created_at.date().isoformat()
+    return str(created_at)[:10]
+
+
+def _attachment_meta(attachments: list) -> list[dict]:
+    """Формирует metadata-only список вложений (без content_base64).
+
+    size_bytes вычисляется корректно с учётом base64-padding ('=').
+    Используется и в успешной, и в ошибочной ветке _process_with_agent,
+    чтобы обе ветки всегда давали одинаковый формат.
+    """
+    result = []
+    for a in attachments:
+        b64 = a.content_base64
+        # base64: 4 символа → 3 байта; каждый '=' уменьшает на 1 байт
+        # max(0, ...) защищает от отрицательного значения при вырожденном b64 (напр. "=")
+        size = max(0, len(b64) * 3 // 4 - b64.count("="))
+        result.append({"filename": a.filename, "mime_type": a.mime_type, "size_bytes": size})
+    return result
 
 
 def _get_api_key() -> str:
@@ -263,10 +306,7 @@ class ProcessRequest(BaseModel):
         for att in self.attachments:
             total += len(att.content_base64) + len(att.filename) + len(att.mime_type)
         if total > _MAX_REQUEST_BYTES:
-            raise ValueError(
-                f"Суммарный размер полей запроса (~{total} байт) "
-                f"превышает лимит {_MAX_REQUEST_BYTES} байт"
-            )
+            raise ValueError(f"Суммарный размер полей запроса (~{total} байт) превышает лимит {_MAX_REQUEST_BYTES} байт")
         return self
 
 
@@ -430,16 +470,12 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
     with JobTimer(agent_type):
         try:
             from shared.file_extractor import extract_text_from_attachment
-
             attachment_texts: list[str] = []
             for att in request.attachments:
                 try:
                     raw = base64.b64decode(att.content_base64)
                     ext = att.filename.rsplit(".", 1)[-1].lower() if "." in att.filename else ""
-                    text = extract_text_from_attachment({
-                        "filename": att.filename, "ext": ext,
-                        "data": raw, "b64": att.content_base64, "mime": att.mime_type,
-                    })
+                    text = extract_text_from_attachment({"filename": att.filename, "ext": ext, "data": raw, "b64": att.content_base64, "mime": att.mime_type})
                     attachment_texts.append("---- " + att.filename + " ----\n" + text)
                 except Exception as e:
                     logger.warning("[%s] Ошибка извлечения %s: %s", job_id, att.filename, e)
@@ -477,25 +513,21 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
 
             if agent_type not in AGENT_REGISTRY:
                 raise ValueError("Неизвестный агент: " + agent_type)
-
-            from shared.llm import (
-                LOCAL_BACKENDS,
-                effective_openai_key,
-                build_fallback_chain,
-                estimate_tokens,
-                probe_local_max_context,
-                probe_max_input_tokens,
-                resolve_local_base_url,
-            )
-
+            from shared.llm import LOCAL_BACKENDS, build_fallback_chain, effective_openai_key, estimate_tokens, probe_local_max_context, probe_max_input_tokens, resolve_local_base_url
             fallback_chain = build_fallback_chain(MODEL_NAME)
-            _api_key = effective_openai_key() or GITHUB_TOKEN or "not-needed"
+            if LLM_BACKEND == "github_models":
+                _api_key = GITHUB_TOKEN or effective_openai_key() or "not-needed"
+            else:
+                _api_key = effective_openai_key() or GITHUB_TOKEN or "not-needed"
 
             # Для tool-агентов на GitHub Models приоритетно используем модели,
             # которые стабильно поддерживают tool-calling.
+            # Нормализуем ID: GitHub Models может возвращать "openai/gpt-4o" или "gpt-4o".
             if LLM_BACKEND == "github_models":
                 _preferred_tool_models = {"gpt-4o", "gpt-4o-mini"}
-                _preferred = [m for m in fallback_chain if m in _preferred_tool_models]
+                def _norm_model_id(m: str) -> str:
+                    return m.split("/")[-1] if "/" in m else m
+                _preferred = [m for m in fallback_chain if _norm_model_id(m) in _preferred_tool_models]
                 if _preferred:
                     _skipped_non_tool = [m for m in fallback_chain if m not in _preferred]
                     fallback_chain = _preferred
@@ -533,9 +565,7 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                         job_id, _est_input, _chunking_threshold_tok,
                     )
                     try:
-                        _summary = analyze_document_in_chunks(
-                            chat_input, _api_key, _best_model, agent_type
-                        )
+                        _summary = analyze_document_in_chunks(chat_input, _api_key, _best_model, agent_type)
                         if _summary:
                             chat_input = _summary
                             _after_tokens = estimate_tokens(chat_input)
@@ -553,12 +583,8 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                             logger.warning("[%s] Поблочный анализ не дал результата", job_id)
                     except Exception as _chunk_err:
                         logger.warning("[%s] Поблочный анализ упал: %s", job_id, _chunk_err)
-
                 _est_input = estimate_tokens(chat_input)
-                _filtered = [
-                    m for m in fallback_chain
-                    if (_get_ctx(m) or 0) > _est_input + _TOOLS_OVERHEAD
-                ]
+                _filtered = [m for m in fallback_chain if (_get_ctx(m) or 0) > _est_input + _TOOLS_OVERHEAD]
                 if _filtered:
                     _skipped = [m for m in fallback_chain if m not in _filtered]
                     if _skipped:
@@ -572,7 +598,6 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                         logger.warning("[%s] Финальная обрезка: %d → %d симв.", job_id, len(chat_input), _max_input_chars)
                         chat_input = chat_input[:_max_input_chars]
                     fallback_chain = [_best] + [m for m in fallback_chain if m != _best]
-
             logger.info("[%s] Fallback-цепочка: %s", job_id, " → ".join(fallback_chain))
             _log_event(
                 "routing",
@@ -631,16 +656,13 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                             import importlib
                             mod = importlib.import_module("agent_" + agent_type + ".agent")
                             agent = mod.create_agent(model_name=model_name)
-
                         if AGENT_JOB_TIMEOUT_SEC > 0:
                             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
                                 future = ex.submit(agent.invoke, {"input": model_input})
                                 try:
                                     result = future.result(timeout=AGENT_JOB_TIMEOUT_SEC)
                                 except concurrent.futures.TimeoutError:
-                                    raise TimeoutError(
-                                        f"Агент не завершился за {AGENT_JOB_TIMEOUT_SEC}с"
-                                    )
+                                    raise TimeoutError(f"Агент не завершился за {AGENT_JOB_TIMEOUT_SEC}с")
                         else:
                             result = agent.invoke({"input": model_input})
 
@@ -697,12 +719,10 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                         )
                         last_exc = None
                         break
-
                     except TimeoutError:
                         raise
-
                     except Exception as exc:
-                        from openai import APIStatusError, RateLimitError as _RLE, AuthenticationError
+                        from openai import APIStatusError, AuthenticationError, RateLimitError as _RLE
                         _exc_str = str(exc)
 
                         is_rate_limit = isinstance(exc, _RLE) or (
@@ -716,6 +736,19 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                             isinstance(exc, APIStatusError)
                             and getattr(exc, "status_code", 0) == 401
                         )
+                        # 400 model_not_found — модель недоступна на этом endpoint'е;
+                        # переключаемся на следующую в цепочке без ретраев.
+                        is_model_not_found = (
+                            isinstance(exc, APIStatusError)
+                            and getattr(exc, "status_code", 0) == 400
+                            and "model_not_found" in _exc_str.lower()
+                        )
+                        # 502/503 — upstream провайдер недоступен или не прошла аутентификация
+                        # на уровне proxy; немедленно переключаемся, ретрай бесполезен.
+                        is_upstream_error = (
+                            isinstance(exc, APIStatusError)
+                            and getattr(exc, "status_code", 0) in (502, 503)
+                        )
 
                         if is_auth_error:
                             logger.error("[%s] Ошибка аутентификации на модели %s: %s", job_id, model_name, exc)
@@ -726,7 +759,30 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                                 error=str(exc),
                             )
                             raise
-
+                        if is_model_not_found:
+                            logger.warning("[%s] Модель %s недоступна на endpoint'е — переключаем", job_id, model_name)
+                            _log_event(
+                                "model_not_found",
+                                "Модель недоступна на текущем endpoint'е",
+                                model=model_name,
+                                error=str(exc),
+                            )
+                            last_exc = exc
+                            break  # немедленно перейти к следующей модели в fallback_chain
+                        if is_upstream_error:
+                            _status = getattr(exc, "status_code", 502)
+                            logger.warning(
+                                "[%s] Upstream error %d на модели %s — переключаем",
+                                job_id, _status, model_name,
+                            )
+                            _log_event(
+                                "model_upstream_error",
+                                "Ошибка upstream провайдера — переключаем на следующую модель",
+                                model=model_name,
+                                error=str(exc),
+                            )
+                            last_exc = exc
+                            break  # немедленно перейти к следующей модели в fallback_chain
                         if not is_rate_limit and not is_token_limit:
                             _log_event(
                                 "model_error",
@@ -735,7 +791,6 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                                 error=str(exc),
                             )
                             raise
-
                         last_exc = exc
                         reason = "429 RateLimit" if is_rate_limit else "413 TokenLimit"
                         logger.warning("[%s] %s на %s (попытка %d/%d)",
@@ -791,7 +846,6 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
 
                 if last_exc is None:
                     break
-
                 from openai import APIStatusError as _APIStatusError
                 from openai import RateLimitError as _RateLimitError
                 _exc_str_sw = str(last_exc)
@@ -800,6 +854,9 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                     or "tokens_limit_reached" in _exc_str_sw
                     or "429" in _exc_str_sw
                     or "413" in _exc_str_sw
+                    or "502" in _exc_str_sw
+                    or "503" in _exc_str_sw
+                    or "model_not_found" in _exc_str_sw.lower()
                     or "NoToolCalls" in _exc_str_sw
                 )
                 if _switchable and model_idx + 1 < len(fallback_chain):
@@ -807,7 +864,6 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                     logger.warning("[%s] Переключение модели: %s → %s", job_id, model_name, next_model)
                     time.sleep(AGENT_RATE_LIMIT_BACKOFF)
                     continue
-
             if last_exc is not None:
                 if "NoToolCalls" in str(last_exc):
                     no_tool_calls_exhausted = True
@@ -840,7 +896,6 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
 
             decision = ""
             artifacts: dict = {}
-
             for step_idx, step in enumerate(result.get("intermediate_steps", []), start=1):
                 try:
                     tool_name = "tool"
@@ -865,7 +920,6 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
 
                     if obs.get("decision"):
                         decision = obs["decision"]
-
                     if obs.get("emailHtml"):
                         _apply_email_artifact(
                             artifacts,
@@ -905,7 +959,6 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                         elif "error" in obs and not artifacts.get("document_list"):
                             artifacts["document_list_error"] = obs
                             decision = "tool_error"
-
                 except Exception as _step_err:
                     logger.warning("[%s] step parse error: %s", job_id, _step_err)
                     _log_event(
@@ -970,7 +1023,6 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
 
             if artifacts:
                 logger.info("[%s] Артефакты: %s", job_id, ", ".join(artifacts.keys()))
-
             if decision:
                 DECISIONS_TOTAL.labels(agent=agent_type, decision=decision).inc()
 
@@ -991,14 +1043,7 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                     # to avoid bloating JSONB with up to 7 MB per attachment.
                     "request_payload": {
                         **{k: v for k, v in request.model_dump().items() if k != "attachments"},
-                        "attachments": [
-                            {
-                                "filename": a.filename,
-                                "mime_type": a.mime_type,
-                                "size_bytes": len(a.content_base64) * 3 // 4,
-                            }
-                            for a in (request.attachments or [])
-                        ],
+                        "attachments": _attachment_meta(request.attachments or []),
                     },
                     "processing_log": processing_log,
                     **artifacts,
@@ -1007,7 +1052,6 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
             with _run_log_lock:
                 _run_log.append({"agent": agent_type, "ts": ts, "status": "ok", "job_id": job_id})
             logger.info("[%s] Завершено. Решение: %s", job_id, decision)
-
         except Exception as e:
             _log_event("failed", "Обработка завершилась ошибкой", error=str(e))
             processing_log["failed_at"] = datetime.now(UTC).isoformat()
@@ -1016,13 +1060,16 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                 status="error",
                 error=str(e),
                 result={
-                    "request_payload": request.model_dump(),
+                    # Attachments stored as metadata only — same as success path
+                    "request_payload": {
+                        **{k: v for k, v in request.model_dump().items() if k != "attachments"},
+                        "attachments": _attachment_meta(request.attachments or []),
+                    },
                     "processing_log": processing_log,
                 },
             )
             with _run_log_lock:
-                _run_log.append({"agent": agent_type, "ts": ts, "status": "error",
-                                  "job_id": job_id, "error": str(e)})
+                _run_log.append({"agent": agent_type, "ts": ts, "status": "error", "job_id": job_id, "error": str(e)})
             logger.error("[%s] Ошибка: %s", job_id, e)
             # Фоновая задача уже записала статус/ошибку в БД, повторный raise лишь шумит traceback в ASGI логах.
             return
@@ -1033,32 +1080,65 @@ def _detect_agent_type(request: ProcessRequest) -> str:
     return agent_type
 
 
-def _check_and_process(
-    agent_type: str,
-    request: ProcessRequest,
-    background_tasks: BackgroundTasks,
-) -> dict:
+def _check_and_process(agent_type: str, request: ProcessRequest, background_tasks: BackgroundTasks) -> dict:
     if agent_type not in AGENT_REGISTRY:
         raise HTTPException(status_code=400, detail="Неизвестный агент: " + repr(agent_type))
     if not request.force:
         dup = find_duplicate_job(agent_type, request.sender_email, request.subject)
         if dup:
-            logger.info("[dedup] Дубликат для %s/%r/%r -> %s",
-                        agent_type, request.sender_email, request.subject, dup["job_id"])
+            logger.info("[dedup] Дубликат для %s/%r/%r -> %s", agent_type, request.sender_email, request.subject, dup["job_id"])
             return {
                 "duplicate": True,
                 "existing_job_id": dup["job_id"],
                 "job": dup,
-                "message": (
-                    "Письмо уже было обработано ("
-                    + str(dup["created_at"])[:10]
-                    + "). Добавьте force=true чтобы переобработать."
-                ),
+                "message": "Письмо уже было обработано (" + _format_created_at(dup["created_at"]) + "). Добавьте force=true чтобы переобработать.",
             }
     job_id = create_job(agent_type, sender=request.sender_email, subject=request.subject)
     background_tasks.add_task(_process_with_agent, job_id, agent_type, request)
     job = db_get_job(job_id)
     return {"duplicate": False, "existing_job_id": None, "job": job, "message": ""}
+
+
+@app.middleware("http")
+async def _mcp_auth_guard(request: Request, call_next):
+    """Защита /mcp endpoint API-ключом (если API_KEY задан).
+
+    A2A Agent Card (/.well-known/agent.json) остаётся публичной по стандарту A2A.
+    OPTIONS preflight пропускается без проверки.
+
+    Note: this middleware runs *outside* CORSMiddleware in the Starlette stack
+    (middlewares execute top-to-bottom, but are *registered* bottom-to-top via
+    add_middleware; @app.middleware("http") decorators run outermost). Because a
+    401 returned here never passes through CORSMiddleware, we must attach CORS
+    headers explicitly so browser-based MCP clients see 401 instead of an opaque
+    CORS error.
+    """
+    path = request.url.path
+    if _MCP_AVAILABLE and (path == "/mcp" or path.startswith("/mcp/")) and request.method != "OPTIONS":
+        api_key = _get_api_key()
+        if api_key:
+            provided = (request.headers.get("X-API-Key") or "").strip()
+            if not provided:
+                auth_header = request.headers.get("Authorization", "").strip()
+                scheme, _, credentials = auth_header.partition(" ")
+                if scheme.lower() == "bearer":
+                    provided = credentials.strip()
+            if not provided or not secrets.compare_digest(provided, api_key):
+                response = JSONResponse({"detail": "Unauthorized"}, status_code=401)
+                # Attach CORS headers so browser clients receive the 401 instead
+                # of an opaque network error. Uses the same origins configured for
+                # the main CORSMiddleware.
+                origin = request.headers.get("origin", "")
+                if origin and (origin in CORS_ORIGINS or "*" in CORS_ORIGINS):
+                    response.headers["Access-Control-Allow-Origin"] = origin
+                    response.headers["Access-Control-Allow-Credentials"] = "true"
+                elif CORS_ORIGINS:
+                    response.headers["Access-Control-Allow-Origin"] = CORS_ORIGINS[0]
+                    response.headers["Access-Control-Allow-Credentials"] = "true"
+                response.headers["Access-Control-Allow-Methods"] = "GET, POST, DELETE"
+                response.headers["Access-Control-Allow-Headers"] = "X-API-Key, Authorization, Content-Type, Accept, X-Requested-With"
+                return response
+    return await call_next(request)
 
 
 @app.middleware("http")
@@ -1069,8 +1149,7 @@ async def _log_and_measure(request: Request, call_next):
     path = request.url.path
     if path != "/metrics":
         API_LATENCY.labels(method=request.method, endpoint=path).observe(duration)
-        API_REQUESTS.labels(method=request.method, endpoint=path,
-                            status_code=str(response.status_code)).inc()
+        API_REQUESTS.labels(method=request.method, endpoint=path, status_code=str(response.status_code)).inc()
     logger.info("%s %s [%s] %.3fs", request.method, path, response.status_code, duration)
     return response
 
@@ -1097,71 +1176,157 @@ def status(limit: int = Query(default=10, ge=1, le=100)):
 @app.get("/agents", summary="Список агентов")
 def list_agents():
     return {
-        "agents": [
-            {
-                "id": aid,
-                "name": info.get("name", aid),
-                "description": info.get("description", ""),
-                "decisions": info.get("decisions", []),
-            }
-            for aid, info in AGENT_REGISTRY.items()
-        ]
+        "agents": [{"id": aid, "name": info.get("name", aid), "description": info.get("description", ""), "decisions": info.get("decisions", [])} for aid, info in AGENT_REGISTRY.items()]
+    }
+
+
+def _agent_card_base_url(request: Request) -> str:
+    """Возвращает базовый URL для A2A Agent Card.
+
+    Приоритет:
+    1. PUBLIC_BASE_URL (явная конфигурация — рекомендуется для прод-окружений).
+    2. request.base_url с опциональной подстановкой X-Forwarded-Proto
+       (только http/https), но только если явно задан AGENT_CARD_ALLOWED_HOSTS.
+
+    Важно: request.base_url зависит от данных входящего запроса, включая Host.
+    Поэтому fallback без PUBLIC_BASE_URL допускается только при обязательной
+    проверке hostname по AGENT_CARD_ALLOWED_HOSTS.
+
+    AGENT_CARD_ALLOWED_HOSTS: через запятую список допустимых hostname.
+    Если PUBLIC_BASE_URL не задан и AGENT_CARD_ALLOWED_HOSTS пуст — ошибка
+    конфигурации (HTTP 500). Если hostname запроса не входит в allowlist —
+    возвращается 403.
+    """
+    if PUBLIC_BASE_URL:
+        return PUBLIC_BASE_URL.rstrip("/")
+
+    allowed_hosts_raw = os.getenv("AGENT_CARD_ALLOWED_HOSTS", "").strip()
+    if not allowed_hosts_raw:
+        raise HTTPException(
+            status_code=500,
+            detail="Agent Card base URL is not configured securely. Set PUBLIC_BASE_URL or AGENT_CARD_ALLOWED_HOSTS.",
+        )
+
+    allowed = {h.strip().lower() for h in allowed_hosts_raw.split(",") if h.strip()}
+    hostname = (request.url.hostname or "").lower()
+    if hostname not in allowed:
+        raise HTTPException(
+            status_code=403,
+            detail="Untrusted host for Agent Card. Set PUBLIC_BASE_URL or AGENT_CARD_ALLOWED_HOSTS.",
+        )
+
+    base = str(request.base_url).rstrip("/")
+    proto = request.headers.get("X-Forwarded-Proto", "").strip().lower()
+    if proto:
+        # Only honour the header when the value is a valid protocol.
+        # Requests already passed the AGENT_CARD_ALLOWED_HOSTS hostname check
+        # above, so the caller is considered a trusted proxy.
+        if proto in ("http", "https"):
+            # request.base_url always contains "://" — partition is safe here.
+            _, sep, rest = base.partition("://")
+            if sep:
+                base = f"{proto}://{rest}"
+        else:
+            logger.warning(
+                "Ignoring invalid X-Forwarded-Proto value: %r", proto,
+            )
+    return base
+
+
+# Additional A2A skill metadata keyed by agent_id.
+# AGENT_REGISTRY provides name/description; this adds tags + examples for the card.
+_A2A_SKILL_META: dict[str, dict] = {
+    "dzo": {
+        "tags": ["dzo", "procurement", "validation"],
+        "examples": ["Проверь заявку на закупку оборудования"],
+    },
+    "tz": {
+        "tags": ["tz", "specification", "gost"],
+        "examples": ["Проверь ТЗ на поставку серверов"],
+    },
+    "tender": {
+        "tags": ["tender", "documents", "223-fz", "44-fz"],
+        "examples": ["Извлеки список документов из конкурсной документации"],
+    },
+}
+
+# MCP tool name mapping (same as shared.mcp_server._AGENT_TOOL_MAP).
+_A2A_TOOL_MAP: dict[str, str] = {
+    "dzo": "inspect_dzo",
+    "tz": "inspect_tz",
+    "tender": "inspect_tender",
+}
+
+
+@app.get("/.well-known/agent.json", summary="A2A Agent Card")
+def agent_card(request: Request):
+    base_url = _agent_card_base_url(request)
+    # Derive skills from the single AGENT_REGISTRY source of truth.
+    skills = []
+    for agent_id, info in AGENT_REGISTRY.items():
+        meta = _A2A_SKILL_META.get(agent_id, {})
+        skills.append({
+            "id": _A2A_TOOL_MAP.get(agent_id, f"inspect_{agent_id}"),
+            "name": info.get("name", agent_id),
+            "description": info.get("description", ""),
+            "tags": meta.get("tags", [agent_id]),
+            "examples": meta.get("examples", []),
+        })
+    return {
+        "name": "DZO/TZ Inspector",
+        "description": "Инспектор заявок ДЗО, технических заданий и тендерной документации",
+        "version": _API_VERSION,
+        "url": base_url,
+        "protocolVersion": "0.2.1",
+        "capabilities": {
+            "streaming": False,
+            "pushNotifications": False,
+        },
+        "defaultInputModes": ["text/plain", "application/json"],
+        "defaultOutputModes": ["text/plain", "application/json"],
+        "skills": skills,
     }
 
 
 @app.get("/api/v1/check-duplicate", summary="Проверить дубликат")
 @limiter.limit(DEFAULT_RATE_LIMIT)
-def check_duplicate(
-    request: Request,
-    agent: str = Query(..., description="ID агента из GET /agents"),
-    sender: str = Query(default=""),
-    subject: str = Query(default=""),
-    _: str = Depends(_require_api_key),
-):
+def check_duplicate(request: Request, agent: str = Query(..., description="ID агента из GET /agents"), sender: str = Query(default=""), subject: str = Query(default=""), _: str = Depends(_require_api_key)):
     if agent not in AGENT_REGISTRY:
         raise HTTPException(status_code=400, detail="Неизвестный агент: " + repr(agent))
     dup = find_duplicate_job(agent, sender, subject)
     if dup:
-        return DuplicateResponse(
-            duplicate=True, existing_job_id=dup["job_id"], job=dup,
-            message="Обработано " + str(dup["created_at"])[:10] + ", решение: " + str(dup.get("decision", "--")),
-        )
+        return DuplicateResponse(duplicate=True, existing_job_id=dup["job_id"], job=dup, message="Обработано " + _format_created_at(dup["created_at"]) + ", решение: " + str(dup.get("decision", "--")))
     return DuplicateResponse(duplicate=False, message="Дубликатов не найдено")
 
 
 @app.post("/api/v1/process/dzo", summary="Обработать заявку ДЗО")
 @limiter.limit(PROCESS_RATE_LIMIT)
-def process_dzo(body: ProcessRequest, background_tasks: BackgroundTasks,
-               request: Request, _: str = Depends(_require_api_key)):
+def process_dzo(body: ProcessRequest, background_tasks: BackgroundTasks, request: Request, _: str = Depends(_require_api_key)):
     return _check_and_process("dzo", body, background_tasks)
 
 
 @app.post("/api/v1/process/tz", summary="Обработать ТЗ")
 @limiter.limit(PROCESS_RATE_LIMIT)
-def process_tz(body: ProcessRequest, background_tasks: BackgroundTasks,
-              request: Request, _: str = Depends(_require_api_key)):
+def process_tz(body: ProcessRequest, background_tasks: BackgroundTasks, request: Request, _: str = Depends(_require_api_key)):
     return _check_and_process("tz", body, background_tasks)
 
 
 @app.post("/api/v1/process/tender", summary="Парсинг тендерной документации")
 @limiter.limit(PROCESS_RATE_LIMIT)
-def process_tender(body: ProcessRequest, background_tasks: BackgroundTasks,
-                  request: Request, _: str = Depends(_require_api_key)):
+def process_tender(body: ProcessRequest, background_tasks: BackgroundTasks, request: Request, _: str = Depends(_require_api_key)):
     return _check_and_process("tender", body, background_tasks)
 
 
 @app.post("/api/v1/process/auto", summary="Автоопределение типа")
 @limiter.limit(PROCESS_RATE_LIMIT)
-def process_auto(body: ProcessRequest, background_tasks: BackgroundTasks,
-                request: Request, _: str = Depends(_require_api_key)):
+def process_auto(body: ProcessRequest, background_tasks: BackgroundTasks, request: Request, _: str = Depends(_require_api_key)):
     agent_type = _detect_agent_type(body)
     return _check_and_process(agent_type, body, background_tasks)
 
 
 @app.post("/api/v1/process/{agent}", summary="Обработать документ указанным агентом")
 @limiter.limit(PROCESS_RATE_LIMIT)
-def process_agent(body: ProcessRequest, background_tasks: BackgroundTasks, request: Request,
-                 agent: str = Path(...), _: str = Depends(_require_api_key)):
+def process_agent(body: ProcessRequest, background_tasks: BackgroundTasks, request: Request, agent: str = Path(...), _: str = Depends(_require_api_key)):
     return _check_and_process(agent, body, background_tasks)
 
 
@@ -1169,32 +1334,19 @@ def process_agent(body: ProcessRequest, background_tasks: BackgroundTasks, reque
 @limiter.limit(DEFAULT_RATE_LIMIT)
 def resolve_agent(body: ProcessRequest, request: Request, _: str = Depends(_require_api_key)):
     agent_type, matched_keyword = _resolve_agent(body)
-    return {
-        "agent": agent_type,
-        "matched_keyword": matched_keyword,
-        "method": "keyword-profile" if matched_keyword else "fallback",
-        "available_agents": list(AGENT_REGISTRY.keys()),
-    }
+    return {"agent": agent_type, "matched_keyword": matched_keyword, "method": "keyword-profile" if matched_keyword else "fallback", "available_agents": list(AGENT_REGISTRY.keys())}
 
 
 @app.get("/api/v1/jobs", summary="Список заданий")
 @limiter.limit(DEFAULT_RATE_LIMIT)
-def list_jobs(
-    request: Request,
-    agent: str | None = Query(default=None),
-    status: str | None = Query(default=None),
-    page: int = Query(default=1, ge=1),
-    per_page: int = Query(default=100, ge=1, le=500),
-    _: str = Depends(_require_api_key),
-):
+def list_jobs(request: Request, agent: str | None = Query(default=None), status: str | None = Query(default=None), page: int = Query(default=1, ge=1), per_page: int = Query(default=100, ge=1, le=500), _: str = Depends(_require_api_key)):
     offset = (page - 1) * per_page
     items = db_get_history(agent=agent, status=status, limit=per_page + 1, offset=offset)
     has_next = len(items) > per_page
     items = items[:per_page]
     total = db_count_history(agent=agent, status=status)
     pages = math.ceil(total / per_page) if per_page else 1
-    return PaginatedResponse(total=total, page=page, per_page=per_page,
-                             pages=pages, has_next=has_next, items=items)
+    return PaginatedResponse(total=total, page=page, per_page=per_page, pages=pages, has_next=has_next, items=items)
 
 
 @app.get("/api/v1/jobs/{job_id}", response_model=JobResponse, summary="Статус задания")
@@ -1216,30 +1368,14 @@ def delete_job(job_id: str, request: Request, _: str = Depends(_require_api_key)
 
 @app.get("/api/v1/history", summary="История")
 @limiter.limit(DEFAULT_RATE_LIMIT)
-def history(
-    request: Request,
-    agent: str | None = Query(default=None),
-    status: str | None = Query(default=None),
-    decision: str | None = Query(default=None),
-    date_from: str | None = Query(default=None),
-    date_to: str | None = Query(default=None),
-    page: int = Query(default=1, ge=1),
-    per_page: int = Query(default=50, ge=1, le=500),
-    _: str = Depends(_require_api_key),
-):
+def history(request: Request, agent: str | None = Query(default=None), status: str | None = Query(default=None), decision: str | None = Query(default=None), date_from: str | None = Query(default=None), date_to: str | None = Query(default=None), page: int = Query(default=1, ge=1), per_page: int = Query(default=50, ge=1, le=500), _: str = Depends(_require_api_key)):
     offset = (page - 1) * per_page
-    items = db_get_history(
-        agent=agent, status=status, decision=decision,
-        date_from=date_from, date_to=date_to,
-        limit=per_page + 1, offset=offset,
-    )
+    items = db_get_history(agent=agent, status=status, decision=decision, date_from=date_from, date_to=date_to, limit=per_page + 1, offset=offset)
     has_next = len(items) > per_page
     items = items[:per_page]
-    total = db_count_history(agent=agent, status=status, decision=decision,
-                             date_from=date_from, date_to=date_to)
+    total = db_count_history(agent=agent, status=status, decision=decision, date_from=date_from, date_to=date_to)
     pages = math.ceil(total / per_page) if per_page else 1
-    return PaginatedResponse(total=total, page=page, per_page=per_page,
-                             pages=pages, has_next=has_next, items=items)
+    return PaginatedResponse(total=total, page=page, per_page=per_page, pages=pages, has_next=has_next, items=items)
 
 
 @app.get("/api/v1/stats", summary="Аггрегированная статистика")
