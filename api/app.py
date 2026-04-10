@@ -129,6 +129,23 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# ---------------------------------------------------------------------------
+# Middleware registration order
+# ---------------------------------------------------------------------------
+# Starlette processes middleware in LIFO order: the LAST add_middleware call
+# is the OUTERMOST wrapper (first to see the request, last to see the
+# response). @app.middleware("http") decorators run even further outside.
+#
+# Effective request execution order (outermost → innermost):
+#   1. _log_and_measure    — timing + Prometheus metrics
+#   2. _mcp_auth_guard     — /mcp auth (attaches CORS headers on 401)
+#   3. CORSMiddleware      — CORS preflight & response headers
+#   4. SlowAPIMiddleware   — rate limiting
+#   5. Route handlers / mounted sub-apps (/mcp)
+#
+# IMPORTANT: _mcp_auth_guard returns 401 *before* CORSMiddleware sees the
+# request, so it explicitly attaches CORS headers to its 401 response.
+# ---------------------------------------------------------------------------
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
@@ -1088,6 +1105,13 @@ async def _mcp_auth_guard(request: Request, call_next):
 
     A2A Agent Card (/.well-known/agent.json) остаётся публичной по стандарту A2A.
     OPTIONS preflight пропускается без проверки.
+
+    Note: this middleware runs *outside* CORSMiddleware in the Starlette stack
+    (middlewares execute top-to-bottom, but are *registered* bottom-to-top via
+    add_middleware; @app.middleware("http") decorators run outermost). Because a
+    401 returned here never passes through CORSMiddleware, we must attach CORS
+    headers explicitly so browser-based MCP clients see 401 instead of an opaque
+    CORS error.
     """
     path = request.url.path
     if _MCP_AVAILABLE and (path == "/mcp" or path.startswith("/mcp/")) and request.method != "OPTIONS":
@@ -1100,7 +1124,20 @@ async def _mcp_auth_guard(request: Request, call_next):
                 if scheme.lower() == "bearer":
                     provided = credentials.strip()
             if not provided or not secrets.compare_digest(provided, api_key):
-                return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+                response = JSONResponse({"detail": "Unauthorized"}, status_code=401)
+                # Attach CORS headers so browser clients receive the 401 instead
+                # of an opaque network error. Uses the same origins configured for
+                # the main CORSMiddleware.
+                origin = request.headers.get("origin", "")
+                if origin and (origin in CORS_ORIGINS or "*" in CORS_ORIGINS):
+                    response.headers["Access-Control-Allow-Origin"] = origin
+                    response.headers["Access-Control-Allow-Credentials"] = "true"
+                elif CORS_ORIGINS:
+                    response.headers["Access-Control-Allow-Origin"] = CORS_ORIGINS[0]
+                    response.headers["Access-Control-Allow-Credentials"] = "true"
+                response.headers["Access-Control-Allow-Methods"] = "GET, POST, DELETE"
+                response.headers["Access-Control-Allow-Headers"] = "X-API-Key, Authorization, Content-Type, Accept, X-Requested-With"
+                return response
     return await call_next(request)
 
 
@@ -1180,52 +1217,74 @@ def _agent_card_base_url(request: Request) -> str:
 
     base = str(request.base_url).rstrip("/")
     proto = request.headers.get("X-Forwarded-Proto", "").strip().lower()
-    if proto in ("http", "https"):
-        # request.base_url always contains "://" — partition is safe here.
-        _, sep, rest = base.partition("://")
-        if sep:
-            base = f"{proto}://{rest}"
+    if proto:
+        # Only honour the header when the value is a valid protocol.
+        # Requests already passed the AGENT_CARD_ALLOWED_HOSTS hostname check
+        # above, so the caller is considered a trusted proxy.
+        if proto in ("http", "https"):
+            # request.base_url always contains "://" — partition is safe here.
+            _, sep, rest = base.partition("://")
+            if sep:
+                base = f"{proto}://{rest}"
+        else:
+            logger.warning(
+                "Ignoring invalid X-Forwarded-Proto value: %r", proto,
+            )
     return base
+
+
+# Additional A2A skill metadata keyed by agent_id.
+# AGENT_REGISTRY provides name/description; this adds tags + examples for the card.
+_A2A_SKILL_META: dict[str, dict] = {
+    "dzo": {
+        "tags": ["dzo", "procurement", "validation"],
+        "examples": ["Проверь заявку на закупку оборудования"],
+    },
+    "tz": {
+        "tags": ["tz", "specification", "gost"],
+        "examples": ["Проверь ТЗ на поставку серверов"],
+    },
+    "tender": {
+        "tags": ["tender", "documents", "223-fz", "44-fz"],
+        "examples": ["Извлеки список документов из конкурсной документации"],
+    },
+}
+
+# MCP tool name mapping (same as shared.mcp_server._AGENT_TOOL_MAP).
+_A2A_TOOL_MAP: dict[str, str] = {
+    "dzo": "inspect_dzo",
+    "tz": "inspect_tz",
+    "tender": "inspect_tender",
+}
 
 
 @app.get("/.well-known/agent.json", summary="A2A Agent Card")
 def agent_card(request: Request):
     base_url = _agent_card_base_url(request)
+    # Derive skills from the single AGENT_REGISTRY source of truth.
+    skills = []
+    for agent_id, info in AGENT_REGISTRY.items():
+        meta = _A2A_SKILL_META.get(agent_id, {})
+        skills.append({
+            "id": _A2A_TOOL_MAP.get(agent_id, f"inspect_{agent_id}"),
+            "name": info.get("name", agent_id),
+            "description": info.get("description", ""),
+            "tags": meta.get("tags", [agent_id]),
+            "examples": meta.get("examples", []),
+        })
     return {
         "name": "DZO/TZ Inspector",
         "description": "Инспектор заявок ДЗО, технических заданий и тендерной документации",
         "version": _API_VERSION,
         "url": base_url,
-        "protocolVersion": "0.2",
+        "protocolVersion": "0.2.1",
         "capabilities": {
             "streaming": False,
             "pushNotifications": False,
         },
         "defaultInputModes": ["text/plain", "application/json"],
         "defaultOutputModes": ["text/plain", "application/json"],
-        "skills": [
-            {
-                "id": "inspect_dzo",
-                "name": "Проверка заявок ДЗО",
-                "description": "Проверяет заявки ДЗО на полноту, корректность и наличие обязательных вложений",
-                "tags": ["dzo", "procurement", "validation"],
-                "examples": ["Проверь заявку на закупку оборудования"],
-            },
-            {
-                "id": "inspect_tz",
-                "name": "Проверка технических заданий",
-                "description": "Анализирует ТЗ на соответствие ГОСТ и внутренним стандартам компании",
-                "tags": ["tz", "specification", "gost"],
-                "examples": ["Проверь ТЗ на поставку серверов"],
-            },
-            {
-                "id": "inspect_tender",
-                "name": "Парсинг тендерной документации",
-                "description": "Извлекает полный список документов, требуемых от участника закупки",
-                "tags": ["tender", "documents", "223-fz", "44-fz"],
-                "examples": ["Извлеки список документов из конкурсной документации"],
-            },
-        ],
+        "skills": skills,
     }
 
 

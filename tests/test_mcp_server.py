@@ -4,6 +4,7 @@ Unit-тесты для MCP-сервера и A2A Agent Card.
 """
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -22,6 +23,21 @@ def mock_agent_runner():
         "intermediate_steps": [("tool1", {"decision": "OK"})],
     }
     return runner
+
+
+@pytest.fixture(autouse=True)
+def _mock_db_for_mcp():
+    """Mock database functions used by _create_mcp_job to avoid DB side effects.
+
+    _create_mcp_job imports from shared.database at call time, so we patch
+    at the shared.database module level.
+    """
+    with (
+        patch("shared.database.create_job", return_value="test-job-id") as _mock_create,
+        patch("shared.database.get_job", return_value=None),
+        patch("shared.database.update_job") as _mock_update,
+    ):
+        yield
 
 
 # ---------------------------------------------------------------------------
@@ -101,54 +117,78 @@ class TestInvokeAgent:
 # ---------------------------------------------------------------------------
 
 class TestMcpTools:
+    """MCP tool functions are now async; test via _create_mcp_job (sync path)."""
+
     def test_inspect_dzo_builds_chat_input_with_email_and_subject(self, mock_agent_runner):
         with patch("agent1_dzo_inspector.agent.create_dzo_agent", return_value=mock_agent_runner):
-            from shared.mcp_server import inspect_dzo
-            result = inspect_dzo(
-                text="тело заявки",
-                sender_email="test@example.com",
-                subject="Закупка ноутбуков",
-            )
+            from shared.mcp_server import _create_mcp_job
+            result = _create_mcp_job("dzo", "От: test@example.com\nТема: Закупка ноутбуков\nтело заявки")
         call_args = mock_agent_runner.invoke.call_args[0][0]["input"]
         assert "От: test@example.com" in call_args
         assert "Тема: Закупка ноутбуков" in call_args
         assert "тело заявки" in call_args
         assert result["agent"] == "dzo"
+        assert result["job_id"] == "test-job-id"
 
     def test_inspect_dzo_without_optional_fields(self, mock_agent_runner):
         with patch("agent1_dzo_inspector.agent.create_dzo_agent", return_value=mock_agent_runner):
-            from shared.mcp_server import inspect_dzo
-            result = inspect_dzo(text="только текст")
+            from shared.mcp_server import _create_mcp_job
+            result = _create_mcp_job("dzo", "только текст")
         call_args = mock_agent_runner.invoke.call_args[0][0]["input"]
         assert call_args == "только текст"
         assert result["agent"] == "dzo"
 
     def test_inspect_tz_passes_text_directly(self, mock_agent_runner):
         with patch("agent2_tz_inspector.agent.create_tz_agent", return_value=mock_agent_runner):
-            from shared.mcp_server import inspect_tz
-            result = inspect_tz(text="техническое задание")
+            from shared.mcp_server import _create_mcp_job
+            result = _create_mcp_job("tz", "техническое задание")
         call_args = mock_agent_runner.invoke.call_args[0][0]["input"]
         assert call_args == "техническое задание"
         assert result["agent"] == "tz"
 
     def test_inspect_tender_passes_text_directly(self, mock_agent_runner):
         with patch("agent21_tender_inspector.agent.create_tender_agent", return_value=mock_agent_runner):
-            from shared.mcp_server import inspect_tender
-            result = inspect_tender(text="тендерная документация")
+            from shared.mcp_server import _create_mcp_job
+            result = _create_mcp_job("tender", "тендерная документация")
         assert result["agent"] == "tender"
 
     def test_inspect_dzo_passes_model_name(self, mock_agent_runner):
         with patch("agent1_dzo_inspector.agent.create_dzo_agent", return_value=mock_agent_runner) as mock_create:
-            from shared.mcp_server import inspect_dzo
-            inspect_dzo(text="текст", model_name="gpt-4o-mini")
+            from shared.mcp_server import _create_mcp_job
+            _create_mcp_job("dzo", "текст", model_name="gpt-4o-mini")
         mock_create.assert_called_once_with(model_name="gpt-4o-mini")
 
     def test_inspect_dzo_empty_model_name_passes_none(self, mock_agent_runner):
         """Пустая строка model_name должна передаваться как None."""
         with patch("agent1_dzo_inspector.agent.create_dzo_agent", return_value=mock_agent_runner) as mock_create:
-            from shared.mcp_server import inspect_dzo
-            inspect_dzo(text="текст", model_name="")
+            from shared.mcp_server import _create_mcp_job
+            _create_mcp_job("dzo", "текст", model_name=None)
         mock_create.assert_called_once_with(model_name=None)
+
+    def test_mcp_job_creates_tracked_job(self, mock_agent_runner):
+        """_create_mcp_job creates a job in the database and returns job_id."""
+        import shared.database as _db
+        with patch("agent1_dzo_inspector.agent.create_dzo_agent", return_value=mock_agent_runner):
+            from shared.mcp_server import _create_mcp_job
+            result = _create_mcp_job("dzo", "текст")
+        _db.create_job.assert_called_once_with("dzo", sender="mcp", subject="MCP tool call")
+        assert result["job_id"] == "test-job-id"
+        # update_job called twice: running + done
+        assert _db.update_job.call_count == 2
+
+    def test_mcp_job_records_error_on_agent_error(self, mock_agent_runner):
+        """_create_mcp_job records error status when _invoke_agent returns error."""
+        import shared.database as _db
+        mock_agent_runner.invoke.side_effect = RuntimeError("LLM down")
+        with patch("agent1_dzo_inspector.agent.create_dzo_agent", return_value=mock_agent_runner):
+            from shared.mcp_server import _create_mcp_job
+            result = _create_mcp_job("dzo", "текст")
+        # _invoke_agent catches exceptions and returns error dict
+        assert "error" in result
+        assert "LLM down" in result["error"]
+        # update_job should have been called with error status
+        calls = _db.update_job.call_args_list
+        assert any(c.kwargs.get("status") == "error" or (len(c.args) > 1 and c.args[1] == "error") for c in calls)
 
     def test_list_agents_returns_all_three(self):
         from shared.mcp_server import list_agents
@@ -167,6 +207,25 @@ class TestMcpTools:
             assert "name" in agent
             assert "description" in agent
             assert "tool" in agent
+
+    def test_list_agents_derives_from_agent_registry(self):
+        """list_agents derives data from AGENT_REGISTRY, not hardcoded values."""
+        from api.app import AGENT_REGISTRY
+        from shared.mcp_server import list_agents
+        result = list_agents()
+        result_ids = {a["id"] for a in result["agents"]}
+        registry_ids = set(AGENT_REGISTRY.keys())
+        assert result_ids == registry_ids
+
+    def test_async_inspect_dzo(self, mock_agent_runner):
+        """Verify the async tool function works end-to-end."""
+        with patch("agent1_dzo_inspector.agent.create_dzo_agent", return_value=mock_agent_runner):
+            from shared.mcp_server import inspect_dzo
+            result = asyncio.get_event_loop().run_until_complete(
+                inspect_dzo(text="тест", sender_email="a@b.com", subject="тема")
+            )
+        assert result["agent"] == "dzo"
+        assert result["job_id"] == "test-job-id"
 
 
 # ---------------------------------------------------------------------------
@@ -218,6 +277,19 @@ class TestA2AAgentCard:
         assert "inspect_tz" in skill_ids
         assert "inspect_tender" in skill_ids
 
+    def test_agent_card_skills_derived_from_registry(self, client):
+        """Skills in A2A card must match AGENT_REGISTRY entries."""
+        from api.app import AGENT_REGISTRY
+        resp = client.get("/.well-known/agent.json")
+        data = resp.json()
+        assert len(data["skills"]) == len(AGENT_REGISTRY)
+
+    def test_agent_card_protocol_version(self, client):
+        """protocolVersion should be 0.2.1 (latest A2A spec)."""
+        resp = client.get("/.well-known/agent.json")
+        data = resp.json()
+        assert data["protocolVersion"] == "0.2.1"
+
     def test_agent_card_capabilities_structure(self, client):
         resp = client.get("/.well-known/agent.json")
         data = resp.json()
@@ -238,6 +310,14 @@ class TestA2AAgentCard:
         with patch("api.app._get_api_key", return_value="secret-key"):
             resp = client.get("/mcp")
         assert resp.status_code == 401
+
+    def test_mcp_401_has_cors_headers(self, client):
+        """401 response from _mcp_auth_guard must include CORS headers."""
+        with patch("api.app._get_api_key", return_value="secret-key"):
+            resp = client.get("/mcp", headers={"Origin": "http://localhost:8501"})
+        assert resp.status_code == 401
+        assert "access-control-allow-origin" in resp.headers
+        assert "access-control-allow-methods" in resp.headers
 
     def test_mcp_endpoint_accepts_valid_api_key(self, client):
         """Проверяем что /mcp принимает валидный ключ в X-API-Key."""

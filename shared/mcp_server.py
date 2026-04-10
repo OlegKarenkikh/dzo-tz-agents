@@ -16,6 +16,7 @@ Copilot, Continue и др.).
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from typing import Any
@@ -45,9 +46,17 @@ mcp = FastMCP(
 # поля text в ProcessRequest (api/app.py), защищает от чрезмерно дорогих LLM-вызовов.
 _MCP_MAX_INPUT_CHARS = 5_000_000
 
+# Mapping agent_type → MCP tool function name, used by list_agents
+# to derive the tool field from AGENT_REGISTRY.
+_AGENT_TOOL_MAP: dict[str, str] = {
+    "dzo": "inspect_dzo",
+    "tz": "inspect_tz",
+    "tender": "inspect_tender",
+}
+
 
 def _invoke_agent(agent_type: str, chat_input: str, model_name: str | None = None) -> dict[str, Any]:
-    """Общий вызов агента по типу."""
+    """Общий вызов агента по типу (синхронный — вызывается через asyncio.to_thread)."""
     # Проверяем лимит ДО создания агента — создание агента тяжело (инициализация LLM/графа)
     if len(chat_input) > _MCP_MAX_INPUT_CHARS:
         msg = (
@@ -82,8 +91,50 @@ def _invoke_agent(agent_type: str, chat_input: str, model_name: str | None = Non
         return {"output": "", "agent": agent_type, "steps": 0, "error": str(exc)}
 
 
+async def _invoke_agent_async(agent_type: str, chat_input: str, model_name: str | None = None) -> dict[str, Any]:
+    """Non-blocking wrapper: offloads sync agent invocation to a thread pool.
+
+    This prevents the synchronous LLM calls (30-300s) from blocking the
+    FastAPI event loop (which would freeze /health, /metrics, etc.).
+    """
+    return await asyncio.to_thread(_invoke_agent, agent_type, chat_input, model_name)
+
+
+def _create_mcp_job(agent_type: str, chat_input: str, model_name: str | None = None) -> dict[str, Any]:
+    """Invoke agent through the job-tracking pipeline.
+
+    Creates a tracked job, runs the agent, and records the outcome — making
+    MCP invocations visible in /api/v1/jobs, /api/v1/stats, and Prometheus.
+    """
+    from shared.database import create_job, update_job
+
+    job_id = create_job(agent_type, sender="mcp", subject="MCP tool call")
+    update_job(job_id, status="running")
+    try:
+        result = _invoke_agent(agent_type, chat_input, model_name)
+        if "error" in result:
+            update_job(job_id, status="error", error=result["error"])
+        else:
+            update_job(
+                job_id,
+                status="done",
+                decision=f"mcp_{agent_type}",
+                result={"output": result.get("output", ""), "steps": result.get("steps", 0)},
+            )
+        result["job_id"] = job_id
+        return result
+    except Exception as exc:
+        update_job(job_id, status="error", error=str(exc))
+        raise
+
+
+async def _create_mcp_job_async(agent_type: str, chat_input: str, model_name: str | None = None) -> dict[str, Any]:
+    """Non-blocking wrapper for _create_mcp_job."""
+    return await asyncio.to_thread(_create_mcp_job, agent_type, chat_input, model_name)
+
+
 @mcp.tool()
-def inspect_dzo(
+async def inspect_dzo(
     text: str,
     sender_email: str = "",
     subject: str = "",
@@ -98,7 +149,7 @@ def inspect_dzo(
     - Бюджет и обоснование закупки
 
     Returns:
-        dict с полями: output (текстовый результат), agent, steps
+        dict с полями: output (текстовый результат), agent, steps, job_id
     """
     parts: list[str] = []
     if sender_email:
@@ -107,11 +158,11 @@ def inspect_dzo(
         parts.append(f"Тема: {subject}")
     parts.append(text)
     chat_input = "\n".join(parts)
-    return _invoke_agent("dzo", chat_input, model_name or None)
+    return await _create_mcp_job_async("dzo", chat_input, model_name or None)
 
 
 @mcp.tool()
-def inspect_tz(
+async def inspect_tz(
     text: str,
     model_name: str = "",
 ) -> dict[str, Any]:
@@ -129,13 +180,13 @@ def inspect_tz(
     8. Приложения
 
     Returns:
-        dict с полями: output (текстовый результат), agent, steps
+        dict с полями: output (текстовый результат), agent, steps, job_id
     """
-    return _invoke_agent("tz", text, model_name or None)
+    return await _create_mcp_job_async("tz", text, model_name or None)
 
 
 @mcp.tool()
-def inspect_tender(
+async def inspect_tender(
     text: str,
     model_name: str = "",
 ) -> dict[str, Any]:
@@ -148,9 +199,9 @@ def inspect_tender(
     - Обязательности
 
     Returns:
-        dict с полями: output (текстовый результат), agent, steps
+        dict с полями: output (текстовый результат), agent, steps, job_id
     """
-    return _invoke_agent("tender", text, model_name or None)
+    return await _create_mcp_job_async("tender", text, model_name or None)
 
 
 @mcp.tool()
@@ -158,28 +209,21 @@ def list_agents() -> dict[str, Any]:
     """Возвращает список доступных агентов с описанием.
 
     Returns:
-        dict с полем agents — список агентов {id, name, description}
+        dict с полем agents — список агентов {id, name, description, tool}
     """
+    # Derive from the single AGENT_REGISTRY source of truth (api/app.py).
+    # Deferred import to avoid circular import at module load time.
+    from api.app import AGENT_REGISTRY
+
     return {
         "agents": [
             {
-                "id": "dzo",
-                "name": "Инспектор ДЗО",
-                "description": "Проверяет заявки ДЗО на полноту и корректность",
-                "tool": "inspect_dzo",
-            },
-            {
-                "id": "tz",
-                "name": "Инспектор ТЗ",
-                "description": "Анализирует ТЗ на соответствие ГОСТ и внутренним стандартам",
-                "tool": "inspect_tz",
-            },
-            {
-                "id": "tender",
-                "name": "Парсер тендерной документации",
-                "description": "Извлекает список документов из тендерной документации",
-                "tool": "inspect_tender",
-            },
+                "id": agent_id,
+                "name": info.get("name", agent_id),
+                "description": info.get("description", ""),
+                "tool": _AGENT_TOOL_MAP.get(agent_id, f"inspect_{agent_id}"),
+            }
+            for agent_id, info in AGENT_REGISTRY.items()
         ]
     }
 
@@ -189,6 +233,10 @@ if __name__ == "__main__":  # pragma: no cover
     _level_str = os.getenv("MCP_LOG_LEVEL", "WARNING").upper()
     _level_int = getattr(logging, _level_str, None)
     if not isinstance(_level_int, int):
+        logger.warning(
+            "Invalid MCP_LOG_LEVEL=%r, falling back to WARNING",
+            os.getenv("MCP_LOG_LEVEL", ""),
+        )
         _level_int = logging.WARNING
     # Задаём уровень непосредственно логгеру mcp_server и отключаем propagation,
     # чтобы его записи не дублировались в root-logger после basicConfig.
