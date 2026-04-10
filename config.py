@@ -120,3 +120,17 @@ AGENT_TOOL_PERMISSIONS: dict = _safe_json_dict("AGENT_TOOL_PERMISSIONS", {})
 # Если задан — снимает зависимость от Host-заголовка.
 # Пример: PUBLIC_BASE_URL=https://agents.company.ru
 PUBLIC_BASE_URL: str | None = os.getenv("PUBLIC_BASE_URL") or None
+
+# -- Email client (collector) ------------------------------------------------
+EMAIL_BACKEND: str = os.getenv("EMAIL_BACKEND", "imap").lower()
+EMAIL_HOST: str = os.getenv("EMAIL_HOST", "")
+EMAIL_PORT: int = _safe_int("EMAIL_PORT", 993)
+EMAIL_USER: str = os.getenv("EMAIL_USER", "")
+EMAIL_PASSWORD: str = os.getenv("EMAIL_PASSWORD", "")
+EMAIL_USE_SSL: bool = os.getenv("EMAIL_USE_SSL", "true").lower() == "true"
+
+# -- File storage (collector) ------------------------------------------------
+STORAGE_BASE_PATH: str = os.getenv("STORAGE_BASE_PATH", "./storage")
+
+# -- MCP async pipeline ------------------------------------------------------
+MCP_AGENT_TIMEOUT_SECONDS: int = _safe_int("MCP_AGENT_TIMEOUT_SECONDS", 300)

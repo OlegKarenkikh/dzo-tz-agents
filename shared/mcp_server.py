@@ -19,6 +19,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import time
+from contextlib import asynccontextmanager
 from typing import Any
 
 try:
@@ -29,6 +31,7 @@ except ImportError as _err:  # pragma: no cover
     ) from _err
 
 from shared.logger import setup_logger
+from shared.mcp_rate_limiter import MCPRateLimitError, mcp_limiter
 
 logger = setup_logger("mcp_server")
 
@@ -56,6 +59,65 @@ _AGENT_TOOL_MAP: dict[str, str] = {
     "collector": "collect_documents",
 }
 
+# Configurable async timeout for agent invocations (seconds).
+MCP_AGENT_TIMEOUT_SECONDS: int = int(os.getenv("MCP_AGENT_TIMEOUT_SECONDS", "300"))
+
+
+# ---------------------------------------------------------------------------
+#  Async job lifecycle context manager
+# ---------------------------------------------------------------------------
+
+@asynccontextmanager
+async def agent_job_lifecycle(agent_type: str, chat_input: str):
+    """Async context manager for MCP job lifecycle tracking.
+
+    Creates a tracked job at entry, records outcome on exit.
+    Yields (job_id, result_holder) — caller sets result_holder["result"].
+    """
+    from shared.database import create_job, update_job
+
+    job_id = create_job(agent_type, sender="mcp", subject="MCP tool call")
+    update_job(job_id, status="running")
+    holder: dict[str, Any] = {"job_id": job_id, "result": None, "error": None}
+    start = time.monotonic()
+    try:
+        yield holder
+    except asyncio.CancelledError:
+        elapsed = time.monotonic() - start
+        logger.warning(
+            "[MCP] job=%s agent=%s cancelled after %.1fs", job_id, agent_type, elapsed,
+        )
+        update_job(job_id, status="error", error="Cancelled by client")
+        raise
+    except TimeoutError:
+        elapsed = time.monotonic() - start
+        logger.warning(
+            "[MCP] job=%s agent=%s timed out after %.1fs", job_id, agent_type, elapsed,
+        )
+        update_job(job_id, status="error", error="Timeout")
+        raise
+    except Exception as exc:
+        update_job(job_id, status="error", error=str(exc))
+        raise
+    else:
+        result = holder.get("result")
+        if result and "error" in result:
+            update_job(job_id, status="error", error=result["error"])
+        else:
+            update_job(
+                job_id,
+                status="done",
+                decision=f"mcp_{agent_type}",
+                result={
+                    "output": (result or {}).get("output", ""),
+                    "steps": (result or {}).get("steps", 0),
+                },
+            )
+
+
+# ---------------------------------------------------------------------------
+#  Agent invocation (sync — runs in thread via asyncio.to_thread)
+# ---------------------------------------------------------------------------
 
 def _invoke_agent(agent_type: str, chat_input: str, model_name: str | None = None) -> dict[str, Any]:
     """Общий вызов агента по типу (синхронный — вызывается через asyncio.to_thread)."""
@@ -105,6 +167,10 @@ async def _invoke_agent_async(agent_type: str, chat_input: str, model_name: str 
     return await asyncio.to_thread(_invoke_agent, agent_type, chat_input, model_name)
 
 
+# ---------------------------------------------------------------------------
+#  Job-tracking pipeline (sync and async)
+# ---------------------------------------------------------------------------
+
 def _create_mcp_job(agent_type: str, chat_input: str, model_name: str | None = None) -> dict[str, Any]:
     """Invoke agent through the job-tracking pipeline.
 
@@ -133,9 +199,45 @@ def _create_mcp_job(agent_type: str, chat_input: str, model_name: str | None = N
         raise
 
 
-async def _create_mcp_job_async(agent_type: str, chat_input: str, model_name: str | None = None) -> dict[str, Any]:
-    """Non-blocking wrapper for _create_mcp_job."""
-    return await asyncio.to_thread(_create_mcp_job, agent_type, chat_input, model_name)
+async def _create_mcp_job_async(
+    agent_type: str,
+    chat_input: str,
+    model_name: str | None = None,
+    client_key: str = "default",
+) -> dict[str, Any]:
+    """Async job pipeline with timeout, cancellation, and rate limiting.
+
+    Uses agent_job_lifecycle context manager for structured lifecycle tracking,
+    asyncio.wait_for() for configurable timeout, and supports graceful
+    cancellation when the client disconnects.
+    Rate limiting is applied per client_key using the same limits as REST API.
+    """
+    # Check rate limit before creating the job
+    allowed, retry_after = mcp_limiter.check(client_key)
+    if not allowed:
+        raise MCPRateLimitError(retry_after)
+
+    async with agent_job_lifecycle(agent_type, chat_input) as holder:
+        try:
+            result = await asyncio.wait_for(
+                _invoke_agent_async(agent_type, chat_input, model_name),
+                timeout=MCP_AGENT_TIMEOUT_SECONDS,
+            )
+        except TimeoutError:
+            timeout_msg = (
+                f"Agent {agent_type!r} timed out after "
+                f"{MCP_AGENT_TIMEOUT_SECONDS}s"
+            )
+            logger.warning("[MCP] %s", timeout_msg)
+            result = {
+                "output": "",
+                "agent": agent_type,
+                "steps": 0,
+                "error": timeout_msg,
+            }
+        holder["result"] = result
+        result["job_id"] = holder["job_id"]
+        return result
 
 
 @mcp.tool()
