@@ -190,8 +190,10 @@ if __name__ == "__main__":  # pragma: no cover
     _level_int = getattr(logging, _level_str, None)
     if not isinstance(_level_int, int):
         _level_int = logging.WARNING
-    # Задаём уровень непосредственно логгеру mcp_server (basicConfig не сработает
-    # — setup_logger уже добавил handlers и выставил уровень INFO).
+    # Задаём уровень непосредственно логгеру mcp_server и отключаем propagation,
+    # чтобы его записи не дублировались в root-logger после basicConfig.
+    # Root-логирование полезно для зависимостей (mcp, uvicorn и т.д.).
     logger.setLevel(_level_int)
+    logger.propagate = False
     logging.basicConfig(level=_level_int)
     mcp.run(transport="stdio")
