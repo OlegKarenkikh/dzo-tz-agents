@@ -39,7 +39,6 @@ LLM_BACKEND = os.getenv("LLM_BACKEND", "openai").lower()
 
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN")
 
-# FIX MU-03 + DU-04: централизуем FORCE_REPROCESS в config.py (удалён из 3 runners)
 FORCE_REPROCESS: bool = os.getenv("FORCE_REPROCESS", "false").lower() == "true"
 
 _auto_switched = False
@@ -58,7 +57,6 @@ if LLM_BACKEND not in _VALID_BACKENDS:
         f"Допустимые: {sorted(_VALID_BACKENDS)}"
     )
 
-# FIX SE-01: заменили print() на logger.info()
 if _auto_switched:
     _logger.info(
         "Auto-switched to LLM_BACKEND=github_models "

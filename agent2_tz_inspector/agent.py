@@ -1,8 +1,3 @@
-import json
-from typing import Any
-
-# FIX ST-02: create_agent не существует в langchain.agents.
-# Используем langgraph.prebuilt.create_react_agent — официальный API LangGraph.
 from langgraph.prebuilt import create_react_agent
 
 from agent2_tz_inspector.tools import (
@@ -13,6 +8,7 @@ from agent2_tz_inspector.tools import (
 )
 from shared.llm import build_llm
 from shared.logger import setup_logger
+from shared.runner_base import BaseAgentRunner
 
 logger = setup_logger("agent_tz")
 
@@ -67,51 +63,8 @@ SYSTEM_PROMPT = """Ты — ИИ-инспектор «Контролер ТЗ».
 {"decision":"Требует доработки","dzo_name":"Название ДЗО","tz_subject":"Тема ТЗ","issues":["Замечание 1","Замечание 2"],"recommendations":["Рекомендация 1"],"has_corrected_tz":true}"""
 
 
-class AgentRunner:
-    """Adapter to keep legacy `invoke({"input": ...})` contract for api/app.py."""
-
-    def __init__(self, graph_agent: Any):
-        self._agent = graph_agent
-
-    def invoke(self, payload: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
-        chat_input = payload.get("input", "")
-        logger.debug("Запуск агента ТЗ с input: %s", chat_input[:100] if chat_input else "(пусто)")
-
-        result = self._agent.invoke(
-            {"messages": [{"role": "user", "content": chat_input}]},
-            **kwargs,
-        )
-
-        output = ""
-        messages: list = []
-        intermediate_steps: list = []
-
-        if isinstance(result, dict):
-            messages = result.get("messages") or []
-            if messages:
-                last = messages[-1]
-                output = getattr(last, "content", "") or ""
-                if isinstance(output, list):
-                    output = "\n".join(str(x) for x in output)
-
-        for msg in messages:
-            if hasattr(msg, "tool_call_id"):  # ToolMessage
-                name = getattr(msg, "name", None) or "tool"
-                content = getattr(msg, "content", "")
-                try:
-                    obs = json.loads(content) if isinstance(content, str) else content
-                except Exception:
-                    obs = {"raw": str(content)}
-                intermediate_steps.append((name, obs))
-
-        logger.info(
-            "Агент ТЗ завершён. Output: %d симв., инструментов вызвано: %d",
-            len(output), len(intermediate_steps),
-        )
-        for name, obs in intermediate_steps:
-            logger.info("  🔧 %s → %s", name, str(obs)[:200])
-
-        return {"output": output, "intermediate_steps": intermediate_steps}
+# Backward-compatible alias: AgentRunner = BaseAgentRunner (из shared.runner_base)
+AgentRunner = BaseAgentRunner
 
 
 def create_tz_agent(model_name: str | None = None) -> AgentRunner:
@@ -134,4 +87,4 @@ def create_tz_agent(model_name: str | None = None) -> AgentRunner:
         prompt=SYSTEM_PROMPT,
     )
     logger.debug("Агент ТЗ успешно создан")
-    return AgentRunner(graph_agent)
+    return AgentRunner(graph_agent, agent_label="agent_tz")

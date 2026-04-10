@@ -43,7 +43,6 @@ class TestExtractTextFromAttachment:
 
     @patch("shared.file_extractor.pdfplumber")
     def test_pdf_text_extraction(self, mock_pdfplumber):
-        # FIX: текст должен быть >= 50 символов, иначе _extract_pdf уходит в OCR
         pdf_text = "Тестовый текст PDF " + "x" * 50
         mock_page = MagicMock()
         mock_page.extract_text.return_value = pdf_text

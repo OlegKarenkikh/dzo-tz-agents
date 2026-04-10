@@ -1,16 +1,11 @@
 """
 shared/runner_base.py
-Базовый класс email-раннера для агентов ДЗО и ТЗ.
-
-FIX DU-01, DU-02: устраняет 90% идентичного кода в process_dzo_emails()
-и process_tz_emails().
-
-Агент-специфичная логика (создание агента, формирование chat_input,
-разбор результата, отправка ответов) передаётся в шаблонных методах
-`build_chat_input`, `parse_steps`, `send_reply`.
+Базовые классы для агентов: BaseAgentRunner (адаптер invoke) и
+BaseEmailRunner (email-раннер для ДЗО/ТЗ).
 """
 from __future__ import annotations
 
+import json
 from abc import ABC, abstractmethod
 from typing import Any
 
@@ -22,6 +17,65 @@ from shared.file_extractor import extract_text_from_attachment
 from shared.logger import setup_logger
 from shared.telegram_notify import notify
 from shared.tracing import get_langfuse_callback, log_agent_steps
+
+
+class BaseAgentRunner:
+    """Адаптер, приводящий LangGraph ReAct-агент к контракту invoke({"input": ...}).
+
+    Все агенты (agent1, agent2, agent21, agent3) используют этот класс
+    для совместимости с api/app.py и runner'ами.
+    """
+
+    def __init__(self, graph_agent: Any, agent_label: str = "agent") -> None:
+        self._agent = graph_agent
+        self._logger = setup_logger(agent_label)
+
+    def invoke(self, payload: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
+        chat_input = payload.get("input", "")
+        self._logger.debug(
+            "Запуск агента %s с input: %s",
+            self._logger.name,
+            chat_input[:100] if chat_input else "(пусто)",
+        )
+
+        result = self._agent.invoke(
+            {"messages": [{"role": "user", "content": chat_input}]},
+            **kwargs,
+        )
+
+        self._logger.debug("Результат агента (тип: %s): %s", type(result).__name__, result)
+
+        output = ""
+        messages: list = []
+        intermediate_steps: list = []
+
+        if isinstance(result, dict):
+            messages = result.get("messages") or []
+            if messages:
+                last = messages[-1]
+                output = getattr(last, "content", "") or ""
+                if isinstance(output, list):
+                    output = "\n".join(str(x) for x in output)
+
+        for msg in messages:
+            if hasattr(msg, "tool_call_id"):  # ToolMessage
+                name = getattr(msg, "name", None) or "tool"
+                content = getattr(msg, "content", "")
+                try:
+                    obs = json.loads(content) if isinstance(content, str) else content
+                except Exception:
+                    obs = {"raw": str(content)}
+                intermediate_steps.append((name, obs))
+
+        self._logger.info(
+            "Агент завершён. Output: %d симв., инструментов вызвано: %d",
+            len(output),
+            len(intermediate_steps),
+        )
+        for name, obs in intermediate_steps:
+            self._logger.info("  🔧 %s → %s", name, str(obs)[:200])
+
+        return {"output": output, "intermediate_steps": intermediate_steps}
 
 
 class BaseEmailRunner(ABC):
@@ -116,7 +170,7 @@ class BaseEmailRunner(ABC):
     # ------------------------------------------------------------------
 
     def process_emails(self) -> None:
-        """DU-01/02: единая точка обработки email-потока для всех email-агентов."""
+        """Единая точка обработки email-потока для всех email-агентов."""
         logger = setup_logger(f"agent_{self.agent_id}")
         logger.info("Проверяю входящие письма (%s)...", self.agent_id.upper())
         POLL_CYCLES.labels(agent=self.agent_id).inc()
@@ -192,7 +246,6 @@ class BaseEmailRunner(ABC):
 
                 decision, artifacts, reply_subject = self.parse_steps(steps, result, job_id)
 
-                # DA-05: предупреждаем о пустом decision
                 if not decision:
                     logger.warning(
                         "[%s] decision не установлен агентом — intermediate_steps пусты",

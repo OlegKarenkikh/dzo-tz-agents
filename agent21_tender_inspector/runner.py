@@ -37,7 +37,6 @@ SUPPORTED_EXTS = {".pdf", ".docx", ".xlsx", ".xls"}
 
 _TOOLS_TOKEN_OVERHEAD = 3000
 
-# FIX RC-05: double-checked locking для _fallback_chain_cache
 _fallback_chain_cache: dict[tuple[str, str], tuple[list[str], int]] = {}
 _fallback_chain_cache_lock = threading.Lock()
 
@@ -234,7 +233,6 @@ def process_single_document(
                 )
             _est = estimate_tokens(chat_input)
 
-            # FIX RC-05: double-checked locking для _fallback_chain_cache
             _key_hash = hashlib.sha256(_api_key.encode()).hexdigest()[:16]
             _cache_key = (_key_hash, MODEL_NAME or "")
 
