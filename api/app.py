@@ -27,6 +27,7 @@ import json
 import logging
 import math
 import os
+import secrets
 import threading
 import time
 from collections import deque
@@ -175,6 +176,16 @@ AGENT_REGISTRY: dict[str, dict] = {
                 "конкурсная документация", "аукционная документация",
                 "извещение о закупке", "документация о закупке",
                 "44-фз", "223-фз", "тендер",
+                # Insurance-specific keywords for tender routing
+                "страхование", "осаго", "каско", "дмс", "омс",
+                "страховая премия", "страховая сумма", "полис",
+                "франшиза", "лимит покрытия", "страховой случай",
+                "страховщик", "перестрахование",
+                "опо", "осгоп", "нс и болезней",
+                "строительно-монтажных рисков", "смр",
+                "страхование грузов", "страхование имущества",
+                "страхование ответственности",
+                "65.12", "65.11",  # OKPD2 codes
             ],
         },
     },
@@ -223,7 +234,7 @@ def _require_api_key(key: str | None = Depends(_api_key_header)) -> str:
     api_key = _get_api_key()
     if not api_key:
         return ""
-    if key != api_key:
+    if not key or not secrets.compare_digest(key, api_key):
         raise HTTPException(status_code=401, detail="Неверный или отсутствующий API-ключ")
     return key
 
