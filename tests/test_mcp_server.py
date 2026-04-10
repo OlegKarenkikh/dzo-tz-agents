@@ -180,6 +180,8 @@ class TestA2AAgentCard:
         monkeypatch.setenv("DATABASE_URL", "sqlite:///test_mcp.db")
         monkeypatch.setenv("API_KEY", "")
         from fastapi.testclient import TestClient
+        # Import api.app here (after monkeypatch.setenv) so that any module-level
+        # code that reads env vars picks up the patched values on first import.
         import api.app as api_app
         # Патчим init_db/close_db на самом модуле api.app, чтобы фикстура
         # оставалась корректной даже если api.app уже был импортирован ранее.
