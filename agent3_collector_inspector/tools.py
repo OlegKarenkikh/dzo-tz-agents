@@ -20,6 +20,13 @@ from langchain.tools import tool
 from shared.agent_tooling import invoke_agent_as_tool
 from shared.logger import setup_logger
 
+# Optional: document parser integration for auto-parsing anketa files
+try:
+    from shared.document_parser import parse_anketa as _parse_anketa
+    _PARSER_AVAILABLE = True
+except ImportError:
+    _PARSER_AVAILABLE = False
+
 logger = setup_logger("agent_collector")
 
 
@@ -338,6 +345,19 @@ def collect_tender_documents(query: str) -> str:
 
                 if doc_type == "anketa":
                     pr["anketa_received"] = True
+                    # Auto-parse anketa if parser is available
+                    if _PARSER_AVAILABLE and att.get("data"):
+                        try:
+                            ct = att.get("content_type", att.get("mime", ""))
+                            anketa_data = _parse_anketa(att["data"], ct)
+                            if anketa_data and anketa_data.inn:
+                                inn_from_anketa = anketa_data.inn
+                            pr["parsed_anketa"] = True
+                        except Exception as parse_err:
+                            logger.warning(
+                                "Anketa auto-parse failed for %s: %s",
+                                filename, parse_err,
+                            )
                     # Validate INN
                     if inn_from_anketa:
                         expected_inn = str(matched.get("inn", ""))
