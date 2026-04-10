@@ -121,9 +121,27 @@ dzo_inspector = RemoteAgent(
 )
 ```
 
+### Безопасность
+
+**В проде обязательно задайте `PUBLIC_BASE_URL` или `AGENT_CARD_ALLOWED_HOSTS`**, иначе поле `url` в Agent Card будет формироваться из Host-заголовка входящего запроса (риск подмены).
+
+| Переменная | Описание | Поведение без неё |
+|---|---|---|
+| `PUBLIC_BASE_URL` | Явный базовый URL сервиса (приоритет) | Используется `AGENT_CARD_ALLOWED_HOSTS` |
+| `AGENT_CARD_ALLOWED_HOSTS` | Через запятую допустимые hostname | HTTP 500, если и `PUBLIC_BASE_URL` не задан |
+
+Пример:
+```bash
+# Рекомендуется:
+PUBLIC_BASE_URL=https://agents.company.ru
+
+# Или allowlist (когда PUBLIC_BASE_URL не задан):
+AGENT_CARD_ALLOWED_HOSTS=agents.company.ru,localhost
+```
+
 ---
 
-## Архитектурное решение
+
 
 MCP и A2A реализованы как тонкий адаптерный слой поверх существующих агентов — без изменения их внутренней логики. Это соответствует принципу единственной ответственности:
 
