@@ -106,7 +106,8 @@ python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = "-v --tb=short -m 'not e2e'"
-markers = ["e2e: End-to-end tests requiring real LLM (opt-in, pytest -m e2e)"]
+markers = [
+  "integration: marks tests as integration (requiring real LLM API)","e2e: End-to-end tests requiring real LLM (opt-in, pytest -m e2e)"]
 filterwarnings = ["ignore::DeprecationWarning"]
 
 [tool.coverage.run]
