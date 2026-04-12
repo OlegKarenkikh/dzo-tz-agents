@@ -161,10 +161,7 @@ def _build_reprocess_payload(job: dict) -> tuple[dict, str | None]:
         "sender_email": job.get("sender", ""),
         "subject": job.get("subject", ""),
         "force": True,
-    }, (
-        "В этой записи нет исходного payload (старый формат). "
-        "Переобработка может быть неполной."
-    )
+    }, ("В этой записи нет исходного payload (старый формат). Переобработка может быть неполной.")
 
 
 def _show_artifacts(r: dict, expanded: bool = True, key_prefix: str = "") -> None:
@@ -175,41 +172,61 @@ def _show_artifacts(r: dict, expanded: bool = True, key_prefix: str = "") -> Non
     if r.get("email_html"):
         with st.expander("📧 Письмо (HTML)", expanded=expanded):
             components.html(r["email_html"], height=400, scrolling=True)
-            st.download_button("💾 Скачать", data=r["email_html"].encode(),
-                               file_name="email.html", mime="text/html",
-                               key=f"dl_email_{_k}")
+            st.download_button(
+                "💾 Скачать",
+                data=r["email_html"].encode(),
+                file_name="email.html",
+                mime="text/html",
+                key=f"dl_email_{_k}",
+            )
 
     # ── Форма Тезис ────────────────────────────────────────────────────
     if r.get("tezis_form_html"):
         with st.expander("📋 Форма Тезис (HTML)", expanded=False):
             components.html(r["tezis_form_html"], height=400, scrolling=True)
-            st.download_button("💾 Скачать", data=r["tezis_form_html"].encode(),
-                               file_name="tezis_form.html", mime="text/html",
-                               key=f"dl_tezis_{_k}")
+            st.download_button(
+                "💾 Скачать",
+                data=r["tezis_form_html"].encode(),
+                file_name="tezis_form.html",
+                mime="text/html",
+                key=f"dl_tezis_{_k}",
+            )
 
     # ── Исправленная заявка (ДЗО) ──────────────────────────────────────
     if r.get("corrected_html"):
         with st.expander("📝 Исправленная заявка (HTML)", expanded=False):
             components.html(r["corrected_html"], height=400, scrolling=True)
-            st.download_button("💾 Скачать", data=r["corrected_html"].encode(),
-                               file_name="corrected_application.html", mime="text/html",
-                               key=f"dl_corrapp_{_k}")
+            st.download_button(
+                "💾 Скачать",
+                data=r["corrected_html"].encode(),
+                file_name="corrected_application.html",
+                mime="text/html",
+                key=f"dl_corrapp_{_k}",
+            )
 
     # ── Эскалация ──────────────────────────────────────────────────────
     if r.get("escalation_html"):
         with st.expander("🔴 Письмо-эскалация (HTML)", expanded=False):
             components.html(r["escalation_html"], height=400, scrolling=True)
-            st.download_button("💾 Скачать", data=r["escalation_html"].encode(),
-                               file_name="escalation.html", mime="text/html",
-                               key=f"dl_escal_{_k}")
+            st.download_button(
+                "💾 Скачать",
+                data=r["escalation_html"].encode(),
+                file_name="escalation.html",
+                mime="text/html",
+                key=f"dl_escal_{_k}",
+            )
 
     # ── Исправленное ТЗ ────────────────────────────────────────────────
     if r.get("corrected_tz_html"):
         with st.expander("📝 Исправленное ТЗ (HTML)", expanded=False):
             components.html(r["corrected_tz_html"], height=500, scrolling=True)
-            st.download_button("💾 Скачать", data=r["corrected_tz_html"].encode(),
-                               file_name="corrected_tz.html", mime="text/html",
-                               key=f"dl_corrtz_{_k}")
+            st.download_button(
+                "💾 Скачать",
+                data=r["corrected_tz_html"].encode(),
+                file_name="corrected_tz.html",
+                mime="text/html",
+                key=f"dl_corrtz_{_k}",
+            )
 
     # ── JSON-отчёт ТЗ ──────────────────────────────────────────────────
     if r.get("json_report"):
@@ -221,7 +238,11 @@ def _show_artifacts(r: dict, expanded: bool = True, key_prefix: str = "") -> Non
             sections = jr.get("sections", [])
             if sections:
                 rows_jr = [
-                    {"Раздел": s.get("name", ""), "Статус": s.get("status", ""), "Комментарий": s.get("comment", "")}
+                    {
+                        "Раздел": s.get("name", ""),
+                        "Статус": s.get("status", ""),
+                        "Комментарий": s.get("comment", ""),
+                    }
                     for s in sections
                 ]
                 st.dataframe(rows_jr, hide_index=True)
@@ -250,11 +271,13 @@ def _show_artifacts(r: dict, expanded: bool = True, key_prefix: str = "") -> Non
             if events:
                 rows = []
                 for ev in events:
-                    rows.append({
-                        "Время": str(ev.get("ts", ""))[:19].replace("T", " "),
-                        "Этап": ev.get("stage", ""),
-                        "Сообщение": ev.get("message", ""),
-                    })
+                    rows.append(
+                        {
+                            "Время": str(ev.get("ts", ""))[:19].replace("T", " "),
+                            "Этап": ev.get("stage", ""),
+                            "Сообщение": ev.get("message", ""),
+                        }
+                    )
                 st.dataframe(rows, hide_index=True)
             st.json(processing_log)
 
@@ -356,15 +379,17 @@ if page == "📊 Дашборд":
         for item in items[:20]:
             r = item.get("result") or {}
             decision = r.get("decision") or item.get("decision") or "—"
-            rows.append({
-                "Время": item["created_at"][:19].replace("T", " "),
-                "Агент": item["agent"].upper(),
-                "Тема": item.get("subject") or "—",
-                "Решение": decision,
-                "Статус": f"{_status_icon(item['status'])} {item['status']}",
-                "ID": item["job_id"][:8] + "…",
-            })
-        st.dataframe(rows, width='stretch', hide_index=True)
+            rows.append(
+                {
+                    "Время": item["created_at"][:19].replace("T", " "),
+                    "Агент": item["agent"].upper(),
+                    "Тема": item.get("subject") or "—",
+                    "Решение": decision,
+                    "Статус": f"{_status_icon(item['status'])} {item['status']}",
+                    "ID": item["job_id"][:8] + "…",
+                }
+            )
+        st.dataframe(rows, width="stretch", hide_index=True)
     else:
         st.info("Нет данных. Запустите обработку документа.")
 
@@ -378,7 +403,7 @@ if page == "📊 Дашборд":
             if st.button(
                 f"▶️ Запустить {name}",
                 key=f"run_dashboard_{aid}",
-                width='stretch',
+                width="stretch",
             ):
                 demo_text = (
                     "ТЕНДЕРНАЯ ДОКУМЕНТАЦИЯ: тестовый запуск интерфейса. "
@@ -393,7 +418,7 @@ if page == "📊 Дашборд":
                 if result and "job" in result:
                     st.success(f"Задание создано: `{result['job']['job_id']}`")
     with run_columns[-1]:
-        if st.button("▶️ Запустить все", key="run_dashboard_all", width='stretch'):
+        if st.button("▶️ Запустить все", key="run_dashboard_all", width="stretch"):
             for agent in dashboard_agents:
                 aid = str(agent.get("id", "")).strip()
                 demo_text = (
@@ -479,8 +504,12 @@ elif page == "🧪 Тестирование":
             res = _api_get(f"/api/v1/jobs/{job_id}")
             if res and isinstance(res, dict):
                 result_obj = res.get("result") if isinstance(res.get("result"), dict) else {}
-                processing_log = result_obj.get("processing_log") if isinstance(result_obj, dict) else None
-                events = processing_log.get("events", []) if isinstance(processing_log, dict) else []
+                processing_log = (
+                    result_obj.get("processing_log") if isinstance(result_obj, dict) else None
+                )
+                events = (
+                    processing_log.get("events", []) if isinstance(processing_log, dict) else []
+                )
                 if events:
                     tail = events[-8:]
                     tail_rows = [
@@ -493,7 +522,7 @@ elif page == "🧪 Тестирование":
                     ]
                     with live_log.container():
                         st.caption("🧾 Живой журнал обработки (последние события)")
-                        st.dataframe(tail_rows, hide_index=True, width='stretch')
+                        st.dataframe(tail_rows, hide_index=True, width="stretch")
             elapsed = (i + 1) * _poll_interval
             bar.progress(
                 min(int(elapsed / total_seconds * 100), 99),
@@ -530,7 +559,9 @@ elif page == "🧪 Тестирование":
                 st.warning(technical_decisions[decision])
                 model_err = r.get("model_error", {})
                 if model_err:
-                    st.caption(f"Код: `{model_err.get('code','')}` — {model_err.get('message','')}")
+                    st.caption(
+                        f"Код: `{model_err.get('code', '')}` — {model_err.get('message', '')}"
+                    )
             else:
                 st.markdown(
                     f"**Решение:** {_decision_badge(decision)}",
@@ -553,23 +584,27 @@ elif page == "🧪 Тестирование":
                 st.session_state.test_pending_job_id = None
                 st.rerun()
             elif resumed:
-                st.info(f"⏳ Задание `{resume_id}` ещё обрабатывается (статус: {resumed.get('status','...')}). Нажмите «Обновить» для проверки.")
+                st.info(
+                    f"⏳ Задание `{resume_id}` ещё обрабатывается (статус: {resumed.get('status', '...')}). Нажмите «Обновить» для проверки."
+                )
                 if st.button("🔄 Обновить статус"):
                     st.rerun()
 
-        if st.button("🔍 Проверить", type="primary", width='stretch'):
+        if st.button("🔍 Проверить", type="primary", width="stretch"):
             st.session_state.test_result = None
             st.session_state.test_duplicate = None
             st.session_state.test_pending_job_id = None
 
             attachments = []
-            for f in (uploaded_files or []):
+            for f in uploaded_files or []:
                 raw = f.read()
-                attachments.append({
-                    "filename": f.name,
-                    "content_base64": base64.b64encode(raw).decode(),
-                    "mime_type": f.type or "application/octet-stream",
-                })
+                attachments.append(
+                    {
+                        "filename": f.name,
+                        "content_base64": base64.b64encode(raw).decode(),
+                        "mime_type": f.type or "application/octet-stream",
+                    }
+                )
 
             payload = {
                 "text": text_input,
@@ -591,11 +626,14 @@ elif page == "🧪 Тестирование":
 
             st.session_state.test_agent_key = resolve_key
 
-            dup = _api_get("/api/v1/check-duplicate", {
-                "agent": resolve_key,
-                "sender": sender_email,
-                "subject": subject_input,
-            })
+            dup = _api_get(
+                "/api/v1/check-duplicate",
+                {
+                    "agent": resolve_key,
+                    "sender": sender_email,
+                    "subject": subject_input,
+                },
+            )
 
             if dup and dup.get("duplicate"):
                 st.session_state.test_duplicate = dup["job"]
@@ -614,11 +652,11 @@ elif page == "🧪 Тестирование":
             c2.markdown(f"**Решение:** {_decision_badge(decision)}", unsafe_allow_html=True)
             c3.caption(f"ID: `{dup['job_id'][:8]}`")
             b1, b2 = st.columns(2)
-            if b1.button("Использовать старый результат", width='stretch'):
+            if b1.button("Использовать старый результат", width="stretch"):
                 st.session_state.test_result = dup
                 st.session_state.test_duplicate = None
                 st.rerun()
-            if b2.button("Переобработать", width='stretch'):
+            if b2.button("Переобработать", width="stretch"):
                 payload = st.session_state.test_payload
                 payload["force"] = True
                 force_agent_key = st.session_state.get("test_agent_key", agent_key)
@@ -640,21 +678,20 @@ elif page == "⚙️ Настройки":
     st.header("⚙️ Настройки")
 
     # ── Читаем текущие значения из окружения ──────────────────────────────
-    current_api_url    = os.getenv("UI_API_URL", "http://localhost:8000")
-    current_model      = os.getenv("MODEL_NAME", "gpt-4o")
-    current_llm_base   = os.getenv("OPENAI_API_BASE", "")
+    current_api_url = os.getenv("UI_API_URL", "http://localhost:8000")
+    current_model = os.getenv("MODEL_NAME", "gpt-4o")
+    current_llm_base = os.getenv("OPENAI_API_BASE", "")
     current_llm_backend = os.getenv("LLM_BACKEND", "openai")
     current_agent_mode = os.getenv("AGENT_MODE", "both")
-    current_poll       = int(os.getenv("POLL_INTERVAL_SEC", "300"))
-    current_manager    = os.getenv("MANAGER_EMAIL", "")
-    current_force      = os.getenv("FORCE_REPROCESS", "false").lower() == "true"
+    current_poll = int(os.getenv("POLL_INTERVAL_SEC", "300"))
+    current_manager = os.getenv("MANAGER_EMAIL", "")
+    current_force = os.getenv("FORCE_REPROCESS", "false").lower() == "true"
     current_agent_tool_enabled = os.getenv("AGENT_TOOL_ENABLED", "true").lower() == "true"
 
     # ── Блок 1: Текущая конфигурация (read-only) ──────────────────────────
     st.subheader("🔍 Текущая конфигурация")
     st.info(
-        "Параметры читаются из переменных окружения (.env). "
-        "Перезапустите сервис после изменения."
+        "Параметры читаются из переменных окружения (.env). Перезапустите сервис после изменения."
     )
 
     col1, col2 = st.columns(2)
@@ -690,19 +727,51 @@ elif page == "⚙️ Настройки":
     # Бэкенд LLM
     llm_backend = st.selectbox(
         "🖥️ Бэкенд LLM",
-        options=["☁️ OpenAI", "🐙 GitHub Models", "🦙 Ollama (локально)", "🌊 DeepSeek", "⚡ vLLM", "🏠 LM Studio", "✏️ Произвольный"],
+        options=[
+            "☁️ OpenAI",
+            "🐙 GitHub Models",
+            "🦙 Ollama (локально)",
+            "🌊 DeepSeek",
+            "⚡ vLLM",
+            "🏠 LM Studio",
+            "✏️ Произвольный",
+        ],
         index=0,
     )
 
     # Предзаполняем значения по выбранному бэкенду
     _backend_defaults: dict[str, dict] = {
-        "☁️ OpenAI":           {"base": "",                            "backend": "openai",        "models": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo"]},
-        "🐙 GitHub Models":    {"base": "",                            "backend": "github_models", "models": ["gpt-4o", "gpt-4o-mini", "Phi-4", "DeepSeek-V3"]},
-        "🦙 Ollama (локально)": {"base": "http://localhost:11434/v1",   "backend": "ollama",        "models": ["llama3", "qwen2.5", "mistral", "deepseek-r1:8b", "phi4"]},
-        "🌊 DeepSeek":         {"base": "https://api.deepseek.com/v1", "backend": "deepseek",      "models": ["deepseek-chat", "deepseek-reasoner"]},
-        "⚡ vLLM":             {"base": "http://localhost:8000/v1",     "backend": "vllm",          "models": ["microsoft/phi-4", "Qwen/Qwen2.5-72B-Instruct"]},
-        "🏠 LM Studio":        {"base": "http://localhost:1234/v1",     "backend": "lmstudio",      "models": ["local-model"]},
-        "✏️ Произвольный":     {"base": "",                            "backend": "openai",        "models": []},
+        "☁️ OpenAI": {
+            "base": "",
+            "backend": "openai",
+            "models": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo"],
+        },
+        "🐙 GitHub Models": {
+            "base": "",
+            "backend": "github_models",
+            "models": ["gpt-4o", "gpt-4o-mini", "Phi-4", "DeepSeek-V3"],
+        },
+        "🦙 Ollama (локально)": {
+            "base": "http://localhost:11434/v1",
+            "backend": "ollama",
+            "models": ["llama3", "qwen2.5", "mistral", "deepseek-r1:8b", "phi4"],
+        },
+        "🌊 DeepSeek": {
+            "base": "https://api.deepseek.com/v1",
+            "backend": "deepseek",
+            "models": ["deepseek-chat", "deepseek-reasoner"],
+        },
+        "⚡ vLLM": {
+            "base": "http://localhost:8000/v1",
+            "backend": "vllm",
+            "models": ["microsoft/phi-4", "Qwen/Qwen2.5-72B-Instruct"],
+        },
+        "🏠 LM Studio": {
+            "base": "http://localhost:1234/v1",
+            "backend": "lmstudio",
+            "models": ["local-model"],
+        },
+        "✏️ Произвольный": {"base": "", "backend": "openai", "models": []},
     }
     bd = _backend_defaults[llm_backend]
 
@@ -710,7 +779,9 @@ elif page == "⚙️ Настройки":
     with col_a:
         # Модель
         if bd["models"]:
-            model_choice = st.selectbox("🤖 MODEL_NAME", options=bd["models"] + ["✏️ Ввести вручную"])
+            model_choice = st.selectbox(
+                "🤖 MODEL_NAME", options=bd["models"] + ["✏️ Ввести вручную"]
+            )
             if model_choice == "✏️ Ввести вручную":
                 model_val = st.text_input("Введите название модели", value="")
             else:
@@ -730,8 +801,12 @@ elif page == "⚙️ Настройки":
         llm_backend_val = st.selectbox(
             "🧠 LLM_BACKEND",
             options=["openai", "github_models", "ollama", "deepseek", "vllm", "lmstudio"],
-            index=["openai", "github_models", "ollama", "deepseek", "vllm", "lmstudio"].index(bd["backend"])
-            if bd["backend"] in ["openai", "github_models", "ollama", "deepseek", "vllm", "lmstudio"] else 0,
+            index=["openai", "github_models", "ollama", "deepseek", "vllm", "lmstudio"].index(
+                bd["backend"]
+            )
+            if bd["backend"]
+            in ["openai", "github_models", "ollama", "deepseek", "vllm", "lmstudio"]
+            else 0,
             help="Основной бэкенд LLM, используемый функцией build_llm()",
         )
         st.caption("Все агенты используют единый build_llm() и LangGraph create_react_agent.")
@@ -741,7 +816,8 @@ elif page == "⚙️ Настройки":
             "🎛️ AGENT_MODE — какие агенты запускать",
             options=["both", "dzo", "tz", "tender"],
             index=["both", "dzo", "tz", "tender"].index(current_agent_mode)
-            if current_agent_mode in ["both", "dzo", "tz", "tender"] else 0,
+            if current_agent_mode in ["both", "dzo", "tz", "tender"]
+            else 0,
             horizontal=True,
         )
 
@@ -751,7 +827,10 @@ elif page == "⚙️ Настройки":
         with col_e1:
             poll_val = st.number_input(
                 "⏱️ POLL_INTERVAL_SEC — интервал опроса IMAP (сек)",
-                min_value=30, max_value=3600, value=current_poll, step=30,
+                min_value=30,
+                max_value=3600,
+                value=current_poll,
+                step=30,
             )
             manager_val = st.text_input(
                 "📧 MANAGER_EMAIL — email для эскалаций",
@@ -815,49 +894,61 @@ elif page == "⚙️ Настройки":
     with tab_openai:
         st.markdown("**OPENAI_API_BASE** — оставить пустым")
         st.markdown("**LLM_BACKEND** = `openai`")
-        st.table([
-            {"MODEL_NAME": "gpt-4o",      "Описание": "Флагман, лучшее качество"},
-            {"MODEL_NAME": "gpt-4o-mini", "Описание": "Быстрый и экономичный"},
-            {"MODEL_NAME": "gpt-4-turbo", "Описание": "Предыдущее поколение"},
-        ])
+        st.table(
+            [
+                {"MODEL_NAME": "gpt-4o", "Описание": "Флагман, лучшее качество"},
+                {"MODEL_NAME": "gpt-4o-mini", "Описание": "Быстрый и экономичный"},
+                {"MODEL_NAME": "gpt-4-turbo", "Описание": "Предыдущее поколение"},
+            ]
+        )
 
     with tab_github:
         st.markdown("**OPENAI_API_BASE** — не требуется, endpoint встроен в backend")
         st.markdown("**LLM_BACKEND** = `github_models`")
-        st.table([
-            {"MODEL_NAME": "gpt-4o",      "Описание": "Лучшее качество через GitHub Models"},
-            {"MODEL_NAME": "gpt-4o-mini", "Описание": "Быстрый и дешёвый вариант"},
-            {"MODEL_NAME": "Phi-4",       "Описание": "Компактная reasoning-модель"},
-            {"MODEL_NAME": "DeepSeek-V3", "Описание": "Сильная универсальная модель"},
-        ])
+        st.table(
+            [
+                {"MODEL_NAME": "gpt-4o", "Описание": "Лучшее качество через GitHub Models"},
+                {"MODEL_NAME": "gpt-4o-mini", "Описание": "Быстрый и дешёвый вариант"},
+                {"MODEL_NAME": "Phi-4", "Описание": "Компактная reasoning-модель"},
+                {"MODEL_NAME": "DeepSeek-V3", "Описание": "Сильная универсальная модель"},
+            ]
+        )
 
     with tab_ollama:
         st.markdown("**OPENAI_API_BASE** = `http://localhost:11434/v1`")
         st.markdown("**LLM_BACKEND** = `ollama`")
-        st.table([
-            {"MODEL_NAME": "llama3",         "Описание": "Meta Llama 3 8B/70B"},
-            {"MODEL_NAME": "mistral",         "Описание": "Mistral 7B"},
-            {"MODEL_NAME": "qwen2.5",         "Описание": "Qwen 2.5 7B/14B/72B"},
-            {"MODEL_NAME": "deepseek-r1:8b",  "Описание": "DeepSeek R1 (локально)"},
-            {"MODEL_NAME": "phi4",            "Описание": "Microsoft Phi-4"},
-        ])
+        st.table(
+            [
+                {"MODEL_NAME": "llama3", "Описание": "Meta Llama 3 8B/70B"},
+                {"MODEL_NAME": "mistral", "Описание": "Mistral 7B"},
+                {"MODEL_NAME": "qwen2.5", "Описание": "Qwen 2.5 7B/14B/72B"},
+                {"MODEL_NAME": "deepseek-r1:8b", "Описание": "DeepSeek R1 (локально)"},
+                {"MODEL_NAME": "phi4", "Описание": "Microsoft Phi-4"},
+            ]
+        )
         st.info("Убедитесь что модель загружена: `ollama pull <model_name>`")
 
     with tab_deepseek:
         st.markdown("**OPENAI_API_BASE** = `https://api.deepseek.com/v1`")
         st.markdown("**LLM_BACKEND** = `deepseek`")
-        st.table([
-            {"MODEL_NAME": "deepseek-chat",     "Описание": "DeepSeek V3 (рекомендуется)"},
-            {"MODEL_NAME": "deepseek-reasoner",  "Описание": "DeepSeek R1 (reasoning)"},
-        ])
+        st.table(
+            [
+                {"MODEL_NAME": "deepseek-chat", "Описание": "DeepSeek V3 (рекомендуется)"},
+                {"MODEL_NAME": "deepseek-reasoner", "Описание": "DeepSeek R1 (reasoning)"},
+            ]
+        )
 
     with tab_vllm:
-        st.markdown("**OPENAI_API_BASE** = `http://localhost:8000/v1` (vLLM) или `http://localhost:1234/v1` (LM Studio)")
+        st.markdown(
+            "**OPENAI_API_BASE** = `http://localhost:8000/v1` (vLLM) или `http://localhost:1234/v1` (LM Studio)"
+        )
         st.markdown("**LLM_BACKEND** = `vllm` или `lmstudio`")
-        st.table([
-            {"MODEL_NAME": "microsoft/phi-4",            "Описание": "Phi-4 через vLLM"},
-            {"MODEL_NAME": "Qwen/Qwen2.5-72B-Instruct",  "Описание": "Qwen 2.5 72B через vLLM"},
-        ])
+        st.table(
+            [
+                {"MODEL_NAME": "microsoft/phi-4", "Описание": "Phi-4 через vLLM"},
+                {"MODEL_NAME": "Qwen/Qwen2.5-72B-Instruct", "Описание": "Qwen 2.5 72B через vLLM"},
+            ]
+        )
 
     st.divider()
 
@@ -865,7 +956,7 @@ elif page == "⚙️ Настройки":
     st.subheader("🔌 Тест соединения")
     col_t1, col_t2, col_t3 = st.columns(3)
     with col_t1:
-        if st.button("🔌 Проверить API (/health)", width='stretch'):
+        if st.button("🔌 Проверить API (/health)", width="stretch"):
             h = _api_get("/health")
             if h:
                 st.success(
@@ -875,13 +966,13 @@ elif page == "⚙️ Настройки":
                     f"Режим: `{h.get('agent_mode', '?')}`"
                 )
     with col_t2:
-        if st.button("📋 Список агентов (/agents)", width='stretch'):
+        if st.button("📋 Список агентов (/agents)", width="stretch"):
             agents = _api_get("/agents")
             if agents:
                 for a in agents.get("agents", []):
                     st.info(f"**{a['name']}** (`{a['id']}`): {a.get('description', '')}")
     with col_t3:
-        if st.button("📊 Статистика (/stats)", width='stretch'):
+        if st.button("📊 Статистика (/stats)", width="stretch"):
             s = _api_get("/api/v1/stats")
             if s:
                 st.json(s)
@@ -903,12 +994,17 @@ elif page == "📋 История":
     col_f1, col_f2, col_f3, col_f4 = st.columns(4)
     with col_f1:
         history_agents = _get_ui_agents()
-        filter_labels = ["Все"] + [f"{str(a.get('name', a.get('id', '') or '')).strip()} ({str(a.get('id', '')).strip()})" for a in history_agents]
+        filter_labels = ["Все"] + [
+            f"{str(a.get('name', a.get('id', '') or '')).strip()} ({str(a.get('id', '')).strip()})"
+            for a in history_agents
+        ]
         filter_agent = st.selectbox("Агент", filter_labels)
     with col_f2:
         filter_status = st.selectbox("Статус", ["Все", "done", "error", "running", "pending"])
     with col_f3:
-        filter_per_page = st.number_input("Записей на странице", min_value=10, max_value=500, value=50, step=10)
+        filter_per_page = st.number_input(
+            "Записей на странице", min_value=10, max_value=500, value=50, step=10
+        )
     with col_f4:
         filter_page = st.number_input("Страница", min_value=1, value=1, step=1)
 
@@ -944,7 +1040,7 @@ elif page == "📋 История":
             st.write(f"Выбрано: **{len(st.session_state.selected_jobs)}**")
             act_col1, act_col2, _ = st.columns([2, 2, 4])
 
-            if act_col1.button("🔁 Переобработать выбранные", width='stretch'):
+            if act_col1.button("🔁 Переобработать выбранные", width="stretch"):
                 new_jobs = []
                 for jid in st.session_state.selected_jobs:
                     j_info = _api_get(f"/api/v1/jobs/{jid}")
@@ -962,13 +1058,13 @@ elif page == "📋 История":
                 st.rerun()
 
             if not st.session_state.pending_delete:
-                if act_col2.button("🗑 Удалить выбранные", width='stretch'):
+                if act_col2.button("🗑 Удалить выбранные", width="stretch"):
                     st.session_state.pending_delete = True
                     st.rerun()
             else:
                 st.warning("Вы уверены, что хотите удалить выбранные записи?")
                 del_c1, del_c2 = st.columns(2)
-                if del_c1.button("✅ Подтвердить удаление", type="primary", width='stretch'):
+                if del_c1.button("✅ Подтвердить удаление", type="primary", width="stretch"):
                     deleted_count = 0
                     for jid in list(st.session_state.selected_jobs):
                         if _api_delete(f"/api/v1/jobs/{jid}"):
@@ -979,23 +1075,25 @@ elif page == "📋 История":
                     st.session_state.select_all_prev = False
                     time.sleep(1)
                     st.rerun()
-                if del_c2.button("❌ Отмена", width='stretch'):
+                if del_c2.button("❌ Отмена", width="stretch"):
                     st.session_state.pending_delete = False
                     st.rerun()
 
         rows = []
         for item in items:
             r = item.get("result") or {}
-            rows.append({
-                "Выбор": item["job_id"] in st.session_state.selected_jobs,
-                "Время": item["created_at"][:19].replace("T", " "),
-                "Агент": item["agent"].upper(),
-                "Отправитель": item.get("sender") or "—",
-                "Тема": item.get("subject") or "—",
-                "Решение": r.get("decision") or item.get("decision") or "—",
-                "Статус": f"{_status_icon(item['status'])} {item['status']}",
-                "job_id": item["job_id"],
-            })
+            rows.append(
+                {
+                    "Выбор": item["job_id"] in st.session_state.selected_jobs,
+                    "Время": item["created_at"][:19].replace("T", " "),
+                    "Агент": item["agent"].upper(),
+                    "Отправитель": item.get("sender") or "—",
+                    "Тема": item.get("subject") or "—",
+                    "Решение": r.get("decision") or item.get("decision") or "—",
+                    "Статус": f"{_status_icon(item['status'])} {item['status']}",
+                    "job_id": item["job_id"],
+                }
+            )
 
         edited_df = st.data_editor(
             rows,
@@ -1004,14 +1102,16 @@ elif page == "📋 История":
                 "job_id": None,
             },
             disabled=["Время", "Агент", "Отправитель", "Тема", "Решение", "Статус"],
-            width='stretch',
+            width="stretch",
             hide_index=True,
             key="history_editor",
         )
 
         current_selected = {r["job_id"] for r in edited_df if r["Выбор"]}
         current_page_ids = {r["job_id"] for r in rows}
-        st.session_state.selected_jobs = (st.session_state.selected_jobs - current_page_ids) | current_selected
+        st.session_state.selected_jobs = (
+            st.session_state.selected_jobs - current_page_ids
+        ) | current_selected
         if current_page_ids and current_selected == current_page_ids:
             st.session_state.select_all_prev = True
         elif not current_selected:
@@ -1024,14 +1124,16 @@ elif page == "📋 История":
                 f"{item['created_at'][:19].replace('T', ' ')} | {item['agent'].upper()} | {item.get('subject') or '(без темы)'}"
             ):
                 c1, c2, c3 = st.columns([4, 1, 1])
-                c1.write(f"**ID:** `{item['job_id']}` | **Отправитель:** {item.get('sender') or '—'}")
+                c1.write(
+                    f"**ID:** `{item['job_id']}` | **Отправитель:** {item.get('sender') or '—'}"
+                )
                 r = item.get("result") or {}
                 if r.get("decision"):
                     c1.markdown(
                         f"**Решение:** {_decision_badge(r['decision'])}",
                         unsafe_allow_html=True,
                     )
-                if c2.button("🔁 Переобработать", key=f"reproc_{item['job_id']}", width='stretch'):
+                if c2.button("🔁 Переобработать", key=f"reproc_{item['job_id']}", width="stretch"):
                     payload, warning = _build_reprocess_payload(item)
                     if warning:
                         st.warning(warning)
@@ -1040,19 +1142,31 @@ elif page == "📋 История":
                         st.success(f"Создано новое задание: `{res['job']['job_id']}`")
                         time.sleep(0.5)
                         st.rerun()
-                if c3.button("🗑 Удалить", key=f"del_{item['job_id']}", width='stretch'):
+                if c3.button("🗑 Удалить", key=f"del_{item['job_id']}", width="stretch"):
                     if _api_delete(f"/api/v1/jobs/{item['job_id']}"):
                         st.success("Удалено")
                         time.sleep(0.5)
                         st.rerun()
 
                 # ── Артефакты работы агента ────────────────────────────────
-                if any(r.get(k) for k in (
-                    "email_html", "tezis_form_html", "corrected_html", "escalation_html",
-                    "corrected_tz_html", "json_report", "validation_report", "output",
-                    "tz_agent_analysis", "peer_agent_results", "document_list", "document_list_error",
-                    "processing_log",
-                )):
+                if any(
+                    r.get(k)
+                    for k in (
+                        "email_html",
+                        "tezis_form_html",
+                        "corrected_html",
+                        "escalation_html",
+                        "corrected_tz_html",
+                        "json_report",
+                        "validation_report",
+                        "output",
+                        "tz_agent_analysis",
+                        "peer_agent_results",
+                        "document_list",
+                        "document_list_error",
+                        "processing_log",
+                    )
+                ):
                     st.divider()
                     _show_artifacts(r, expanded=False, key_prefix=item["job_id"])
 
@@ -1079,7 +1193,9 @@ elif page == "📋 История":
 elif page == "📖 Документация":
     st.header("📖 Документация")
 
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["Агент ДЗО", "Агент ТЗ", "Агент Тендер", "Межагентные вызовы", "API"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(
+        ["Агент ДЗО", "Агент ТЗ", "Агент Тендер", "Межагентные вызовы", "API"]
+    )
 
     with tab1:
         st.markdown(

@@ -2,6 +2,7 @@
 Тесты для shared/email_client.py.
 Используются mock-объекты для imaplib.IMAP4_SSL.
 """
+
 import base64
 import email
 import imaplib

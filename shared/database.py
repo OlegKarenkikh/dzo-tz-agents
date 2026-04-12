@@ -3,6 +3,7 @@ PostgreSQL хранилище для истории обработок.
 Использует psycopg2 с ThreadedConnectionPool.
 Fallback: если DATABASE_URL не задан — хранит в памяти (in-memory dict).
 """
+
 import json
 import logging
 import os
@@ -48,13 +49,13 @@ def _filter_by_dates(rows: list[dict], date_from: str | None, date_to: str | Non
         return []
     if date_from_obj:
         rows = [
-            r for r in rows
+            r
+            for r in rows
             if (d := _to_date(r.get("created_at"))) is not None and d >= date_from_obj
         ]
     if date_to_obj:
         rows = [
-            r for r in rows
-            if (d := _to_date(r.get("created_at"))) is not None and d <= date_to_obj
+            r for r in rows if (d := _to_date(r.get("created_at"))) is not None and d <= date_to_obj
         ]
     return rows
 
@@ -66,10 +67,11 @@ def _pg_available() -> bool:
 def _get_pool():
     """RC-01: double-checked locking — гарантирует единственный пул при конкурентном старте."""
     global _pool
-    if _pool is None:               # fast-path без блокировки
+    if _pool is None:  # fast-path без блокировки
         with _pool_lock:
-            if _pool is None:       # повторная проверка под замком
+            if _pool is None:  # повторная проверка под замком
                 import psycopg2.pool
+
                 _pool = psycopg2.pool.ThreadedConnectionPool(2, 10, DATABASE_URL)
                 logger.info("Пул psycopg2-соединений инициализирован (min=2, max=10).")
     return _pool
@@ -155,13 +157,17 @@ def find_duplicate_job(agent: str, sender: str, subject: str) -> dict | None:
     if _pg_available():
         try:
             import psycopg2.extras
+
             with _get_conn() as conn:
                 cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-                cur.execute("""
+                cur.execute(
+                    """
                     SELECT * FROM jobs
                     WHERE agent = %s AND sender = %s AND subject = %s AND status = 'done'
                     ORDER BY created_at DESC LIMIT 1
-                """, (agent, sender, subject))
+                """,
+                    (agent, sender, subject),
+                )
                 row = cur.fetchone()
                 cur.close()
             return dict(row) if row else None
@@ -172,7 +178,8 @@ def find_duplicate_job(agent: str, sender: str, subject: str) -> dict | None:
     # update_job() не мутировал кандидатов до или во время выбора
     with _memory_lock:
         candidates = [
-            dict(r) for r in _memory_store.values()
+            dict(r)
+            for r in _memory_store.values()
             if r.get("agent") == agent
             and r.get("sender") == sender
             and r.get("subject") == subject
@@ -188,15 +195,15 @@ def create_job(agent: str, sender: str = "", subject: str = "") -> str:
     job_id = str(uuid4())
     now = _now_utc()
     record = {
-        "job_id":     job_id,
-        "agent":      agent,
-        "status":     "pending",
-        "decision":   None,
-        "sender":     sender,
-        "subject":    subject,
-        "result":     None,
-        "trace":      None,
-        "error":      None,
+        "job_id": job_id,
+        "agent": agent,
+        "status": "pending",
+        "decision": None,
+        "sender": sender,
+        "subject": subject,
+        "result": None,
+        "trace": None,
+        "error": None,
         "created_at": now,
         "updated_at": now,
     }
@@ -204,10 +211,13 @@ def create_job(agent: str, sender: str = "", subject: str = "") -> str:
         try:
             with _get_conn() as conn:
                 cur = conn.cursor()
-                cur.execute("""
+                cur.execute(
+                    """
                     INSERT INTO jobs (job_id, agent, status, sender, subject, created_at, updated_at)
                     VALUES (%s, %s, 'pending', %s, %s, NOW(), NOW())
-                """, (job_id, agent, sender, subject))
+                """,
+                    (job_id, agent, sender, subject),
+                )
                 conn.commit()
                 cur.close()
         except Exception as e:
@@ -231,19 +241,22 @@ def update_job(
         try:
             with _get_conn() as conn:
                 cur = conn.cursor()
-                cur.execute("""
+                cur.execute(
+                    """
                     UPDATE jobs
                     SET status = %s, decision = %s, result = %s, trace = %s,
                         error = %s, updated_at = NOW()
                     WHERE job_id = %s
-                """, (
-                    status,
-                    decision,
-                    json.dumps(result) if result else None,
-                    json.dumps(trace) if trace else None,
-                    error,
-                    job_id,
-                ))
+                """,
+                    (
+                        status,
+                        decision,
+                        json.dumps(result) if result else None,
+                        json.dumps(trace) if trace else None,
+                        error,
+                        job_id,
+                    ),
+                )
                 conn.commit()
                 cur.close()
         except Exception as e:
@@ -252,20 +265,23 @@ def update_job(
         # RC-04: атомарное обновление in-memory store
         with _memory_lock:
             if job_id in _memory_store:
-                _memory_store[job_id].update({
-                    "status":     status,
-                    "decision":   decision,
-                    "result":     result,
-                    "trace":      trace,
-                    "error":      error,
-                    "updated_at": _now_utc(),
-                })
+                _memory_store[job_id].update(
+                    {
+                        "status": status,
+                        "decision": decision,
+                        "result": result,
+                        "trace": trace,
+                        "error": error,
+                        "updated_at": _now_utc(),
+                    }
+                )
 
 
 def get_job(job_id: str) -> dict | None:
     if _pg_available():
         try:
             import psycopg2.extras
+
             with _get_conn() as conn:
                 cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
                 cur.execute("SELECT * FROM jobs WHERE job_id = %s", (job_id,))
@@ -293,6 +309,7 @@ def get_history(
     if _pg_available():
         try:
             import psycopg2.extras
+
             with _get_conn() as conn:
                 cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
                 filters: list[str] = []
@@ -335,7 +352,7 @@ def get_history(
         rows = [r for r in rows if r.get("status") == status]
     rows = _filter_by_dates(rows, date_from, date_to)
     rows.sort(key=lambda r: r.get("created_at", ""), reverse=True)
-    return rows[offset:offset + limit]
+    return rows[offset : offset + limit]
 
 
 def count_history(
@@ -391,6 +408,7 @@ def get_stats() -> dict[str, int]:
     if _pg_available():
         try:
             import psycopg2.extras
+
             with _get_conn() as conn:
                 cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
                 cur.execute("""
@@ -414,11 +432,11 @@ def get_stats() -> dict[str, int]:
         rows = [dict(r) for r in _memory_store.values()]
     today = datetime.now(UTC).date().isoformat()
     return {
-        "total":     len(rows),
-        "today":     sum(1 for r in rows if r.get("created_at", "")[:10] == today),
-        "errors":    sum(1 for r in rows if r.get("status") == "error"),
-        "approved":  sum(1 for r in rows if "полная" in (r.get("decision") or "").lower()),
-        "rework":    sum(1 for r in rows if "доработ" in (r.get("decision") or "").lower()),
+        "total": len(rows),
+        "today": sum(1 for r in rows if r.get("created_at", "")[:10] == today),
+        "errors": sum(1 for r in rows if r.get("status") == "error"),
+        "approved": sum(1 for r in rows if "полная" in (r.get("decision") or "").lower()),
+        "rework": sum(1 for r in rows if "доработ" in (r.get("decision") or "").lower()),
         "escalated": sum(1 for r in rows if "эскал" in (r.get("decision") or "").lower()),
     }
 

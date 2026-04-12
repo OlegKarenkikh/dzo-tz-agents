@@ -94,15 +94,19 @@ def _make_attachment(
 # Document Classification Tests
 # ============================================================================
 
+
 class TestClassifyDocument:
     def test_anketa_by_filename(self):
         assert classify_document("Анкета участника ТО 3115.pdf") == "anketa"
 
     def test_anketa_by_content_hint(self):
-        assert classify_document(
-            "document.pdf",
-            "АНКЕТА УЧАСТНИКА ТЕНДЕРНОГО ОТБОРА 3115-ДИТ-Сервер",
-        ) == "anketa"
+        assert (
+            classify_document(
+                "document.pdf",
+                "АНКЕТА УЧАСТНИКА ТЕНДЕРНОГО ОТБОРА 3115-ДИТ-Сервер",
+            )
+            == "anketa"
+        )
 
     def test_anketa_partial_match(self):
         assert classify_document("Анкета_компании.docx") == "anketa"
@@ -114,10 +118,13 @@ class TestClassifyDocument:
         assert classify_document("Соглашение о неразглашении.pdf") == "nda"
 
     def test_nda_by_content(self):
-        assert classify_document(
-            "agreement.pdf",
-            "Соглашение о конфиденциальности между сторонами",
-        ) == "nda"
+        assert (
+            classify_document(
+                "agreement.pdf",
+                "Соглашение о конфиденциальности между сторонами",
+            )
+            == "nda"
+        )
 
     def test_nda_english(self):
         assert classify_document("Non-Disclosure Agreement.pdf") == "nda"
@@ -142,45 +149,64 @@ class TestClassifyDocument:
 # Participant Matching Tests
 # ============================================================================
 
+
 class TestMatchParticipant:
     def test_match_by_email(self):
         result = match_participant(
-            "petrov@romashka.ru", "", None, PARTICIPANTS,
+            "petrov@romashka.ru",
+            "",
+            None,
+            PARTICIPANTS,
         )
         assert result is not None
         assert result["inn"] == "7702365551"
 
     def test_match_by_email_case_insensitive(self):
         result = match_participant(
-            "Petrov@Romashka.RU", "", None, PARTICIPANTS,
+            "Petrov@Romashka.RU",
+            "",
+            None,
+            PARTICIPANTS,
         )
         assert result is not None
         assert result["inn"] == "7702365551"
 
     def test_match_by_inn(self):
         result = match_participant(
-            "unknown@example.com", "", "7704565559", PARTICIPANTS,
+            "unknown@example.com",
+            "",
+            "7704565559",
+            PARTICIPANTS,
         )
         assert result is not None
         assert result["name"] == 'ООО "Гвоздика"'
 
     def test_match_by_name(self):
         result = match_participant(
-            "unknown@example.com", 'АО "Лютик"', None, PARTICIPANTS,
+            "unknown@example.com",
+            'АО "Лютик"',
+            None,
+            PARTICIPANTS,
         )
         assert result is not None
         assert result["inn"] == "7702365751"
 
     def test_no_match(self):
         result = match_participant(
-            "stranger@example.com", "Unknown Co", None, PARTICIPANTS,
+            "stranger@example.com",
+            "Unknown Co",
+            None,
+            PARTICIPANTS,
         )
         assert result is None
 
     def test_match_priority_email_first(self):
         """Email match takes priority over INN."""
         result = match_participant(
-            "petrov@romashka.ru", "", "7704565559", PARTICIPANTS,
+            "petrov@romashka.ru",
+            "",
+            "7704565559",
+            PARTICIPANTS,
         )
         assert result is not None
         # Matched by email, not INN
@@ -188,7 +214,10 @@ class TestMatchParticipant:
 
     def test_match_by_inn_when_email_unknown(self):
         result = match_participant(
-            "unknown@example.com", "", "7702365751", PARTICIPANTS,
+            "unknown@example.com",
+            "",
+            "7702365751",
+            PARTICIPANTS,
         )
         assert result is not None
         assert result["name"] == 'АО "Лютик"'
@@ -202,9 +231,13 @@ class TestMatchParticipant:
 # Tender ID Extraction Tests
 # ============================================================================
 
+
 class TestTenderIdExtraction:
     def test_extract_from_subject(self):
-        assert extract_tender_id("Re: Приглашение на участие в ТО 3115-ДИТ-Сервер") == "3115-ДИТ-Сервер"
+        assert (
+            extract_tender_id("Re: Приглашение на участие в ТО 3115-ДИТ-Сервер")
+            == "3115-ДИТ-Сервер"
+        )
 
     def test_extract_from_simple_subject(self):
         assert extract_tender_id("ТО 3115-ДИТ-Сервер документы") == "3115-ДИТ-Сервер"
@@ -214,28 +247,33 @@ class TestTenderIdExtraction:
 
     def test_subject_contains_tender_id_true(self):
         assert subject_contains_tender_id(
-            "Re: ТО 3115-ДИТ-Сервер", "3115-ДИТ-Сервер",
+            "Re: ТО 3115-ДИТ-Сервер",
+            "3115-ДИТ-Сервер",
         )
 
     def test_subject_contains_tender_id_case_insensitive(self):
         assert subject_contains_tender_id(
-            "Документы к ТО 3115-дит-сервер", "3115-ДИТ-Сервер",
+            "Документы к ТО 3115-дит-сервер",
+            "3115-ДИТ-Сервер",
         )
 
     def test_subject_missing_tender_id(self):
         assert not subject_contains_tender_id(
-            "Обычное письмо", "3115-ДИТ-Сервер",
+            "Обычное письмо",
+            "3115-ДИТ-Сервер",
         )
 
     def test_subject_wrong_tender_id(self):
         assert not subject_contains_tender_id(
-            "ТО 4444-ДИТ-Другой", "3115-ДИТ-Сервер",
+            "ТО 4444-ДИТ-Другой",
+            "3115-ДИТ-Сервер",
         )
 
 
 # ============================================================================
 # INN Validation Tests
 # ============================================================================
+
 
 class TestValidateInn:
     def test_matching_inn(self):
@@ -255,6 +293,7 @@ class TestValidateInn:
 # Company Name Normalization Tests
 # ============================================================================
 
+
 class TestCompanyNameNormalization:
     def test_strip_ooo(self):
         assert normalize_company_name('ООО "Гвоздика"') == "гвоздика"
@@ -266,7 +305,7 @@ class TestCompanyNameNormalization:
         assert normalize_company_name('ПАО "Сбербанк"') == "сбербанк"
 
     def test_strip_spao(self):
-        assert normalize_company_name('Страховая компания') == "страховая компания"
+        assert normalize_company_name("Страховая компания") == "страховая компания"
 
     def test_strip_guillemets(self):
         assert normalize_company_name("АО «Ромашка»") == "ромашка"
@@ -284,7 +323,7 @@ class TestCompanyNameNormalization:
         assert company_names_match('ООО "Ромашка"', 'АО "Ромашка"')
 
     def test_company_names_match_different_quotes(self):
-        assert company_names_match('АО «Ромашка»', 'АО "Ромашка"')
+        assert company_names_match("АО «Ромашка»", 'АО "Ромашка"')
 
     def test_company_names_no_match(self):
         assert not company_names_match('АО "Ромашка"', 'АО "Лютик"')
@@ -300,6 +339,7 @@ class TestCompanyNameNormalization:
 # ============================================================================
 # Folder Structure Tests
 # ============================================================================
+
 
 class TestFolderStructure:
     def test_basic_structure(self):
@@ -327,6 +367,7 @@ class TestFolderStructure:
 # collect_tender_documents Tool Tests
 # ============================================================================
 
+
 class TestCollectTenderDocuments:
     def _invoke(self, data: dict) -> dict:
         result_str = collect_tender_documents.invoke(json.dumps(data, ensure_ascii=False))
@@ -336,23 +377,30 @@ class TestCollectTenderDocuments:
         """All 3 participants sent anketa and NDA."""
         emails = [
             _make_email(
-                "petrov@romashka.ru", "Петров П.П.",
+                "petrov@romashka.ru",
+                "Петров П.П.",
                 f"Re: ТО {TENDER_ID}",
                 [
-                    _make_attachment("Анкета Ромашка.pdf", f"АНКЕТА УЧАСТНИКА ТО {TENDER_ID}\nИНН: 7702365551"),
+                    _make_attachment(
+                        "Анкета Ромашка.pdf", f"АНКЕТА УЧАСТНИКА ТО {TENDER_ID}\nИНН: 7702365551"
+                    ),
                     _make_attachment("NDA.pdf"),
                 ],
             ),
             _make_email(
-                "sidorov@lutik.ru", "Сидоров С.В.",
+                "sidorov@lutik.ru",
+                "Сидоров С.В.",
                 f"Документы к ТО {TENDER_ID}",
                 [
-                    _make_attachment("Анкета.pdf", f"АНКЕТА УЧАСТНИКА ТО {TENDER_ID}\nИНН: 7702365751"),
+                    _make_attachment(
+                        "Анкета.pdf", f"АНКЕТА УЧАСТНИКА ТО {TENDER_ID}\nИНН: 7702365751"
+                    ),
                     _make_attachment("Соглашение о неразглашении.pdf"),
                 ],
             ),
             _make_email(
-                "ivanov@gvozdika.ru", "Иванов П.А.",
+                "ivanov@gvozdika.ru",
+                "Иванов П.А.",
                 f"ТО {TENDER_ID} анкета и NDA",
                 [
                     _make_attachment("Анкета_Гвоздика.docx", "Анкета участника\nИНН: 7704565559"),
@@ -360,11 +408,13 @@ class TestCollectTenderDocuments:
                 ],
             ),
         ]
-        result = self._invoke({
-            "tender_id": TENDER_ID,
-            "emails": emails,
-            "participants_list": PARTICIPANTS,
-        })
+        result = self._invoke(
+            {
+                "tender_id": TENDER_ID,
+                "emails": emails,
+                "participants_list": PARTICIPANTS,
+            }
+        )
         assert result["tender_id"] == TENDER_ID
         assert result["total_expected_participants"] == 3
         assert result["received_count"] == 3
@@ -378,7 +428,8 @@ class TestCollectTenderDocuments:
         """Only 2 out of 3 participants responded."""
         emails = [
             _make_email(
-                "petrov@romashka.ru", "Петров П.П.",
+                "petrov@romashka.ru",
+                "Петров П.П.",
                 f"Re: ТО {TENDER_ID}",
                 [
                     _make_attachment("Анкета.pdf", "АНКЕТА\nИНН: 7702365551"),
@@ -386,7 +437,8 @@ class TestCollectTenderDocuments:
                 ],
             ),
             _make_email(
-                "sidorov@lutik.ru", "Сидоров С.В.",
+                "sidorov@lutik.ru",
+                "Сидоров С.В.",
                 f"ТО {TENDER_ID}",
                 [
                     _make_attachment("Анкета Лютик.pdf", "Анкета\nИНН: 7702365751"),
@@ -394,11 +446,13 @@ class TestCollectTenderDocuments:
                 ],
             ),
         ]
-        result = self._invoke({
-            "tender_id": TENDER_ID,
-            "emails": emails,
-            "participants_list": PARTICIPANTS,
-        })
+        result = self._invoke(
+            {
+                "tender_id": TENDER_ID,
+                "emails": emails,
+                "participants_list": PARTICIPANTS,
+            }
+        )
         assert result["received_count"] == 2
         assert result["missing_count"] == 1
         missing = [p for p in result["participants"] if p["status"] == "missing"]
@@ -409,18 +463,21 @@ class TestCollectTenderDocuments:
         """Anketa has different INN than expected."""
         emails = [
             _make_email(
-                "petrov@romashka.ru", "Петров П.П.",
+                "petrov@romashka.ru",
+                "Петров П.П.",
                 f"ТО {TENDER_ID}",
                 [
                     _make_attachment("Анкета.pdf", "АНКЕТА\nИНН: 9999999999"),
                 ],
             ),
         ]
-        result = self._invoke({
-            "tender_id": TENDER_ID,
-            "emails": emails,
-            "participants_list": PARTICIPANTS,
-        })
+        result = self._invoke(
+            {
+                "tender_id": TENDER_ID,
+                "emails": emails,
+                "participants_list": PARTICIPANTS,
+            }
+        )
         romashka = next(p for p in result["participants"] if p["inn"] == "7702365551")
         assert romashka["status"] == "received"
         assert romashka["inn_match"] is False
@@ -433,44 +490,53 @@ class TestCollectTenderDocuments:
         """Emails without tender ID in subject are ignored."""
         emails = [
             _make_email(
-                "petrov@romashka.ru", "Петров П.П.",
+                "petrov@romashka.ru",
+                "Петров П.П.",
                 "Обычное письмо без номера ТО",
                 [_make_attachment("Анкета.pdf", "АНКЕТА\nИНН: 7702365551")],
             ),
         ]
-        result = self._invoke({
-            "tender_id": TENDER_ID,
-            "emails": emails,
-            "participants_list": PARTICIPANTS,
-        })
+        result = self._invoke(
+            {
+                "tender_id": TENDER_ID,
+                "emails": emails,
+                "participants_list": PARTICIPANTS,
+            }
+        )
         assert result["received_count"] == 0
         assert result["missing_count"] == 3
 
     def test_empty_emails(self):
-        result = self._invoke({
-            "tender_id": TENDER_ID,
-            "emails": [],
-            "participants_list": PARTICIPANTS,
-        })
+        result = self._invoke(
+            {
+                "tender_id": TENDER_ID,
+                "emails": [],
+                "participants_list": PARTICIPANTS,
+            }
+        )
         assert result["received_count"] == 0
         assert result["missing_count"] == 3
 
     def test_empty_participants(self):
-        result = self._invoke({
-            "tender_id": TENDER_ID,
-            "emails": [],
-            "participants_list": [],
-        })
+        result = self._invoke(
+            {
+                "tender_id": TENDER_ID,
+                "emails": [],
+                "participants_list": [],
+            }
+        )
         assert result["received_count"] == 0
         assert result["missing_count"] == 0
         assert result["total_expected_participants"] == 0
 
     def test_no_tender_id_error(self):
-        result = self._invoke({
-            "tender_id": "",
-            "emails": [],
-            "participants_list": [],
-        })
+        result = self._invoke(
+            {
+                "tender_id": "",
+                "emails": [],
+                "participants_list": [],
+            }
+        )
         assert "error" in result
 
     def test_empty_query(self):
@@ -487,26 +553,31 @@ class TestCollectTenderDocuments:
         """Report text is generated and contains key info."""
         emails = [
             _make_email(
-                "petrov@romashka.ru", "Петров",
+                "petrov@romashka.ru",
+                "Петров",
                 f"ТО {TENDER_ID}",
                 [_make_attachment("Анкета.pdf", "Анкета\nИНН: 7702365551")],
             ),
         ]
-        result = self._invoke({
-            "tender_id": TENDER_ID,
-            "emails": emails,
-            "participants_list": PARTICIPANTS,
-        })
+        result = self._invoke(
+            {
+                "tender_id": TENDER_ID,
+                "emails": emails,
+                "participants_list": PARTICIPANTS,
+            }
+        )
         assert "report_text" in result
         assert TENDER_ID in result["report_text"]
         assert "Ромашка" in result["report_text"]
 
     def test_folder_structure_in_result(self):
-        result = self._invoke({
-            "tender_id": TENDER_ID,
-            "emails": [],
-            "participants_list": PARTICIPANTS,
-        })
+        result = self._invoke(
+            {
+                "tender_id": TENDER_ID,
+                "emails": [],
+                "participants_list": PARTICIPANTS,
+            }
+        )
         assert "folder_structure" in result
         assert len(result["folder_structure"]) == 3
 
@@ -514,16 +585,19 @@ class TestCollectTenderDocuments:
         """Participant sends NDA but not anketa."""
         emails = [
             _make_email(
-                "petrov@romashka.ru", "Петров П.П.",
+                "petrov@romashka.ru",
+                "Петров П.П.",
                 f"ТО {TENDER_ID}",
                 [_make_attachment("NDA_signed.pdf")],
             ),
         ]
-        result = self._invoke({
-            "tender_id": TENDER_ID,
-            "emails": emails,
-            "participants_list": PARTICIPANTS,
-        })
+        result = self._invoke(
+            {
+                "tender_id": TENDER_ID,
+                "emails": emails,
+                "participants_list": PARTICIPANTS,
+            }
+        )
         romashka = next(p for p in result["participants"] if p["inn"] == "7702365551")
         assert romashka["status"] == "received"
         assert romashka["anketa_received"] is False
@@ -533,16 +607,19 @@ class TestCollectTenderDocuments:
         """Participant sends anketa but not NDA."""
         emails = [
             _make_email(
-                "sidorov@lutik.ru", "Сидоров",
+                "sidorov@lutik.ru",
+                "Сидоров",
                 f"ТО {TENDER_ID}",
                 [_make_attachment("Анкета.pdf", "Анкета\nИНН: 7702365751")],
             ),
         ]
-        result = self._invoke({
-            "tender_id": TENDER_ID,
-            "emails": emails,
-            "participants_list": PARTICIPANTS,
-        })
+        result = self._invoke(
+            {
+                "tender_id": TENDER_ID,
+                "emails": emails,
+                "participants_list": PARTICIPANTS,
+            }
+        )
         lutik = next(p for p in result["participants"] if p["inn"] == "7702365751")
         assert lutik["anketa_received"] is True
         assert lutik["nda_received"] is False
@@ -551,7 +628,8 @@ class TestCollectTenderDocuments:
         """Non-anketa non-NDA documents are listed in other_documents."""
         emails = [
             _make_email(
-                "petrov@romashka.ru", "Петров",
+                "petrov@romashka.ru",
+                "Петров",
                 f"ТО {TENDER_ID}",
                 [
                     _make_attachment("Анкета.pdf", "Анкета\nИНН: 7702365551"),
@@ -560,11 +638,13 @@ class TestCollectTenderDocuments:
                 ],
             ),
         ]
-        result = self._invoke({
-            "tender_id": TENDER_ID,
-            "emails": emails,
-            "participants_list": PARTICIPANTS,
-        })
+        result = self._invoke(
+            {
+                "tender_id": TENDER_ID,
+                "emails": emails,
+                "participants_list": PARTICIPANTS,
+            }
+        )
         romashka = next(p for p in result["participants"] if p["inn"] == "7702365551")
         assert len(romashka["other_documents"]) == 2
         assert "Referens-list.pdf" in romashka["other_documents"]
@@ -574,23 +654,27 @@ class TestCollectTenderDocuments:
         """Email from unknown sender (not in participants list) is ignored."""
         emails = [
             _make_email(
-                "stranger@unknown.com", "Unknown",
+                "stranger@unknown.com",
+                "Unknown",
                 f"ТО {TENDER_ID}",
                 [_make_attachment("Анкета.pdf", "Анкета\nИНН: 0000000000")],
             ),
         ]
-        result = self._invoke({
-            "tender_id": TENDER_ID,
-            "emails": emails,
-            "participants_list": PARTICIPANTS,
-        })
+        result = self._invoke(
+            {
+                "tender_id": TENDER_ID,
+                "emails": emails,
+                "participants_list": PARTICIPANTS,
+            }
+        )
         assert result["received_count"] == 0
 
     def test_name_mismatch_discrepancy(self):
         """Company name in anketa doesn't match participants list."""
         emails = [
             _make_email(
-                "petrov@romashka.ru", "Петров",
+                "petrov@romashka.ru",
+                "Петров",
                 f"ТО {TENDER_ID}",
                 [
                     _make_attachment(
@@ -600,11 +684,13 @@ class TestCollectTenderDocuments:
                 ],
             ),
         ]
-        result = self._invoke({
-            "tender_id": TENDER_ID,
-            "emails": emails,
-            "participants_list": PARTICIPANTS,
-        })
+        result = self._invoke(
+            {
+                "tender_id": TENDER_ID,
+                "emails": emails,
+                "participants_list": PARTICIPANTS,
+            }
+        )
         romashka = next(p for p in result["participants"] if p["inn"] == "7702365551")
         assert romashka["name_match"] is False
         has_name_disc = any(d["field"] == "name" for d in romashka["discrepancies"])
@@ -612,36 +698,43 @@ class TestCollectTenderDocuments:
 
     def test_non_dict_email_skipped(self):
         """Non-dict items in emails list are skipped."""
-        result = self._invoke({
-            "tender_id": TENDER_ID,
-            "emails": ["not-a-dict", 42, None],
-            "participants_list": PARTICIPANTS,
-        })
+        result = self._invoke(
+            {
+                "tender_id": TENDER_ID,
+                "emails": ["not-a-dict", 42, None],
+                "participants_list": PARTICIPANTS,
+            }
+        )
         assert result["received_count"] == 0
 
     def test_non_dict_participant_skipped(self):
         """Non-dict items in participants_list are skipped."""
-        result = self._invoke({
-            "tender_id": TENDER_ID,
-            "emails": [],
-            "participants_list": ["not-a-dict"],
-        })
+        result = self._invoke(
+            {
+                "tender_id": TENDER_ID,
+                "emails": [],
+                "participants_list": ["not-a-dict"],
+            }
+        )
         assert result["total_expected_participants"] == 0
 
     def test_non_dict_attachment_skipped(self):
         """Non-dict attachments are skipped gracefully."""
         emails = [
             _make_email(
-                "petrov@romashka.ru", "Петров",
+                "petrov@romashka.ru",
+                "Петров",
                 f"ТО {TENDER_ID}",
                 ["not-a-dict", 42],
             ),
         ]
-        result = self._invoke({
-            "tender_id": TENDER_ID,
-            "emails": emails,
-            "participants_list": PARTICIPANTS,
-        })
+        result = self._invoke(
+            {
+                "tender_id": TENDER_ID,
+                "emails": emails,
+                "participants_list": PARTICIPANTS,
+            }
+        )
         romashka = next(p for p in result["participants"] if p["inn"] == "7702365551")
         assert romashka["status"] == "received"
         assert romashka["anketa_received"] is False
@@ -651,15 +744,18 @@ class TestCollectTenderDocuments:
 # Agent Creation Tests
 # ============================================================================
 
+
 class TestCollectorAgent:
     def test_create_agent(self):
         from agent3_collector_inspector.agent import create_collector_agent
+
         agent = create_collector_agent()
         assert agent is not None
         assert hasattr(agent, "invoke")
 
     def test_agent_invoke(self):
         from agent3_collector_inspector.agent import create_collector_agent
+
         agent = create_collector_agent()
         result = agent.invoke({"input": "test input"})
         assert isinstance(result, dict)
@@ -671,13 +767,16 @@ class TestCollectorAgent:
 # AGENT_REGISTRY Integration Tests
 # ============================================================================
 
+
 class TestCollectorRegistration:
     def test_collector_in_registry(self):
         from api.app import AGENT_REGISTRY
+
         assert "collector" in AGENT_REGISTRY
 
     def test_collector_has_required_fields(self):
         from api.app import AGENT_REGISTRY
+
         collector = AGENT_REGISTRY["collector"]
         assert "name" in collector
         assert "description" in collector
@@ -688,6 +787,7 @@ class TestCollectorRegistration:
 
     def test_collector_auto_detect_keywords(self):
         from api.app import AGENT_REGISTRY
+
         keywords = AGENT_REGISTRY["collector"]["auto_detect"]["keywords"]
         assert "тендерный отбор" in keywords
         assert "анкета участника" in keywords
@@ -696,6 +796,7 @@ class TestCollectorRegistration:
     def test_collector_resolve_by_keyword(self):
         """Test that resolve-agent picks collector for collector-unique keywords."""
         from api.app import ProcessRequest, _resolve_agent
+
         # Use keywords unique to collector that won't match higher-priority agents
         req = ProcessRequest(text="нужен сбор анкет от участников, анкета участника")
         agent_id, keyword = _resolve_agent(req)
@@ -704,6 +805,7 @@ class TestCollectorRegistration:
     def test_collector_in_agents_endpoint(self):
         from fastapi.testclient import TestClient
         from api.app import app
+
         client = TestClient(app)
         resp = client.get("/agents")
         assert resp.status_code == 200
@@ -716,14 +818,17 @@ class TestCollectorRegistration:
 # MCP Integration Tests
 # ============================================================================
 
+
 class TestCollectorMCP:
     def test_collector_in_mcp_tool_map(self):
         from shared.mcp_server import _AGENT_TOOL_MAP
+
         assert "collector" in _AGENT_TOOL_MAP
         assert _AGENT_TOOL_MAP["collector"] == "collect_documents"
 
     def test_list_agents_includes_collector(self):
         from shared.mcp_server import list_agents
+
         result = list_agents()
         ids = [a["id"] for a in result["agents"]]
         assert "collector" in ids
@@ -735,11 +840,13 @@ class TestCollectorMCP:
 # A2A Agent Card Tests
 # ============================================================================
 
+
 class TestCollectorA2A:
     def test_agent_card_includes_collector(self):
         from unittest.mock import patch
         from fastapi.testclient import TestClient
         from api.app import app
+
         with patch("api.app.PUBLIC_BASE_URL", "http://localhost:8000"):
             client = TestClient(app)
             resp = client.get("/.well-known/agent.json")
@@ -753,9 +860,11 @@ class TestCollectorA2A:
 # Agent Tooling Integration Tests
 # ============================================================================
 
+
 class TestCollectorAgentTooling:
     def test_collector_in_default_registry(self):
         from shared.agent_tooling import _DEFAULT_AGENT_FACTORY_REGISTRY
+
         assert "collector" in _DEFAULT_AGENT_FACTORY_REGISTRY
         assert "create_collector_agent" in _DEFAULT_AGENT_FACTORY_REGISTRY["collector"]
 
@@ -764,10 +873,12 @@ class TestCollectorAgentTooling:
 # API Endpoint Tests
 # ============================================================================
 
+
 class TestCollectorAPI:
     def test_process_collector_endpoint_exists(self):
         from fastapi.testclient import TestClient
         from api.app import app
+
         client = TestClient(app)
         # Without API key should get 401
         resp = client.post(
@@ -779,6 +890,7 @@ class TestCollectorAPI:
     def test_process_collector_with_api_key(self):
         from fastapi.testclient import TestClient
         from api.app import app
+
         client = TestClient(app)
         resp = client.post(
             "/api/v1/process/collector",
@@ -795,26 +907,34 @@ class TestCollectorAPI:
 # Edge Case Tests
 # ============================================================================
 
+
 class TestCollectorEdgeCases:
     def test_multiple_emails_from_same_participant(self):
         """Same participant sends multiple emails — all are processed."""
         emails = [
             _make_email(
-                "petrov@romashka.ru", "Петров",
+                "petrov@romashka.ru",
+                "Петров",
                 f"ТО {TENDER_ID} - анкета",
                 [_make_attachment("Анкета.pdf", "Анкета\nИНН: 7702365551")],
             ),
             _make_email(
-                "petrov@romashka.ru", "Петров",
+                "petrov@romashka.ru",
+                "Петров",
                 f"ТО {TENDER_ID} - NDA",
                 [_make_attachment("NDA.pdf")],
             ),
         ]
-        result_str = collect_tender_documents.invoke(json.dumps({
-            "tender_id": TENDER_ID,
-            "emails": emails,
-            "participants_list": PARTICIPANTS,
-        }, ensure_ascii=False))
+        result_str = collect_tender_documents.invoke(
+            json.dumps(
+                {
+                    "tender_id": TENDER_ID,
+                    "emails": emails,
+                    "participants_list": PARTICIPANTS,
+                },
+                ensure_ascii=False,
+            )
+        )
         result = json.loads(result_str)
         romashka = next(p for p in result["participants"] if p["inn"] == "7702365551")
         assert romashka["status"] == "received"
@@ -825,7 +945,8 @@ class TestCollectorEdgeCases:
         """Both PDF and DOCX formats are accepted."""
         emails = [
             _make_email(
-                "petrov@romashka.ru", "Петров",
+                "petrov@romashka.ru",
+                "Петров",
                 f"ТО {TENDER_ID}",
                 [
                     _make_attachment(
@@ -836,22 +957,32 @@ class TestCollectorEdgeCases:
                 ],
             ),
         ]
-        result_str = collect_tender_documents.invoke(json.dumps({
-            "tender_id": TENDER_ID,
-            "emails": emails,
-            "participants_list": PARTICIPANTS,
-        }, ensure_ascii=False))
+        result_str = collect_tender_documents.invoke(
+            json.dumps(
+                {
+                    "tender_id": TENDER_ID,
+                    "emails": emails,
+                    "participants_list": PARTICIPANTS,
+                },
+                ensure_ascii=False,
+            )
+        )
         result = json.loads(result_str)
         romashka = next(p for p in result["participants"] if p["inn"] == "7702365551")
         assert romashka["anketa_received"] is True
 
     def test_participant_folder_path_set(self):
         """Each participant has a folder_path assigned."""
-        result_str = collect_tender_documents.invoke(json.dumps({
-            "tender_id": TENDER_ID,
-            "emails": [],
-            "participants_list": PARTICIPANTS,
-        }, ensure_ascii=False))
+        result_str = collect_tender_documents.invoke(
+            json.dumps(
+                {
+                    "tender_id": TENDER_ID,
+                    "emails": [],
+                    "participants_list": PARTICIPANTS,
+                },
+                ensure_ascii=False,
+            )
+        )
         result = json.loads(result_str)
         for p in result["participants"]:
             assert p["folder_path"] != ""

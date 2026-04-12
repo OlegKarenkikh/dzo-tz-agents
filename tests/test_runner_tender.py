@@ -8,6 +8,7 @@
 Все внешние зависимости (httpx, db, extract_text, create_tender_agent) замокированы,
 поэтому тесты работают без реального API-ключа, БД или LLM.
 """
+
 # ruff: noqa: I001
 import hashlib
 import json
@@ -21,10 +22,12 @@ import pytest
 # Вспомогательные фикстуры
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture(autouse=True)
 def _clear_fallback_cache():
     """Сбрасываем кэш цепочки fallback между тестами."""
     import agent21_tender_inspector.runner as runner_mod
+
     runner_mod._fallback_chain_cache.clear()
     yield
     runner_mod._fallback_chain_cache.clear()
@@ -34,6 +37,7 @@ def _clear_fallback_cache():
 def mock_db(monkeypatch):
     """Заглушка shared.database."""
     import shared.database as db_mod
+
     monkeypatch.setattr(db_mod, "find_duplicate_job", lambda *a, **kw: None)
     monkeypatch.setattr(db_mod, "create_job", lambda *a, **kw: "job-test-123")
     monkeypatch.setattr(db_mod, "update_job", lambda *a, **kw: None)
@@ -44,6 +48,7 @@ def mock_db(monkeypatch):
 def mock_extract_text(monkeypatch):
     """Заглушка _extract_text, возвращающая короткий текст."""
     import agent21_tender_inspector.runner as runner_mod
+
     monkeypatch.setattr(runner_mod, "_extract_text", lambda data, fname: "extracted text")
     return runner_mod
 
@@ -57,12 +62,14 @@ def mock_agent(monkeypatch):
         "intermediate_steps": [
             (
                 "generate_document_list",
-                json.dumps({
-                    "documents": [],
-                    "summary": {"total": 0, "mandatory": 0, "conditional": 0},
-                    "procurement_subject": "Тест",
-                    "timestamp": "2024-01-01T00:00:00+00:00",
-                }),
+                json.dumps(
+                    {
+                        "documents": [],
+                        "summary": {"total": 0, "mandatory": 0, "conditional": 0},
+                        "procurement_subject": "Тест",
+                        "timestamp": "2024-01-01T00:00:00+00:00",
+                    }
+                ),
             )
         ],
         "output": "Документов не найдено",
@@ -81,9 +88,11 @@ def mock_agent(monkeypatch):
 # Тесты _build_output_path
 # ---------------------------------------------------------------------------
 
+
 class TestBuildOutputPath:
     def _fn(self, *args, **kwargs):
         from agent21_tender_inspector.runner import _build_output_path
+
         return _build_output_path(*args, **kwargs)
 
     def test_stem_ext_hash_in_filename(self, tmp_path):
@@ -149,6 +158,7 @@ class TestBuildOutputPath:
 # Тесты process_single_document — неподдерживаемое расширение (локальный файл)
 # ---------------------------------------------------------------------------
 
+
 class TestProcessSingleDocumentUnsupportedExt:
     def test_local_txt_returns_error(self, tmp_path):
         """Файл .txt не поддерживается — должен вернуть error без вызова агента."""
@@ -192,6 +202,7 @@ class TestProcessSingleDocumentUnsupportedExt:
 # Тесты process_single_document — лимит 50 МБ
 # ---------------------------------------------------------------------------
 
+
 class TestProcessSingleDocumentSizeLimit:
     def test_local_file_exceeds_50mb_returns_error(self, tmp_path):
         """Файл > 50 МБ должен вернуть error без чтения содержимого."""
@@ -210,7 +221,9 @@ class TestProcessSingleDocumentSizeLimit:
         assert "50" in result["error"]  # сообщение содержит лимит "50 MB"
         assert result["filename"] == "big.pdf"
 
-    def test_local_file_exactly_50mb_is_allowed(self, tmp_path, mock_db, mock_extract_text, mock_agent):
+    def test_local_file_exactly_50mb_is_allowed(
+        self, tmp_path, mock_db, mock_extract_text, mock_agent
+    ):
         """Файл ровно 50 МБ — граничное значение, должен обрабатываться."""
         from agent21_tender_inspector.runner import process_single_document
 
@@ -231,6 +244,7 @@ class TestProcessSingleDocumentSizeLimit:
 # ---------------------------------------------------------------------------
 # Тесты process_single_document — URL с неподдерживаемым расширением
 # ---------------------------------------------------------------------------
+
 
 class TestProcessSingleDocumentUrlUnsupportedExt:
     def test_url_with_html_extension_returns_error(self, monkeypatch):
@@ -255,6 +269,7 @@ class TestProcessSingleDocumentUrlUnsupportedExt:
 # Тесты process_single_document — дедупликация
 # ---------------------------------------------------------------------------
 
+
 class TestProcessSingleDocumentDedup:
     def test_url_dedup_returns_cached_result(self, monkeypatch):
         """Если тот же URL уже обработан, возвращается кэш из БД без скачивания и без вызова агента."""
@@ -270,7 +285,9 @@ class TestProcessSingleDocumentDedup:
         )
         monkeypatch.setattr(runner_mod, "FORCE_REPROCESS", False)
         # Дедупликация URL происходит ДО скачивания — _download_document вызываться не должна
-        mock_download = MagicMock(side_effect=AssertionError("_download_document must not be called on dedup hit"))
+        mock_download = MagicMock(
+            side_effect=AssertionError("_download_document must not be called on dedup hit")
+        )
         monkeypatch.setattr(runner_mod, "_download_document", mock_download)
         # create_tender_agent не должен вызываться при хите кэша
         mock_create_agent = MagicMock()
@@ -298,19 +315,30 @@ class TestProcessSingleDocumentDedup:
         monkeypatch.setattr(db_mod, "update_job", lambda *a, **kw: None)
         monkeypatch.setattr(runner_mod, "FORCE_REPROCESS", False)
         monkeypatch.setattr(runner_mod, "_extract_text", lambda d, f: "text")
-        monkeypatch.setattr(runner_mod, "create_tender_agent", lambda: MagicMock(
-            invoke=MagicMock(return_value={
-                "intermediate_steps": [
-                    ("generate_document_list", json.dumps({
-                        "documents": [],
-                        "summary": {"total": 0, "mandatory": 0, "conditional": 0},
-                        "procurement_subject": "Тест",
-                        "timestamp": "2024-01-01T00:00:00+00:00",
-                    }))
-                ],
-                "output": "",
-            })
-        ))
+        monkeypatch.setattr(
+            runner_mod,
+            "create_tender_agent",
+            lambda: MagicMock(
+                invoke=MagicMock(
+                    return_value={
+                        "intermediate_steps": [
+                            (
+                                "generate_document_list",
+                                json.dumps(
+                                    {
+                                        "documents": [],
+                                        "summary": {"total": 0, "mandatory": 0, "conditional": 0},
+                                        "procurement_subject": "Тест",
+                                        "timestamp": "2024-01-01T00:00:00+00:00",
+                                    }
+                                ),
+                            )
+                        ],
+                        "output": "",
+                    }
+                )
+            ),
+        )
         monkeypatch.setattr(runner_mod, "get_langfuse_callback", lambda: None)
         monkeypatch.setattr(runner_mod, "EMAILS_PROCESSED", MagicMock())
         monkeypatch.setattr(runner_mod, "EMAILS_ERRORS", MagicMock())
@@ -325,7 +353,9 @@ class TestProcessSingleDocumentDedup:
         assert len(recorded_subjects) == 1
         assert pathlib.Path(recorded_subjects[0]).is_absolute()
 
-    def test_force_reprocess_skips_dedup(self, tmp_path, monkeypatch, mock_db, mock_extract_text, mock_agent):
+    def test_force_reprocess_skips_dedup(
+        self, tmp_path, monkeypatch, mock_db, mock_extract_text, mock_agent
+    ):
         """FORCE_REPROCESS=True обходит дедупликацию."""
         from agent21_tender_inspector.runner import process_single_document
         import agent21_tender_inspector.runner as runner_mod

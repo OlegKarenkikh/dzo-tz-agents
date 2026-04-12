@@ -1,4 +1,5 @@
 """Tests for shared/file_storage.py — file storage for tender documents."""
+
 from __future__ import annotations
 
 import asyncio

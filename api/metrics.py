@@ -2,6 +2,7 @@
 Prometheus-метрики для FastAPI.
 Подключается через app.include_router(metrics_router) в api/app.py.
 """
+
 import time
 
 from fastapi import APIRouter

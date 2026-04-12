@@ -75,6 +75,7 @@ def _install_mocks() -> None:
     # 2. Patch shared.llm.build_llm before agent modules are imported
     try:
         import shared.llm as _shared_llm
+
         _shared_llm.build_llm = _fake_build_llm
     except (ImportError, ModuleNotFoundError):
         pass
@@ -97,6 +98,7 @@ def _install_mocks() -> None:
     _langchain_agents_ok = False
     try:
         from langchain.agents import AgentExecutor  # noqa: F401
+
         _langchain_agents_ok = True
     except ImportError:
         pass

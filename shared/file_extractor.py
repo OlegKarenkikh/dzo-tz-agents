@@ -65,7 +65,7 @@ def extract_text_from_attachment(att: dict[str, Any]) -> str:
     elif ext in IMAGE_EXTS:
         return _ocr_vision(b64, mime, "IMAGE")
     else:
-        filename = att.get('filename', '?')
+        filename = att.get("filename", "?")
         return (
             f"[\u26a0\ufe0f \u0424\u043e\u0440\u043c\u0430\u0442 '{filename}' ({ext}) "
             "\u043d\u0435 \u043f\u043e\u0434\u0434\u0435\u0440\u0436\u0438\u0432\u0430\u0435\u0442\u0441\u044f]"
@@ -142,10 +142,12 @@ def _ocr_vision(b64: str, mime: str, doc_type: str) -> str:
                 },
                 {
                     "role": "user",
-                    "content": [{
-                        "type": "image_url",
-                        "image_url": {"url": f"data:{mime};base64,{b64}", "detail": "high"},
-                    }],
+                    "content": [
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:{mime};base64,{b64}", "detail": "high"},
+                        }
+                    ],
                 },
             ],
             max_tokens=4096,
@@ -174,8 +176,7 @@ def _extract_spreadsheet(data: bytes, ext: str) -> str:
             for i in range(wb.nsheets):
                 ws = wb.sheet_by_index(i)
                 rows = [
-                    [str(ws.cell_value(r, c)) for c in range(ws.ncols)]
-                    for r in range(ws.nrows)
+                    [str(ws.cell_value(r, c)) for c in range(ws.ncols)] for r in range(ws.nrows)
                 ]
                 sheets.append(f"### Sheet: {ws.name}\n" + _rows_to_md(rows))
             return "\n\n".join(sheets)

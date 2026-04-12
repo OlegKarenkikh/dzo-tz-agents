@@ -7,6 +7,7 @@ FIX SE-03: key_func с приоритетом X-API-Key → IP.
 При наличии X-API-Key лимит считается по хешу ключа,
 иначе — по IP-адресу.
 """
+
 import hashlib
 import os
 

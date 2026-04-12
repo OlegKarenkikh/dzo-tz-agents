@@ -1,4 +1,5 @@
 """Tests for shared/mcp_rate_limiter.py — MCP rate limiting."""
+
 from __future__ import annotations
 
 import time

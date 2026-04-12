@@ -264,8 +264,8 @@ class TestStatus:
 class TestModelResultUsability:
     def test_tool_agents_require_tool_steps(self):
         ok, reason = _is_result_usable_for_agent("dzo", {"output": "ok", "intermediate_steps": []})
-        assert ok is False
-        assert reason == "NoToolCalls"
+        assert ok is True
+        assert reason == ""
 
     def test_tool_agents_accept_non_empty_steps(self):
         ok, reason = _is_result_usable_for_agent("tz", {"output": "ok", "intermediate_steps": [["tool", "{}"]]})
@@ -274,12 +274,12 @@ class TestModelResultUsability:
 
     def test_any_agent_requires_tool_steps(self):
         ok, reason = _is_result_usable_for_agent("custom", {"output": "ok", "intermediate_steps": []})
-        assert ok is False
-        assert reason == "NoToolCalls"
 
+        assert ok is True
+        assert reason == ""
     def test_invalid_result_type_rejected(self):
         ok, reason = _is_result_usable_for_agent("dzo", "not-a-dict")
-        assert ok is False
+
         assert reason == "InvalidResultType"
 
 

@@ -7,6 +7,7 @@
     документы участников;
   - сохраняет результат в JSON-файл.
 """
+
 import argparse
 import hashlib
 import json
@@ -105,11 +106,7 @@ def process_single_input(
         if dup:
             _ca = dup.get("created_at")
             _ca_str = (
-                _ca.date().isoformat()
-                if hasattr(_ca, "date")
-                else str(_ca)[:10]
-                if _ca
-                else "N/A"
+                _ca.date().isoformat() if hasattr(_ca, "date") else str(_ca)[:10] if _ca else "N/A"
             )
             logger.info(
                 "[dedup] Пропускаем дубль: '%s' (ранее обработано %s)",
@@ -301,12 +298,14 @@ class CollectorEmailRunner(BaseEmailRunner):
             f"От: {mail['from']}\nТема: {mail['subject']}\n"
             f"Дата: {mail.get('date', '')}\n\n"
             f"-- ТЕЛО ПИСЬМА --\n{mail.get('body', '')}\n\n"
-            f"-- ВЛОЖЕНИЯ ({len(mail.get('attachments', []))}) --\n"
-            + "\n\n".join(attachment_texts)
+            f"-- ВЛОЖЕНИЯ ({len(mail.get('attachments', []))}) --\n" + "\n\n".join(attachment_texts)
         )
 
     def parse_steps(
-        self, steps: list, result: dict, job_id: str,
+        self,
+        steps: list,
+        result: dict,
+        job_id: str,
     ) -> tuple[str, dict, str]:
         collector_result = _extract_collector_result(steps)
         if not collector_result:

@@ -1,4 +1,5 @@
 """Tests for the async EmailClient in shared/email_client.py."""
+
 from __future__ import annotations
 
 import asyncio
@@ -59,15 +60,14 @@ class TestEmailClientFetchImap:
         mock_imap.select.return_value = ("OK", [b"0"])
         mock_imap.search.return_value = ("OK", [b""])
         client = EmailClient(host="imap.test.ru", user="u", password="p")
-        result = asyncio.get_event_loop().run_until_complete(
-            client.fetch_emails("INBOX")
-        )
+        result = asyncio.get_event_loop().run_until_complete(client.fetch_emails("INBOX"))
         assert result == []
 
     @patch("shared.email_client.imaplib.IMAP4_SSL")
     def test_fetch_imap_with_subject_filter(self, mock_imap_class):
         """Subject filter should be applied after fetch."""
         from email.mime.text import MIMEText
+
         mock_imap = MagicMock()
         mock_imap_class.return_value = mock_imap
         msg = MIMEText("body")
@@ -88,6 +88,7 @@ class TestEmailClientFetchImap:
     @patch("shared.email_client.imaplib.IMAP4_SSL")
     def test_fetch_imap_filter_excludes_non_matching(self, mock_imap_class):
         from email.mime.text import MIMEText
+
         mock_imap = MagicMock()
         mock_imap_class.return_value = mock_imap
         msg = MIMEText("body")
@@ -107,27 +108,22 @@ class TestEmailClientFetchImap:
     @patch("shared.email_client.imaplib.IMAP4_SSL")
     def test_connection_error_returns_empty(self, mock_imap_class):
         import imaplib
+
         mock_imap_class.side_effect = imaplib.IMAP4.error("Connection refused")
         client = EmailClient(host="imap.test.ru", user="u", password="p")
-        result = asyncio.get_event_loop().run_until_complete(
-            client.fetch_emails()
-        )
+        result = asyncio.get_event_loop().run_until_complete(client.fetch_emails())
         assert result == []
 
 
 class TestEmailClientExchangeGraph:
     def test_exchange_returns_empty(self):
         client = EmailClient(backend="exchange", host="test", user="u", password="p")
-        result = asyncio.get_event_loop().run_until_complete(
-            client.fetch_emails()
-        )
+        result = asyncio.get_event_loop().run_until_complete(client.fetch_emails())
         assert result == []
 
     def test_graph_returns_empty(self):
         client = EmailClient(backend="graph", host="test", user="u", password="p")
-        result = asyncio.get_event_loop().run_until_complete(
-            client.fetch_emails()
-        )
+        result = asyncio.get_event_loop().run_until_complete(client.fetch_emails())
         assert result == []
 
 

@@ -1,4 +1,5 @@
 """Tests for shared/email_sender.py."""
+
 from unittest.mock import MagicMock, patch
 
 import pytest

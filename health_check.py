@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 """Быстрая проверка что все компоненты работают."""
+
 import sys
 
 # Проверка 1: Импорты
@@ -9,6 +10,7 @@ try:
     from agent2_tz_inspector.agent import create_tz_agent
     from config import GITHUB_TOKEN, LLM_BACKEND, OPENAI_API_KEY
     from shared.logger import setup_logger
+
     print("  ✅ Все импорты успешны")
 except ImportError as e:
     print(f"  ❌ Ошибка импорта: {e}")

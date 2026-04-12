@@ -31,10 +31,7 @@ def _build_tz_fallback_for_rate_limit(tz_text: str, exc: Exception, target_agent
         "критерии": ["критер", "оценк заяв"],
         "приложения": ["приложен", "форма", "таблица"],
     }
-    found_sections = [
-        name for name, kws in section_hints.items()
-        if any(k in text for k in kws)
-    ]
+    found_sections = [name for name, kws in section_hints.items() if any(k in text for k in kws)]
 
     retry_after = None
     m = re.search(r"wait\s+(\d+)\s+seconds", str(exc), re.IGNORECASE)
@@ -83,6 +80,7 @@ def _build_tz_fallback_for_rate_limit(tz_text: str, exc: Exception, target_agent
 # Заменяют паттерн query: str + json.loads(query).
 # Это снижает частоту ошибок парсинга LLM и даёт явную OpenAPI-документацию.
 # ---------------------------------------------------------------------------
+
 
 class ChecklistItem(BaseModel):
     model_config = ConfigDict(strict=True)
@@ -195,6 +193,7 @@ class PeerAgentInvokeInput(BaseModel):
 # Инструменты агента
 # ---------------------------------------------------------------------------
 
+
 @tool(args_schema=ValidationReportInput)
 def generate_validation_report(
     decision: str,
@@ -218,15 +217,15 @@ def generate_validation_report(
         adds = [c.model_dump() for c in checklist_additional]
         report = {
             "timestamp": datetime.now().isoformat(),
-            "decision":  decision,
+            "decision": decision,
             "checklist_attachments": atts,
-            "checklist_required":    reqs,
-            "checklist_additional":  adds,
-            "missing_fields":        missing_fields,
+            "checklist_required": reqs,
+            "checklist_additional": adds,
+            "missing_fields": missing_fields,
             "stats": {
                 "attachments_ok": sum(1 for c in atts if c.get("status") == "Да"),
-                "required_ok":    sum(1 for c in reqs if c.get("status") in ("Да", "ОК")),
-                "additional_ok":  sum(1 for c in adds if c.get("status") in ("Да", "ОК")),
+                "required_ok": sum(1 for c in reqs if c.get("status") in ("Да", "ОК")),
+                "additional_ok": sum(1 for c in adds if c.get("status") in ("Да", "ОК")),
             },
         }
         logger.info("✅ generate_validation_report: отчёт готов (decision=%s)", decision)
@@ -256,24 +255,26 @@ def generate_tezis_form(
     try:
         logger.debug("🔧 generate_tezis_form вызван")
         fields = [
-            ("Предмет закупки",         procurement_subject),
-            ("Обоснование закупки",     justification),
-            ("Бюджет, руб.",            budget),
-            ("Инициатор закупки",       f"{initiator_name} ({initiator_contacts})"),
-            ("Распорядитель бюджета",   budget_manager),
-            ("Рекомендуемые поставщики",
-             "; ".join(f"{s.name} (ИНН: {s.inn})" for s in recommended_suppliers)),
-            ("Иная информация",         additional_info),
-            ("ТЗ (вложение)",           tz_filename),
+            ("Предмет закупки", procurement_subject),
+            ("Обоснование закупки", justification),
+            ("Бюджет, руб.", budget),
+            ("Инициатор закупки", f"{initiator_name} ({initiator_contacts})"),
+            ("Распорядитель бюджета", budget_manager),
+            (
+                "Рекомендуемые поставщики",
+                "; ".join(f"{s.name} (ИНН: {s.inn})" for s in recommended_suppliers),
+            ),
+            ("Иная информация", additional_info),
+            ("ТЗ (вложение)", tz_filename),
         ]
         rows = "".join(
             f"<tr><th>{html_escape(str(label))}</th>"
-            f"<td class=\"{'filled' if val else 'empty'}\">"
+            f'<td class="{"filled" if val else "empty"}">'
             f"{html_escape(str(val)) if val else '[Требуется заполнить]'}</td></tr>"
             for label, val in fields
         )
         html = (
-            "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><style>"
+            '<!DOCTYPE html><html><head><meta charset="utf-8"><style>'
             "body{font-family:Arial,sans-serif;font-size:14px;margin:40px}"
             "table{border-collapse:collapse;width:100%}"
             "td,th{border:1px solid #999;padding:10px}"
@@ -281,7 +282,7 @@ def generate_tezis_form(
             ".filled{background:#D7FFD7;font-weight:bold}"
             ".empty{background:#FFFF00;color:#CC0000;font-style:italic}"
             "</style></head><body>"
-            "<h1 style=\"text-align:center\">ЗАЯВКА НА ЗАКУПКУ — ФОРМА ДЛЯ ЭДО «ТЕЗИС»</h1>"
+            '<h1 style="text-align:center">ЗАЯВКА НА ЗАКУПКУ — ФОРМА ДЛЯ ЭДО «ТЕЗИС»</h1>'
             f"<p><em>Сформировано: {datetime.now().strftime('%d.%m.%Y')}</em></p>"
             f"<table>{rows}</table></body></html>"
         )
@@ -311,26 +312,28 @@ def generate_info_request(
             f"<td style='border:1px solid #999;padding:8px'>{html_escape(f.description)}</td></tr>"
             for f in missing_fields
         )
-        corrected_note = "<p>📎 К письму приложена исправленная форма заявки.</p>" if has_corrected_form else ""
+        corrected_note = (
+            "<p>📎 К письму приложена исправленная форма заявки.</p>" if has_corrected_form else ""
+        )
         html = (
-            "<div style=\"font-family:Arial;font-size:14px;line-height:1.8\">"
+            '<div style="font-family:Arial;font-size:14px;line-height:1.8">'
             f"<p>Уважаем(ый/ая) {html_escape(dzo_name)}!</p>"
             f"<p>Благодарим за направленную заявку по теме: <strong>«{html_escape(subject)}»</strong>.</p>"
             "<p>Для корректного оформления в ЭДО «Тезис» просим предоставить следующую информацию:</p>"
-            "<table style=\"border-collapse:collapse;width:100%\">"
-            "<tr><th style=\"border:1px solid #999;padding:8px;background:#e8e8e8\">Поле</th>"
-            "<th style=\"border:1px solid #999;padding:8px;background:#e8e8e8\">Что необходимо указать</th></tr>"
-            f"{rows}</table>"
-            + corrected_note
-            + "<p>Просим направить ответным письмом.</p>"
+            '<table style="border-collapse:collapse;width:100%">'
+            '<tr><th style="border:1px solid #999;padding:8px;background:#e8e8e8">Поле</th>'
+            '<th style="border:1px solid #999;padding:8px;background:#e8e8e8">Что необходимо указать</th></tr>'
+            f"{rows}</table>" + corrected_note + "<p>Просим направить ответным письмом.</p>"
             "<p>С уважением,<br>Служба централизованных закупок</p></div>"
         )
         logger.info("✅ generate_info_request: письмо с запросом готово (тема: %s)", subject)
-        return json.dumps({
-            "emailHtml": html,
-            "decision":  "Требуется доработка",
-            "subject":   f"Запрос информации по заявке: {subject}",
-        })
+        return json.dumps(
+            {
+                "emailHtml": html,
+                "decision": "Требуется доработка",
+                "subject": f"Запрос информации по заявке: {subject}",
+            }
+        )
     except Exception as e:
         logger.error("❌ generate_info_request: ошибка %s", e)
         return json.dumps({"error": str(e)})
@@ -349,7 +352,7 @@ def generate_escalation(
     try:
         logger.debug("🔧 generate_escalation вызван")
         html = (
-            "<div style=\"font-family:Arial;font-size:14px\">"
+            '<div style="font-family:Arial;font-size:14px">'
             "<p><strong>⚠️ ТРЕБУЕТСЯ ЭСКАЛАЦИЯ</strong></p>"
             f"<p>Тема заявки: {html_escape(subject)}</p>"
             f"<p>Причина: {html_escape(reason)}</p>"
@@ -357,11 +360,13 @@ def generate_escalation(
             "</div>"
         )
         logger.warning("⚠️  generate_escalation: письмо эскалации готово (причина: %s)", reason)
-        return json.dumps({
-            "escalationHtml": html,
-            "decision": "Требуется эскалация",
-            "subject":  f"⚠️ Эскалация заявки ДЗО: {subject}",
-        })
+        return json.dumps(
+            {
+                "escalationHtml": html,
+                "decision": "Требуется эскалация",
+                "subject": f"⚠️ Эскалация заявки ДЗО: {subject}",
+            }
+        )
     except Exception as e:
         logger.error("❌ generate_escalation: ошибка %s", e)
         return json.dumps({"error": str(e)})
@@ -380,7 +385,7 @@ def generate_response_email(
     try:
         logger.debug("🔧 generate_response_email вызван")
         html = (
-            "<div style=\"font-family:Arial;font-size:14px;line-height:1.8\">"
+            '<div style="font-family:Arial;font-size:14px;line-height:1.8">'
             "<p>Уважаемый коллега!</p>"
             f"<p>Ваша заявка по теме <strong>«{html_escape(subject)}»</strong> была обработана ИИ-инспектором.</p>"
             f"<p><strong>Решение: {html_escape(decision)}</strong></p>"
@@ -425,11 +430,13 @@ def generate_corrected_application(
             else:
                 rows += f"<tr><th>{name}</th><td>{new or old}</td></tr>"
         html = (
-            "<!DOCTYPE html><html><head><meta charset=\"utf-8\"></head><body>"
+            '<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>'
             "<h1>ПРОЕКТ ИСПРАВЛЕННОЙ ЗАЯВКИ</h1>"
-            f"<table style=\"border-collapse:collapse;width:100%\">{rows}</table></body></html>"
+            f'<table style="border-collapse:collapse;width:100%">{rows}</table></body></html>'
         )
-        logger.info("✅ generate_corrected_application: исправленная заявка готова (%d полей)", len(fields))
+        logger.info(
+            "✅ generate_corrected_application: исправленная заявка готова (%d полей)", len(fields)
+        )
         return json.dumps({"correctedHtml": html})
     except Exception as e:
         logger.error("❌ generate_corrected_application: ошибка %s", e)
@@ -484,34 +491,43 @@ def analyze_tz_with_agent(
         )
 
         logger.info("✅ analyze_tz_with_agent: получен результат (%s)", overall_status)
-        return json.dumps({
-            "tzAgentAnalysis": {
-                "target_agent": target_agent,
-                "overall_status": overall_status,
-                "critical_issues": critical_issues,
-                "recommendations": recommendations,
-                "summary": summary,
-                "email_html": email_html,
-                "raw_output": delegated_result.get("output", ""),
-            }
-        }, ensure_ascii=False)
+        return json.dumps(
+            {
+                "tzAgentAnalysis": {
+                    "target_agent": target_agent,
+                    "overall_status": overall_status,
+                    "critical_issues": critical_issues,
+                    "recommendations": recommendations,
+                    "summary": summary,
+                    "email_html": email_html,
+                    "raw_output": delegated_result.get("output", ""),
+                }
+            },
+            ensure_ascii=False,
+        )
     except Exception as e:
         logger.error("❌ analyze_tz_with_agent: ошибка %s", e)
         if _is_daily_rate_limit_error(e):
-            return json.dumps({
-                "tzAgentAnalysis": _build_tz_fallback_for_rate_limit(tz_text, e, target_agent),
-            }, ensure_ascii=False)
-        return json.dumps({
-            "tzAgentAnalysis": {
-                "target_agent": target_agent,
-                "overall_status": "Ошибка анализа",
-                "critical_issues": [],
-                "recommendations": [],
-                "summary": f"Не удалось выполнить анализ ТЗ: {e}",
-                "email_html": "",
-                "raw_output": "",
-            }
-        }, ensure_ascii=False)
+            return json.dumps(
+                {
+                    "tzAgentAnalysis": _build_tz_fallback_for_rate_limit(tz_text, e, target_agent),
+                },
+                ensure_ascii=False,
+            )
+        return json.dumps(
+            {
+                "tzAgentAnalysis": {
+                    "target_agent": target_agent,
+                    "overall_status": "Ошибка анализа",
+                    "critical_issues": [],
+                    "recommendations": [],
+                    "summary": f"Не удалось выполнить анализ ТЗ: {e}",
+                    "email_html": "",
+                    "raw_output": "",
+                }
+            },
+            ensure_ascii=False,
+        )
 
 
 @tool(args_schema=PeerAgentInvokeInput)
@@ -530,20 +546,26 @@ def invoke_peer_agent(
             chat_input=query_text,
             metadata={"delegated_by": "dzo", "subject": subject, "sender": sender},
         )
-        return json.dumps({
-            "peerAgentResult": {
-                "target_agent": target_agent,
-                "output": result.get("output", ""),
-                "observations": result.get("observations", []),
-            }
-        }, ensure_ascii=False)
+        return json.dumps(
+            {
+                "peerAgentResult": {
+                    "target_agent": target_agent,
+                    "output": result.get("output", ""),
+                    "observations": result.get("observations", []),
+                }
+            },
+            ensure_ascii=False,
+        )
     except Exception as e:
         logger.error("❌ invoke_peer_agent(dzo): ошибка %s", e)
-        return json.dumps({
-            "peerAgentResult": {
-                "target_agent": target_agent,
-                "output": "",
-                "observations": [],
-                "error": str(e),
-            }
-        }, ensure_ascii=False)
+        return json.dumps(
+            {
+                "peerAgentResult": {
+                    "target_agent": target_agent,
+                    "output": "",
+                    "observations": [],
+                    "error": str(e),
+                }
+            },
+            ensure_ascii=False,
+        )

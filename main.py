@@ -38,16 +38,19 @@ def run():
 
     if mode in ("dzo", "both"):
         from agent1_dzo_inspector.runner import process_dzo_emails
+
         schedule.every(interval).seconds.do(process_dzo_emails)
         logger.info("Агент ДЗО подключён.")
 
     if mode in ("tz", "both"):
         from agent2_tz_inspector.runner import process_tz_emails
+
         schedule.every(interval).seconds.do(process_tz_emails)
         logger.info("Агент ТЗ подключён.")
 
     if mode in ("tender", "both"):
         from agent21_tender_inspector.runner import process_tender_documents
+
         schedule.every(interval).seconds.do(process_tender_documents)
         logger.info("Агент Тендер подключён.")
 

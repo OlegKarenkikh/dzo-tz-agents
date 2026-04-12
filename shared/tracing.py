@@ -7,6 +7,7 @@ Public API:
   log_agent_steps(job_id, agent, steps) -> list[dict]
   _truncate(value, max_len=300) -> value  (экспортируется для тестов)
 """
+
 from __future__ import annotations
 
 import functools
@@ -23,6 +24,7 @@ logger = setup_logger("agent_trace")
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
+
 
 def _truncate(value: Any, max_len: int = 300) -> Any:
     """Обрезает строку до max_len символов (добавляет '...').
@@ -42,6 +44,7 @@ def _truncate(value: Any, max_len: int = 300) -> Any:
 # Langfuse
 # ---------------------------------------------------------------------------
 
+
 @functools.lru_cache(maxsize=1)
 def get_langfuse_callback():
     """Возвращает LangfuseCallbackHandler или None если Langfuse не настроен.
@@ -55,6 +58,7 @@ def get_langfuse_callback():
         return None
     try:
         from langfuse.callback import CallbackHandler
+
         kwargs: dict[str, Any] = {"public_key": pk, "secret_key": sk}
         host = os.getenv("LANGFUSE_HOST")
         if host:
@@ -71,6 +75,7 @@ def get_langfuse_callback():
 # ---------------------------------------------------------------------------
 # log_agent_steps
 # ---------------------------------------------------------------------------
+
 
 def log_agent_steps(
     job_id: str,
@@ -105,7 +110,9 @@ def log_agent_steps(
                         "raw": _truncate(str(step)),
                     }
                 )
-                logger.debug("[%s] step=%d invalid structure: %s", job_id, i + 1, type(step).__name__)
+                logger.debug(
+                    "[%s] step=%d invalid structure: %s", job_id, i + 1, type(step).__name__
+                )
                 continue
 
             action, observation = step[0], step[1]
@@ -184,22 +191,34 @@ def log_agent_steps(
                 step_record["raw"] = None if observation is None else _truncate(str(observation))
 
             trace.append(step_record)
-            logger.debug("[%s] step=%d tool=%s decision=%s latency_ms=%.3f",
-                         job_id, i + 1, tool_name, decision, latency_ms)
+            logger.debug(
+                "[%s] step=%d tool=%s decision=%s latency_ms=%.3f",
+                job_id,
+                i + 1,
+                tool_name,
+                decision,
+                latency_ms,
+            )
         except Exception as exc:
             logger.debug("[%s] Ошибка сериализации шага %d: %s", job_id, i + 1, exc)
-            trace.append({
-                "step": i + 1,
-                "tool": "unknown",
-                "tool_input": {},
-                "decision": None,
-                "output_keys": ["raw"],
-                "latency_ms": round((time.monotonic() - step_t0) * 1000, 3),
-                "raw": _truncate(str(step)),
-                "error": str(exc),
-            })
+            trace.append(
+                {
+                    "step": i + 1,
+                    "tool": "unknown",
+                    "tool_input": {},
+                    "decision": None,
+                    "output_keys": ["raw"],
+                    "latency_ms": round((time.monotonic() - step_t0) * 1000, 3),
+                    "raw": _truncate(str(step)),
+                    "error": str(exc),
+                }
+            )
 
-    logger.info("[%s] agent=%s steps=%d elapsed_ms=%.1f",
-                job_id, agent, len(trace),
-                round((time.monotonic() - _t0) * 1000, 1))
+    logger.info(
+        "[%s] agent=%s steps=%d elapsed_ms=%.1f",
+        job_id,
+        agent,
+        len(trace),
+        round((time.monotonic() - _t0) * 1000, 1),
+    )
     return trace

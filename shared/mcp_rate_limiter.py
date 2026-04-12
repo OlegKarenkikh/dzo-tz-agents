@@ -8,6 +8,7 @@ the SlowAPI/Starlette middleware stack).
 
 Thread-safe: multiple asyncio.to_thread workers may call check() concurrently.
 """
+
 from __future__ import annotations
 
 import os
@@ -108,6 +109,4 @@ class MCPRateLimitError(Exception):
 
     def __init__(self, retry_after: float):
         self.retry_after = retry_after
-        super().__init__(
-            f"Rate limit exceeded. Retry after {retry_after:.1f}s"
-        )
+        super().__init__(f"Rate limit exceeded. Retry after {retry_after:.1f}s")

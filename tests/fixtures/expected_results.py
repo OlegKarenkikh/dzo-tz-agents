@@ -21,7 +21,6 @@ EXPECTED_RESULTS: dict[str, dict] = {
         "law": "44-ФЗ",
         "okpd2_code": "65.12.21.000",
     },
-
     # ── КАСКО ─────────────────────────────────────────────────────────
     "tender_kasko_1.md": {
         "insurance_type": "КАСКО",
@@ -36,7 +35,6 @@ EXPECTED_RESULTS: dict[str, dict] = {
         "insurance_subtype": "Добровольное страхование средств наземного транспорта",
         "law": "223-ФЗ",
     },
-
     # ── ДМС ───────────────────────────────────────────────────────────
     "tender_dms_1.md": {
         "insurance_type": "ДМС",
@@ -52,7 +50,6 @@ EXPECTED_RESULTS: dict[str, dict] = {
         "insurance_type": "ДМС",
         "law": "223-ФЗ",
     },
-
     # ── Имущество ─────────────────────────────────────────────────────
     "tender_property_1.md": {
         "insurance_type": "Имущество",
@@ -67,7 +64,6 @@ EXPECTED_RESULTS: dict[str, dict] = {
         "insurance_type": "Имущество",
         "law": "223-ФЗ",
     },
-
     # ── Ответственность ───────────────────────────────────────────────
     "tender_liability_1.md": {
         "insurance_type": "Ответственность",
@@ -82,7 +78,6 @@ EXPECTED_RESULTS: dict[str, dict] = {
         "insurance_type": "Ответственность",
         "law": "44-ФЗ",
     },
-
     # ── НС (Несчастные случаи / Жизнь) ───────────────────────────────
     "tender_life_ns_1.md": {
         "insurance_type": "НС",
@@ -97,7 +92,6 @@ EXPECTED_RESULTS: dict[str, dict] = {
         "law": "223-ФЗ",
         "okpd2_code": "65.12.4",
     },
-
     # ── Грузы ─────────────────────────────────────────────────────────
     "tender_cargo_1.md": {
         "insurance_type": "Грузы",
@@ -112,7 +106,6 @@ EXPECTED_RESULTS: dict[str, dict] = {
         "insurance_type": "Грузы",
         "law": "223-ФЗ",
     },
-
     # ── СМР ───────────────────────────────────────────────────────────
     "tender_smr_1.md": {
         "insurance_type": "СМР",
@@ -131,11 +124,8 @@ EXPECTED_RESULTS: dict[str, dict] = {
 
 # Mapping from tender filename to expected insurance type (for quick lookup)
 TENDER_TYPE_MAP: dict[str, str] = {
-    fname: data["insurance_type"]
-    for fname, data in EXPECTED_RESULTS.items()
+    fname: data["insurance_type"] for fname, data in EXPECTED_RESULTS.items()
 }
 
 # All 8 canonical insurance types covered by test tenders
-TESTED_INSURANCE_TYPES = sorted({
-    data["insurance_type"] for data in EXPECTED_RESULTS.values()
-})
+TESTED_INSURANCE_TYPES = sorted({data["insurance_type"] for data in EXPECTED_RESULTS.values()})

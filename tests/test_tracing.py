@@ -1,4 +1,5 @@
 """Unit-тесты для shared/tracing.py."""
+
 # ruff: noqa: I001
 import json
 import logging
@@ -11,12 +12,14 @@ import pytest
 # get_langfuse_callback
 # ---------------------------------------------------------------------------
 
+
 class TestGetLangfuseCallback:
     def test_returns_none_when_no_key(self, monkeypatch):
         monkeypatch.delenv("LANGFUSE_PUBLIC_KEY", raising=False)
         # перезагружаем модуль чтобы _init_langfuse() перевычислился
         import importlib
         import shared.tracing as tracing
+
         importlib.reload(tracing)
         assert tracing.get_langfuse_callback() is None
 
@@ -24,10 +27,12 @@ class TestGetLangfuseCallback:
         monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "pk-lf-test")
         import importlib
         import sys
+
         # убираем langfuse из sys.modules если есть
         sys.modules.pop("langfuse", None)
         sys.modules.pop("langfuse.callback", None)
         import shared.tracing as tracing
+
         with patch.dict(sys.modules, {"langfuse.callback": None}):
             importlib.reload(tracing)
             # при ImportError должно вернуть None
@@ -38,6 +43,7 @@ class TestGetLangfuseCallback:
         monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk-lf-test")
         import importlib
         import sys
+
         mock_handler = MagicMock()
         mock_cb_class = MagicMock(return_value=mock_handler)
         mock_module = MagicMock()
@@ -45,6 +51,7 @@ class TestGetLangfuseCallback:
         sys.modules["langfuse"] = MagicMock()
         sys.modules["langfuse.callback"] = mock_module
         import shared.tracing as tracing
+
         importlib.reload(tracing)
         result = tracing.get_langfuse_callback()
         assert result is mock_handler
@@ -57,6 +64,7 @@ class TestGetLangfuseCallback:
 # log_agent_steps
 # ---------------------------------------------------------------------------
 
+
 class TestLogAgentSteps:
     def _make_action(self, tool: str = "my_tool", tool_input: object = None):
         action = MagicMock()
@@ -66,11 +74,13 @@ class TestLogAgentSteps:
 
     def test_empty_steps_returns_empty_list(self):
         from shared.tracing import log_agent_steps
+
         result = log_agent_steps("job-1", "dzo", [])
         assert result == []
 
     def test_single_step_json_observation(self):
         from shared.tracing import log_agent_steps
+
         obs = {"decision": "Заявка полная", "emailHtml": "<p>ok</p>"}
         action = self._make_action("generate_report", {"data": "x"})
         steps = [(action, json.dumps(obs))]
@@ -85,6 +95,7 @@ class TestLogAgentSteps:
 
     def test_multiple_steps(self):
         from shared.tracing import log_agent_steps
+
         steps = [
             (self._make_action("tool_a"), json.dumps({"result": "a"})),
             (self._make_action("tool_b"), json.dumps({"result": "b", "decision": "Да"})),
@@ -97,14 +108,16 @@ class TestLogAgentSteps:
 
     def test_non_json_observation_stored_as_raw(self):
         from shared.tracing import log_agent_steps
+
         action = self._make_action()
-        steps = [(action, "not a json string {{{" )]
+        steps = [(action, "not a json string {{{")]
         trace = log_agent_steps("job-3", "dzo", steps)
         assert trace[0]["output_keys"] == ["raw"]
         assert trace[0]["decision"] is None
 
     def test_dict_observation(self):
         from shared.tracing import log_agent_steps
+
         action = self._make_action()
         obs = {"decision": "Требует доработки"}
         steps = [(action, obs)]
@@ -114,6 +127,7 @@ class TestLogAgentSteps:
     def test_magicmock_action_does_not_raise(self):
         """MagicMock action (as in integration tests) must not crash the runner."""
         from shared.tracing import log_agent_steps
+
         action = MagicMock()  # не устанавливаем .tool и .tool_input — чистый MagicMock
         steps = [(action, json.dumps({"decision": "ok"}))]
         trace = log_agent_steps("job-5", "dzo", steps)
@@ -125,6 +139,7 @@ class TestLogAgentSteps:
 
     def test_long_tool_input_truncated(self):
         from shared.tracing import log_agent_steps
+
         long_input = "x" * 500
         action = self._make_action("tool", long_input)
         steps = [(action, json.dumps({}))]
@@ -133,6 +148,7 @@ class TestLogAgentSteps:
 
     def test_returns_list_of_dicts_for_db(self):
         from shared.tracing import log_agent_steps
+
         steps = [(self._make_action(), json.dumps({"k": "v"}))]
         trace = log_agent_steps("job-7", "dzo", steps)
         assert isinstance(trace, list)
@@ -142,6 +158,7 @@ class TestLogAgentSteps:
 
     def test_logger_called(self, caplog):
         from shared.tracing import log_agent_steps
+
         action = self._make_action("my_tool", {"q": "test"})
         steps = [(action, json.dumps({"decision": "Да"}))]
         with caplog.at_level(logging.INFO, logger="agent_trace"):
@@ -155,6 +172,7 @@ class TestLogAgentSteps:
     def test_string_action_tool_name_used_directly(self):
         """Когда action — строка, она должна стать tool_name без изменений."""
         from shared.tracing import log_agent_steps
+
         steps = [("generate_document_list", {"documents": [], "summary": {"total": 0}})]
         trace = log_agent_steps("job-s1", "tender", steps)
         assert len(trace) == 1
@@ -163,6 +181,7 @@ class TestLogAgentSteps:
     def test_string_action_tool_input_is_empty_dict(self):
         """Для строкового action tool_input должен быть пустым словарём."""
         from shared.tracing import log_agent_steps
+
         steps = [("some_tool", json.dumps({"k": "v"}))]
         trace = log_agent_steps("job-s2", "tender", steps)
         assert trace[0]["tool_input"] == {}
@@ -170,6 +189,7 @@ class TestLogAgentSteps:
     def test_string_action_output_keys_populated(self):
         """output_keys и decision корректно извлекаются при строковом action."""
         from shared.tracing import log_agent_steps
+
         obs = {"documents": [{"id": 1}], "summary": {"total": 1}, "decision": "documents_found"}
         steps = [("generate_document_list", json.dumps(obs))]
         trace = log_agent_steps("job-s3", "tender", steps)
@@ -180,6 +200,7 @@ class TestLogAgentSteps:
     def test_string_action_with_dict_observation(self):
         """Строковый action с уже-словарным observation не должен вызывать ошибок."""
         from shared.tracing import log_agent_steps
+
         obs = {"error": "tool failed", "code": 500}
         steps = [("generate_document_list", obs)]
         trace = log_agent_steps("job-s4", "tender", steps)
@@ -189,6 +210,7 @@ class TestLogAgentSteps:
     def test_string_action_result_json_serializable(self):
         """Результат при строковом action должен быть JSON-сериализуемым."""
         from shared.tracing import log_agent_steps
+
         steps = [("my_tool", {"key": "value", "num": 42})]
         trace = log_agent_steps("job-s5", "tender", steps)
         json.dumps(trace)  # не должно бросать исключение
@@ -196,6 +218,7 @@ class TestLogAgentSteps:
     def test_string_action_invalid_json_observation(self):
         """Невалидный JSON observation при строковом action обрабатывается как raw."""
         from shared.tracing import log_agent_steps
+
         steps = [("some_tool", "not valid json {{")]
         trace = log_agent_steps("job-s6", "tender", steps)
         assert trace[0]["output_keys"] == ["raw"]
@@ -206,29 +229,35 @@ class TestLogAgentSteps:
 # _truncate
 # ---------------------------------------------------------------------------
 
+
 class TestTruncate:
     def test_short_string_unchanged(self):
         from shared.tracing import _truncate
+
         assert _truncate("hello") == "hello"
 
     def test_long_string_truncated(self):
         from shared.tracing import _truncate
+
         result = _truncate("a" * 400)
         assert result == "a" * 300 + "..."
 
     def test_dict_values_truncated(self):
         from shared.tracing import _truncate
+
         result = _truncate({"key": "b" * 400})
         assert result["key"].endswith("...")
         assert len(result["key"]) == 303
 
     def test_non_string_passthrough(self):
         from shared.tracing import _truncate
+
         assert _truncate(42) == 42
         assert _truncate(None) is None
         assert _truncate([1, 2, 3]) == [1, 2, 3]
 
     def test_custom_max_len(self):
         from shared.tracing import _truncate
+
         result = _truncate("hello world", max_len=5)
         assert result == "hello..."

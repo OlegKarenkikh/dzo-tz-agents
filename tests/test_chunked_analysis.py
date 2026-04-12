@@ -8,10 +8,14 @@ def test_plan_chunking_scales_with_context_window():
     system = "system prompt"
 
     with patch.object(ca, "_resolve_model_context_tokens", return_value=8_192):
-        small_chars, small_overlap, small_max_chunks, small_ctx = ca._plan_chunking(text, "k", "m", system)
+        small_chars, small_overlap, small_max_chunks, small_ctx = ca._plan_chunking(
+            text, "k", "m", system
+        )
 
     with patch.object(ca, "_resolve_model_context_tokens", return_value=128_000):
-        large_chars, large_overlap, large_max_chunks, large_ctx = ca._plan_chunking(text, "k", "m", system)
+        large_chars, large_overlap, large_max_chunks, large_ctx = ca._plan_chunking(
+            text, "k", "m", system
+        )
 
     assert small_ctx == 8_192
     assert large_ctx == 128_000

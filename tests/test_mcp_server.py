@@ -2,6 +2,7 @@
 tests/test_mcp_server.py
 Unit-тесты для MCP-сервера и A2A Agent Card.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -13,6 +14,7 @@ import pytest
 # ---------------------------------------------------------------------------
 # Фикстуры
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture()
 def mock_agent_runner():
@@ -44,10 +46,14 @@ def _mock_db_for_mcp():
 # Тесты shared/mcp_server.py — _invoke_agent
 # ---------------------------------------------------------------------------
 
+
 class TestInvokeAgent:
     def test_invoke_dzo_calls_create_dzo_agent(self, mock_agent_runner):
-        with patch("agent1_dzo_inspector.agent.create_dzo_agent", return_value=mock_agent_runner) as mock_create:
+        with patch(
+            "agent1_dzo_inspector.agent.create_dzo_agent", return_value=mock_agent_runner
+        ) as mock_create:
             from shared.mcp_server import _invoke_agent
+
             result = _invoke_agent("dzo", "текст заявки")
         mock_create.assert_called_once_with(model_name=None)
         mock_agent_runner.invoke.assert_called_once_with({"input": "текст заявки"})
@@ -58,23 +64,31 @@ class TestInvokeAgent:
     def test_invoke_tz_calls_create_tz_agent(self, mock_agent_runner):
         with patch("agent2_tz_inspector.agent.create_tz_agent", return_value=mock_agent_runner):
             from shared.mcp_server import _invoke_agent
+
             result = _invoke_agent("tz", "текст тз")
         assert result["agent"] == "tz"
 
     def test_invoke_tender_calls_create_tender_agent(self, mock_agent_runner):
-        with patch("agent21_tender_inspector.agent.create_tender_agent", return_value=mock_agent_runner):
+        with patch(
+            "agent21_tender_inspector.agent.create_tender_agent", return_value=mock_agent_runner
+        ):
             from shared.mcp_server import _invoke_agent
+
             result = _invoke_agent("tender", "тендерная документация")
         assert result["agent"] == "tender"
 
     def test_invoke_unknown_agent_raises(self):
         from shared.mcp_server import _invoke_agent
+
         with pytest.raises(ValueError, match="Неизвестный тип агента"):
             _invoke_agent("unknown_agent", "текст")
 
     def test_invoke_with_model_name(self, mock_agent_runner):
-        with patch("agent1_dzo_inspector.agent.create_dzo_agent", return_value=mock_agent_runner) as mock_create:
+        with patch(
+            "agent1_dzo_inspector.agent.create_dzo_agent", return_value=mock_agent_runner
+        ) as mock_create:
             from shared.mcp_server import _invoke_agent
+
             _invoke_agent("dzo", "текст", model_name="gpt-4o")
         mock_create.assert_called_once_with(model_name="gpt-4o")
 
@@ -83,6 +97,7 @@ class TestInvokeAgent:
         mock_agent_runner.invoke.side_effect = RuntimeError("LLM unavailable")
         with patch("agent1_dzo_inspector.agent.create_dzo_agent", return_value=mock_agent_runner):
             from shared.mcp_server import _invoke_agent
+
             result = _invoke_agent("dzo", "текст")
         assert result["output"] == ""
         assert result["steps"] == 0
@@ -92,6 +107,7 @@ class TestInvokeAgent:
     def test_invoke_agent_too_large_input_returns_error(self):
         """Входной текст сверх _MCP_MAX_INPUT_CHARS должен вернуть error без вызова агента."""
         from shared.mcp_server import _MCP_MAX_INPUT_CHARS, _invoke_agent
+
         oversized = "x" * (_MCP_MAX_INPUT_CHARS + 1)
         with patch("agent1_dzo_inspector.agent.create_dzo_agent") as mock_create:
             result = _invoke_agent("dzo", oversized)
@@ -108,6 +124,7 @@ class TestInvokeAgent:
         }
         with patch("agent1_dzo_inspector.agent.create_dzo_agent", return_value=mock_agent_runner):
             from shared.mcp_server import _invoke_agent
+
             result = _invoke_agent("dzo", "текст")
         assert result["steps"] == 3
 
@@ -116,13 +133,17 @@ class TestInvokeAgent:
 # Тесты MCP tools (inspect_dzo, inspect_tz, inspect_tender, list_agents)
 # ---------------------------------------------------------------------------
 
+
 class TestMcpTools:
     """MCP tool functions are now async; test via _create_mcp_job (sync path)."""
 
     def test_inspect_dzo_builds_chat_input_with_email_and_subject(self, mock_agent_runner):
         with patch("agent1_dzo_inspector.agent.create_dzo_agent", return_value=mock_agent_runner):
             from shared.mcp_server import _create_mcp_job
-            result = _create_mcp_job("dzo", "От: test@example.com\nТема: Закупка ноутбуков\nтело заявки")
+
+            result = _create_mcp_job(
+                "dzo", "От: test@example.com\nТема: Закупка ноутбуков\nтело заявки"
+            )
         call_args = mock_agent_runner.invoke.call_args[0][0]["input"]
         assert "От: test@example.com" in call_args
         assert "Тема: Закупка ноутбуков" in call_args
@@ -133,6 +154,7 @@ class TestMcpTools:
     def test_inspect_dzo_without_optional_fields(self, mock_agent_runner):
         with patch("agent1_dzo_inspector.agent.create_dzo_agent", return_value=mock_agent_runner):
             from shared.mcp_server import _create_mcp_job
+
             result = _create_mcp_job("dzo", "только текст")
         call_args = mock_agent_runner.invoke.call_args[0][0]["input"]
         assert call_args == "только текст"
@@ -141,35 +163,47 @@ class TestMcpTools:
     def test_inspect_tz_passes_text_directly(self, mock_agent_runner):
         with patch("agent2_tz_inspector.agent.create_tz_agent", return_value=mock_agent_runner):
             from shared.mcp_server import _create_mcp_job
+
             result = _create_mcp_job("tz", "техническое задание")
         call_args = mock_agent_runner.invoke.call_args[0][0]["input"]
         assert call_args == "техническое задание"
         assert result["agent"] == "tz"
 
     def test_inspect_tender_passes_text_directly(self, mock_agent_runner):
-        with patch("agent21_tender_inspector.agent.create_tender_agent", return_value=mock_agent_runner):
+        with patch(
+            "agent21_tender_inspector.agent.create_tender_agent", return_value=mock_agent_runner
+        ):
             from shared.mcp_server import _create_mcp_job
+
             result = _create_mcp_job("tender", "тендерная документация")
         assert result["agent"] == "tender"
 
     def test_inspect_dzo_passes_model_name(self, mock_agent_runner):
-        with patch("agent1_dzo_inspector.agent.create_dzo_agent", return_value=mock_agent_runner) as mock_create:
+        with patch(
+            "agent1_dzo_inspector.agent.create_dzo_agent", return_value=mock_agent_runner
+        ) as mock_create:
             from shared.mcp_server import _create_mcp_job
+
             _create_mcp_job("dzo", "текст", model_name="gpt-4o-mini")
         mock_create.assert_called_once_with(model_name="gpt-4o-mini")
 
     def test_inspect_dzo_empty_model_name_passes_none(self, mock_agent_runner):
         """Пустая строка model_name должна передаваться как None."""
-        with patch("agent1_dzo_inspector.agent.create_dzo_agent", return_value=mock_agent_runner) as mock_create:
+        with patch(
+            "agent1_dzo_inspector.agent.create_dzo_agent", return_value=mock_agent_runner
+        ) as mock_create:
             from shared.mcp_server import _create_mcp_job
+
             _create_mcp_job("dzo", "текст", model_name=None)
         mock_create.assert_called_once_with(model_name=None)
 
     def test_mcp_job_creates_tracked_job(self, mock_agent_runner):
         """_create_mcp_job creates a job in the database and returns job_id."""
         import shared.database as _db
+
         with patch("agent1_dzo_inspector.agent.create_dzo_agent", return_value=mock_agent_runner):
             from shared.mcp_server import _create_mcp_job
+
             result = _create_mcp_job("dzo", "текст")
         _db.create_job.assert_called_once_with("dzo", sender="mcp", subject="MCP tool call")
         assert result["job_id"] == "test-job-id"
@@ -179,19 +213,25 @@ class TestMcpTools:
     def test_mcp_job_records_error_on_agent_error(self, mock_agent_runner):
         """_create_mcp_job records error status when _invoke_agent returns error."""
         import shared.database as _db
+
         mock_agent_runner.invoke.side_effect = RuntimeError("LLM down")
         with patch("agent1_dzo_inspector.agent.create_dzo_agent", return_value=mock_agent_runner):
             from shared.mcp_server import _create_mcp_job
+
             result = _create_mcp_job("dzo", "текст")
         # _invoke_agent catches exceptions and returns error dict
         assert "error" in result
         assert "LLM down" in result["error"]
         # update_job should have been called with error status
         calls = _db.update_job.call_args_list
-        assert any(c.kwargs.get("status") == "error" or (len(c.args) > 1 and c.args[1] == "error") for c in calls)
+        assert any(
+            c.kwargs.get("status") == "error" or (len(c.args) > 1 and c.args[1] == "error")
+            for c in calls
+        )
 
     def test_list_agents_returns_all_three(self):
         from shared.mcp_server import list_agents
+
         result = list_agents()
         assert "agents" in result
         ids = [a["id"] for a in result["agents"]]
@@ -201,6 +241,7 @@ class TestMcpTools:
 
     def test_list_agents_has_required_fields(self):
         from shared.mcp_server import list_agents
+
         result = list_agents()
         for agent in result["agents"]:
             assert "id" in agent
@@ -212,6 +253,7 @@ class TestMcpTools:
         """list_agents derives data from AGENT_REGISTRY, not hardcoded values."""
         from api.app import AGENT_REGISTRY
         from shared.mcp_server import list_agents
+
         result = list_agents()
         result_ids = {a["id"] for a in result["agents"]}
         registry_ids = set(AGENT_REGISTRY.keys())
@@ -221,6 +263,7 @@ class TestMcpTools:
         """Verify the async tool function works end-to-end."""
         with patch("agent1_dzo_inspector.agent.create_dzo_agent", return_value=mock_agent_runner):
             from shared.mcp_server import inspect_dzo
+
             result = asyncio.get_event_loop().run_until_complete(
                 inspect_dzo(text="тест", sender_email="a@b.com", subject="тема")
             )
@@ -232,6 +275,7 @@ class TestMcpTools:
 # Тесты A2A Agent Card (/.well-known/agent.json)
 # ---------------------------------------------------------------------------
 
+
 class TestA2AAgentCard:
     @pytest.fixture()
     def client(self, monkeypatch):
@@ -242,9 +286,11 @@ class TestA2AAgentCard:
         # AGENT_CARD_ALLOWED_HOSTS, which is also not set here → HTTP 500.
         monkeypatch.setenv("PUBLIC_BASE_URL", "http://testserver")
         from fastapi.testclient import TestClient
+
         # Import api.app here (after monkeypatch.setenv) so that any module-level
         # code that reads env vars picks up the patched values on first import.
         import api.app as api_app
+
         # Патчим init_db/close_db на самом модуле api.app, чтобы фикстура
         # оставалась корректной даже если api.app уже был импортирован ранее.
         monkeypatch.setattr(api_app, "init_db", MagicMock())
@@ -280,6 +326,7 @@ class TestA2AAgentCard:
     def test_agent_card_skills_derived_from_registry(self, client):
         """Skills in A2A card must match AGENT_REGISTRY entries."""
         from api.app import AGENT_REGISTRY
+
         resp = client.get("/.well-known/agent.json")
         data = resp.json()
         assert len(data["skills"]) == len(AGENT_REGISTRY)
@@ -333,8 +380,10 @@ class TestA2AAgentCard:
         monkeypatch.delenv("PUBLIC_BASE_URL", raising=False)
         monkeypatch.delenv("AGENT_CARD_ALLOWED_HOSTS", raising=False)
         import api.app as api_app
+
         monkeypatch.setattr(api_app, "PUBLIC_BASE_URL", None)
         from fastapi.testclient import TestClient
+
         c = TestClient(api_app.app)
         resp = c.get("/.well-known/agent.json")
         assert resp.status_code == 500
@@ -344,11 +393,13 @@ class TestA2AAgentCard:
 # Тесты на импорт без mcp пакета
 # ---------------------------------------------------------------------------
 
+
 class TestMcpImportError:
     def test_import_error_without_mcp_package(self, monkeypatch):
         """Если mcp не установлен — должен подняться ImportError с понятным сообщением."""
         import importlib
         import sys
+
         # Блокируем все уже загруженные mcp* модули и три ключевых подпакета
         # через monkeypatch — он автоматически восстановит их после теста.
         for key in [k for k in sys.modules if k.startswith("mcp")]:

@@ -6,6 +6,7 @@
     python test_agent_local.py tz "Текст ТЗ здесь"
     AGENT_DEBUG=1 python test_agent_local.py dzo "..."
 """
+
 import json
 import logging
 import sys
@@ -29,10 +30,10 @@ def test_agent(agent_type: str, input_text: str) -> None:
         agent_type: "dzo", "tz" или "tender"
         input_text: текст для обработки
     """
-    print(f"\n{'='*80}")
+    print(f"\n{'=' * 80}")
     print(f"Тестирование агента: {agent_type.upper()}")
     print(f"Input текст ({len(input_text)} символов):\n{input_text[:200]}...")
-    print(f"{'='*80}\n")
+    print(f"{'=' * 80}\n")
 
     try:
         if agent_type == "dzo":
@@ -50,9 +51,9 @@ def test_agent(agent_type: str, input_text: str) -> None:
         result = agent.invoke({"input": input_text})
 
         # Вывод результатов
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("РЕЗУЛЬТАТЫ")
-        print("="*80)
+        print("=" * 80)
 
         if result:
             print(f"\n📋 Output ({len(result.get('output', ''))} символов):")
@@ -78,7 +79,8 @@ def test_agent(agent_type: str, input_text: str) -> None:
             try:
                 # Ищем JSON-структуры в output
                 import re
-                json_matches = re.findall(r'\{[^{}]*\}|\[[^\[\]]*\]', output, re.DOTALL)
+
+                json_matches = re.findall(r"\{[^{}]*\}|\[[^\[\]]*\]", output, re.DOTALL)
                 if json_matches:
                     for j, match in enumerate(json_matches, 1):
                         try:
@@ -92,17 +94,18 @@ def test_agent(agent_type: str, input_text: str) -> None:
             except Exception as e:
                 print(f"Ошибка парсинга: {e}")
 
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("✅ Агент успешно выполнен")
-        print("="*80)
+        print("=" * 80)
 
     except Exception as e:
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("❌ ОШИБКА")
-        print("="*80)
+        print("=" * 80)
         print(f"Тип: {type(e).__name__}")
         print(f"Сообщение: {e}")
         import traceback
+
         print("\nПолный stack trace:")
         traceback.print_exc()
         sys.exit(1)
@@ -115,7 +118,9 @@ if __name__ == "__main__":
         print("  python test_agent_local.py tz <текст ТЗ>")
         print("  python test_agent_local.py tender <текст тендерной документации>")
         print("\nПримеры:")
-        print('  python test_agent_local.py dzo "От: dzo@company.ru\\nТема: Закупка серверов\\nТекст заявки"')
+        print(
+            '  python test_agent_local.py dzo "От: dzo@company.ru\\nТема: Закупка серверов\\nТекст заявки"'
+        )
         print('  AGENT_DEBUG=1 python test_agent_local.py tz "Техническое задание..."')
         print('  AGENT_DEBUG=1 python test_agent_local.py tender "Тендерная документация..."')
         sys.exit(1)

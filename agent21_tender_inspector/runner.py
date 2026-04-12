@@ -6,6 +6,7 @@
     от участника закупки документов;
   - сохраняет результат в JSON-файл с тем же именем, но расширением .json.
 """
+
 import hashlib
 import json
 import os
@@ -48,6 +49,7 @@ def _is_url(path: str) -> bool:
 
 def _download_document(url: str) -> tuple[bytes, str]:
     import httpx
+
     _MAX_DOWNLOAD_BYTES = 50 * 1024 * 1024
     logger.info("⬇️ Загрузка документа: %s", url)
     chunks: list[bytes] = []
@@ -67,7 +69,7 @@ def _download_document(url: str) -> tuple[bytes, str]:
     raw = b"".join(chunks)
     filename = ""
     if "filename=" in content_disp:
-        filename = content_disp.split("filename=")[-1].strip().strip('"\'')
+        filename = content_disp.split("filename=")[-1].strip().strip("\"'")
     if not filename:
         filename = pathlib.Path(urllib.parse.urlparse(url).path).name or "document"
     filename = pathlib.PurePath(filename).name or "document"
@@ -93,6 +95,7 @@ def _download_document(url: str) -> tuple[bytes, str]:
 def _extract_text(file_data: bytes, filename: str) -> str:
     import base64
     import mimetypes
+
     ext = pathlib.Path(filename).suffix.lstrip(".").lower()
     _B64_EXTS = {"docx", "jpg", "jpeg", "png", "gif", "bmp", "tiff", "tif", "webp"}
     b64 = base64.b64encode(file_data).decode() if ext in _B64_EXTS else ""
@@ -148,7 +151,8 @@ def _extract_document_list_from_steps(steps: list) -> dict:
         except Exception as exc:
             logger.warning(
                 "Не удалось разобрать шаг generate_document_list: %r (%s)",
-                step, exc,
+                step,
+                exc,
             )
     return {}
 
@@ -166,9 +170,12 @@ def process_single_document(
         dup = db.find_duplicate_job("tender", "", dedup_subject)
         if dup:
             _ca = dup.get("created_at")
-            _ca_str = _ca.date().isoformat() if hasattr(_ca, "date") else str(_ca)[:10] if _ca else "N/A"
-            logger.info("[dedup] Пропускаем дубль: '%s' (ранее обработано %s)",
-                        dedup_subject, _ca_str)
+            _ca_str = (
+                _ca.date().isoformat() if hasattr(_ca, "date") else str(_ca)[:10] if _ca else "N/A"
+            )
+            logger.info(
+                "[dedup] Пропускаем дубль: '%s' (ранее обработано %s)", dedup_subject, _ca_str
+            )
             return dup.get("result") or {}
 
     if _is_url(source):
@@ -178,25 +185,36 @@ def process_single_document(
         suffix = pathlib.Path(filename).suffix.lower()
         if suffix not in SUPPORTED_EXTS:
             logger.warning("Неподдерживаемое расширение '%s' для '%s'.", suffix, filename)
-            return {"status": "error",
-                    "error": f"Unsupported file extension '{suffix}' for '{filename}'.",
-                    "filename": filename, "source": source}
+            return {
+                "status": "error",
+                "error": f"Unsupported file extension '{suffix}' for '{filename}'.",
+                "filename": filename,
+                "source": source,
+            }
     else:
         file_path = source
         filename = pathlib.Path(source).name
         suffix = pathlib.Path(filename).suffix.lower()
         if suffix not in SUPPORTED_EXTS:
             logger.warning("Неподдерживаемое расширение '%s' для '%s'.", suffix, filename)
-            return {"status": "error",
-                    "error": f"Unsupported file extension '{suffix}' for '{filename}'.",
-                    "filename": filename, "source": source}
+            return {
+                "status": "error",
+                "error": f"Unsupported file extension '{suffix}' for '{filename}'.",
+                "filename": filename,
+                "source": source,
+            }
         _MAX_LOCAL_BYTES = 50 * 1024 * 1024
         file_size = pathlib.Path(source).stat().st_size
         if file_size > _MAX_LOCAL_BYTES:
-            logger.warning("Файл '%s' превышает максимум (%d МБ)", filename, _MAX_LOCAL_BYTES // (1024 * 1024))
-            return {"status": "error",
-                    "error": f"File '{filename}' exceeds max size ({_MAX_LOCAL_BYTES // (1024 * 1024)} MB).",
-                    "filename": filename, "source": source}
+            logger.warning(
+                "Файл '%s' превышает максимум (%d МБ)", filename, _MAX_LOCAL_BYTES // (1024 * 1024)
+            )
+            return {
+                "status": "error",
+                "error": f"File '{filename}' exceeds max size ({_MAX_LOCAL_BYTES // (1024 * 1024)} MB).",
+                "filename": filename,
+                "source": source,
+            }
         file_data = pathlib.Path(source).read_bytes()
 
     job_id = db.create_job("tender", sender="", subject=dedup_subject)
@@ -249,18 +267,34 @@ def process_single_document(
                 logger.info(
                     "📦 %s: ~%d токенов > порог %d — поблочный анализ "
                     "(chunk_model=%s, chunk_ctx=%d, agent_model=%s, agent_ctx=%d)",
-                    filename, _est, _threshold, _best_model, _best_ctx, MODEL_NAME, _model_ctx,
+                    filename,
+                    _est,
+                    _threshold,
+                    _best_model,
+                    _best_ctx,
+                    MODEL_NAME,
+                    _model_ctx,
                 )
                 try:
-                    _summary = analyze_document_in_chunks(chat_input, _api_key, _best_model, "tender")
+                    _summary = analyze_document_in_chunks(
+                        chat_input, _api_key, _best_model, "tender"
+                    )
                     if _summary:
-                        logger.info("📦 Поблочный анализ: %d → %d символов резюме (~%d токенов)",
-                                    len(chat_input), len(_summary), estimate_tokens(_summary))
+                        logger.info(
+                            "📦 Поблочный анализ: %d → %d символов резюме (~%d токенов)",
+                            len(chat_input),
+                            len(_summary),
+                            estimate_tokens(_summary),
+                        )
                         chat_input = _summary
                     else:
-                        logger.warning("⚠️ Поблочный анализ не дал результата — используем исходный текст")
+                        logger.warning(
+                            "⚠️ Поблочный анализ не дал результата — используем исходный текст"
+                        )
                 except Exception as _chunk_err:
-                    logger.warning("⚠️ Поблочный анализ упал: %s — используем исходный текст", _chunk_err)
+                    logger.warning(
+                        "⚠️ Поблочный анализ упал: %s — используем исходный текст", _chunk_err
+                    )
 
         agent = create_tender_agent()
         lf_cb = get_langfuse_callback()
@@ -272,7 +306,9 @@ def process_single_document(
                 config={
                     "callbacks": callbacks,
                     "metadata": {"session_id": job_id},
-                } if callbacks else {},
+                }
+                if callbacks
+                else {},
             )
 
         steps = result.get("intermediate_steps", [])
@@ -296,27 +332,37 @@ def process_single_document(
         if save_to_file:
             eff_output_dir = output_dir or TENDER_OUTPUT_DIR
             output_path = _build_output_path(
-                file_path, eff_output_dir,
+                file_path,
+                eff_output_dir,
                 hash_source=source if _is_url(source) else dedup_subject,
             )
             _save_json_result(document_list, output_path)
 
         tool_error = document_list.get("error")
         if tool_error:
-            db.update_job(job_id, status="error",
-                          decision=f"Ошибка инструмента: {tool_error}",
-                          result=document_list, trace=trace)
+            db.update_job(
+                job_id,
+                status="error",
+                decision=f"Ошибка инструмента: {tool_error}",
+                result=document_list,
+                trace=trace,
+            )
             EMAILS_ERRORS.labels(agent="tender", error_type="tool_error").inc()
             logger.warning("⚠️ generate_document_list вернул ошибку: %s", tool_error)
         else:
             db.update_job(
-                job_id, status="done",
+                job_id,
+                status="done",
                 decision=f"Найдено документов: {document_list.get('summary', {}).get('total', 0)}",
-                result=document_list, trace=trace,
+                result=document_list,
+                trace=trace,
             )
             EMAILS_PROCESSED.labels(agent="tender").inc()
-            logger.info("✅ Документ обработан: %s (всего документов: %d)",
-                        filename, document_list.get("summary", {}).get("total", 0))
+            logger.info(
+                "✅ Документ обработан: %s (всего документов: %d)",
+                filename,
+                document_list.get("summary", {}).get("total", 0),
+            )
         return document_list
 
     except Exception as e:

@@ -121,7 +121,9 @@ def _get_agent_runner(agent_id: str, model_name_override: str | None = None):
             # Совместимость с кастомными фабриками без model_name.
             runner = factory()
         _agent_cache[cache_key] = runner
-        logger.info("[agent-tool] cached runner for target=%s model=%s", agent_id, model_name_override)
+        logger.info(
+            "[agent-tool] cached runner for target=%s model=%s", agent_id, model_name_override
+        )
         return runner
 
 

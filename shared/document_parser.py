@@ -12,6 +12,7 @@ Usage::
     data = parse_anketa(file_bytes, "application/pdf")
     print(data.company_name, data.inn)
 """
+
 from __future__ import annotations
 
 import io
@@ -27,6 +28,7 @@ logger = logging.getLogger("document_parser")
 @dataclass
 class AnketaData:
     """Structured data extracted from a participant anketa."""
+
     tender_id: str = ""
     company_name: str = ""
     org_form: str = ""
@@ -51,6 +53,7 @@ class AnketaData:
 @dataclass
 class NDAData:
     """Extracted info from NDA documents."""
+
     signatory_name: str = ""
     signatory_position: str = ""
     company_name: str = ""
@@ -143,6 +146,7 @@ def parse_nda(file_bytes: bytes, content_type: str = "") -> NDAData:
 #  DOCX parsing
 # ---------------------------------------------------------------------------
 
+
 def _parse_docx(file_bytes: bytes) -> AnketaData:
     """Extract anketa data from a DOCX file."""
     from docx import Document
@@ -208,6 +212,7 @@ def _extract_from_docx_table(table, data: AnketaData) -> None:
 # ---------------------------------------------------------------------------
 #  PDF parsing
 # ---------------------------------------------------------------------------
+
 
 def _parse_pdf(file_bytes: bytes) -> AnketaData:
     """Extract anketa data from a PDF file."""
@@ -315,6 +320,7 @@ def _is_label_text(text: str, row_num: int) -> bool:
 #  Helpers
 # ---------------------------------------------------------------------------
 
+
 def _parse_inn_field(value: str, data: AnketaData) -> None:
     """Parse the INN/KPP/OGRN combined field."""
     # Extract INN
@@ -340,6 +346,7 @@ def _parse_inn_field(value: str, data: AnketaData) -> None:
 def _extract_pdf_text(file_bytes: bytes) -> str:
     """Extract full text from PDF."""
     import pdfplumber
+
     with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
         return "\n".join(p.extract_text() or "" for p in pdf.pages)
 
@@ -347,6 +354,7 @@ def _extract_pdf_text(file_bytes: bytes) -> str:
 def _extract_docx_text(file_bytes: bytes) -> str:
     """Extract full text from DOCX."""
     from docx import Document
+
     doc = Document(io.BytesIO(file_bytes))
     return "\n".join(p.text for p in doc.paragraphs)
 

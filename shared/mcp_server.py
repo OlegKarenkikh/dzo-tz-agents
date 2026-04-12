@@ -14,6 +14,7 @@ Cursor, Copilot, Continue и др.).
   from shared.mcp_server import mcp
   app.mount("/mcp", mcp.streamable_http_app())
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -67,6 +68,7 @@ MCP_AGENT_TIMEOUT_SECONDS: int = int(os.getenv("MCP_AGENT_TIMEOUT_SECONDS", "300
 #  Async job lifecycle context manager
 # ---------------------------------------------------------------------------
 
+
 @asynccontextmanager
 async def agent_job_lifecycle(agent_type: str, chat_input: str):
     """Async context manager for MCP job lifecycle tracking.
@@ -85,14 +87,20 @@ async def agent_job_lifecycle(agent_type: str, chat_input: str):
     except asyncio.CancelledError:
         elapsed = time.monotonic() - start
         logger.warning(
-            "[MCP] job=%s agent=%s cancelled after %.1fs", job_id, agent_type, elapsed,
+            "[MCP] job=%s agent=%s cancelled after %.1fs",
+            job_id,
+            agent_type,
+            elapsed,
         )
         update_job(job_id, status="error", error="Cancelled by client")
         raise
     except TimeoutError:
         elapsed = time.monotonic() - start
         logger.warning(
-            "[MCP] job=%s agent=%s timed out after %.1fs", job_id, agent_type, elapsed,
+            "[MCP] job=%s agent=%s timed out after %.1fs",
+            job_id,
+            agent_type,
+            elapsed,
         )
         update_job(job_id, status="error", error="Timeout")
         raise
@@ -119,7 +127,10 @@ async def agent_job_lifecycle(agent_type: str, chat_input: str):
 #  Agent invocation (sync — runs in thread via asyncio.to_thread)
 # ---------------------------------------------------------------------------
 
-def _invoke_agent(agent_type: str, chat_input: str, model_name: str | None = None) -> dict[str, Any]:
+
+def _invoke_agent(
+    agent_type: str, chat_input: str, model_name: str | None = None
+) -> dict[str, Any]:
     """Общий вызов агента по типу (синхронный — вызывается через asyncio.to_thread)."""
     # Проверяем лимит ДО создания агента — создание агента тяжело (инициализация LLM/графа)
     if len(chat_input) > _MCP_MAX_INPUT_CHARS:
@@ -132,15 +143,19 @@ def _invoke_agent(agent_type: str, chat_input: str, model_name: str | None = Non
 
     if agent_type == "dzo":
         from agent1_dzo_inspector.agent import create_dzo_agent
+
         agent = create_dzo_agent(model_name=model_name)
     elif agent_type == "tz":
         from agent2_tz_inspector.agent import create_tz_agent
+
         agent = create_tz_agent(model_name=model_name)
     elif agent_type == "tender":
         from agent21_tender_inspector.agent import create_tender_agent
+
         agent = create_tender_agent(model_name=model_name)
     elif agent_type == "collector":
         from agent3_collector_inspector.agent import create_collector_agent
+
         agent = create_collector_agent(model_name=model_name)
     else:
         raise ValueError(f"Неизвестный тип агента: {agent_type!r}")
@@ -154,11 +169,15 @@ def _invoke_agent(agent_type: str, chat_input: str, model_name: str | None = Non
             "steps": len(result.get("intermediate_steps", [])),
         }
     except Exception as exc:
-        logger.exception("[MCP] agent=%s error_type=%s error=%s", agent_type, type(exc).__name__, exc)
+        logger.exception(
+            "[MCP] agent=%s error_type=%s error=%s", agent_type, type(exc).__name__, exc
+        )
         return {"output": "", "agent": agent_type, "steps": 0, "error": str(exc)}
 
 
-async def _invoke_agent_async(agent_type: str, chat_input: str, model_name: str | None = None) -> dict[str, Any]:
+async def _invoke_agent_async(
+    agent_type: str, chat_input: str, model_name: str | None = None
+) -> dict[str, Any]:
     """Non-blocking wrapper: offloads sync agent invocation to a thread pool.
 
     This prevents the synchronous LLM calls (30-300s) from blocking the
@@ -171,7 +190,10 @@ async def _invoke_agent_async(agent_type: str, chat_input: str, model_name: str 
 #  Job-tracking pipeline (sync and async)
 # ---------------------------------------------------------------------------
 
-def _create_mcp_job(agent_type: str, chat_input: str, model_name: str | None = None) -> dict[str, Any]:
+
+def _create_mcp_job(
+    agent_type: str, chat_input: str, model_name: str | None = None
+) -> dict[str, Any]:
     """Invoke agent through the job-tracking pipeline.
 
     Creates a tracked job, runs the agent, and records the outcome — making
@@ -224,10 +246,7 @@ async def _create_mcp_job_async(
                 timeout=MCP_AGENT_TIMEOUT_SECONDS,
             )
         except TimeoutError:
-            timeout_msg = (
-                f"Agent {agent_type!r} timed out after "
-                f"{MCP_AGENT_TIMEOUT_SECONDS}s"
-            )
+            timeout_msg = f"Agent {agent_type!r} timed out after {MCP_AGENT_TIMEOUT_SECONDS}s"
             logger.warning("[MCP] %s", timeout_msg)
             result = {
                 "output": "",

@@ -1,4 +1,5 @@
 """Tests for the async MCP pipeline: timeout, cancellation, and lifecycle."""
+
 from __future__ import annotations
 
 import asyncio
@@ -12,6 +13,7 @@ from shared.mcp_rate_limiter import MCPRateLimitError
 # ---------------------------------------------------------------------------
 #  Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture(autouse=True)
 def _mock_db():
@@ -37,6 +39,7 @@ def mock_agent():
 # ---------------------------------------------------------------------------
 #  Agent job lifecycle context manager
 # ---------------------------------------------------------------------------
+
 
 class TestAgentJobLifecycle:
     def test_lifecycle_creates_and_completes_job(self, mock_agent):
@@ -97,8 +100,7 @@ class TestAgentJobLifecycle:
             asyncio.get_event_loop().run_until_complete(_run())
         calls = _db.update_job.call_args_list
         assert any(
-            c.kwargs.get("error") == "Timeout"
-            or (c.args and "Timeout" in str(c.args))
+            c.kwargs.get("error") == "Timeout" or (c.args and "Timeout" in str(c.args))
             for c in calls
         )
 
@@ -106,6 +108,7 @@ class TestAgentJobLifecycle:
 # ---------------------------------------------------------------------------
 #  Async job pipeline with timeout
 # ---------------------------------------------------------------------------
+
 
 class TestCreateMcpJobAsync:
     def test_async_job_returns_result(self, mock_agent):
@@ -124,6 +127,7 @@ class TestCreateMcpJobAsync:
         """Verify timeout wrapping works."""
         with patch("agent1_dzo_inspector.agent.create_dzo_agent", return_value=mock_agent):
             from shared.mcp_server import _create_mcp_job_async
+
             with patch("shared.mcp_server.MCP_AGENT_TIMEOUT_SECONDS", 600):
                 result = asyncio.get_event_loop().run_until_complete(
                     _create_mcp_job_async("dzo", "test text")
@@ -132,12 +136,14 @@ class TestCreateMcpJobAsync:
 
     def test_async_job_timeout_returns_error_dict(self):
         """When agent times out, should return error dict (not raise)."""
+
         async def _slow_agent(*args, **kwargs):
             await asyncio.sleep(10)
             return {"output": "never reached", "agent": "dzo", "steps": 0}
 
         with patch("shared.mcp_server._invoke_agent_async", side_effect=_slow_agent):
             from shared.mcp_server import _create_mcp_job_async
+
             with patch("shared.mcp_server.MCP_AGENT_TIMEOUT_SECONDS", 0.01):
                 result = asyncio.get_event_loop().run_until_complete(
                     _create_mcp_job_async("dzo", "test text")
@@ -148,18 +154,18 @@ class TestCreateMcpJobAsync:
     def test_async_job_rate_limited(self):
         """When rate limit is exceeded, should raise MCPRateLimitError."""
         from shared.mcp_server import _create_mcp_job_async
+
         with patch("shared.mcp_server.mcp_limiter") as mock_limiter:
             mock_limiter.check.return_value = (False, 30.0)
             with pytest.raises(MCPRateLimitError) as exc_info:
-                asyncio.get_event_loop().run_until_complete(
-                    _create_mcp_job_async("dzo", "test")
-                )
+                asyncio.get_event_loop().run_until_complete(_create_mcp_job_async("dzo", "test"))
             assert exc_info.value.retry_after == 30.0
 
     def test_async_job_rate_limit_allowed(self, mock_agent):
         """When rate limit allows, should proceed normally."""
         with patch("agent1_dzo_inspector.agent.create_dzo_agent", return_value=mock_agent):
             from shared.mcp_server import _create_mcp_job_async
+
             with patch("shared.mcp_server.mcp_limiter") as mock_limiter:
                 mock_limiter.check.return_value = (True, 0.0)
                 result = asyncio.get_event_loop().run_until_complete(
@@ -172,9 +178,11 @@ class TestCreateMcpJobAsync:
 #  MCP_AGENT_TIMEOUT_SECONDS config
 # ---------------------------------------------------------------------------
 
+
 class TestMcpTimeoutConfig:
     def test_default_timeout_is_300(self):
         from shared.mcp_server import MCP_AGENT_TIMEOUT_SECONDS
+
         # Default is 300 unless env var overrides
         assert isinstance(MCP_AGENT_TIMEOUT_SECONDS, int)
         assert MCP_AGENT_TIMEOUT_SECONDS > 0

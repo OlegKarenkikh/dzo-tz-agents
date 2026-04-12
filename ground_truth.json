@@ -1,0 +1,21 @@
+{
+  "dzo_example.txt": {
+    "decision": "approved",
+    "extracted_entities": {
+      "item": "ноутбуки",
+      "quantity": 10,
+      "budget": "1 000 000 руб"
+    }
+  },
+  "tz_example.txt": {
+    "decision": "approved",
+    "extracted_entities": {
+      "item": "ноутбуки",
+      "quantity": 10,
+      "cpu": "Intel Core i7",
+      "ram": "16GB",
+      "storage": "512GB SSD",
+      "delivery_date": "01.12.2024"
+    }
+  }
+}

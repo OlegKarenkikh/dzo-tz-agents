@@ -5,6 +5,7 @@ FastAPI сервер для:
 - /run/tz    — ручной запуск Агента ТЗ
 - /run/both  — запустить оба агента
 """
+
 import os
 from datetime import datetime
 
@@ -41,6 +42,7 @@ def status():
 
 def _run_dzo():
     from agent1_dzo_inspector.runner import process_dzo_emails
+
     ts = datetime.now().isoformat()
     try:
         process_dzo_emails()
@@ -51,6 +53,7 @@ def _run_dzo():
 
 def _run_tz():
     from agent2_tz_inspector.runner import process_tz_emails
+
     ts = datetime.now().isoformat()
     try:
         process_tz_emails()

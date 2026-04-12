@@ -78,7 +78,7 @@ def create_tz_agent(model_name: str | None = None) -> AgentRunner:
     """
     llm = build_llm(temperature=0.2, model_name_override=model_name)
     tools = [invoke_peer_agent, generate_json_report, generate_corrected_tz, generate_email_to_dzo]
-    logger.info("Создание агента ТЗ (модель=%s)", getattr(llm, 'model_name', '?'))
+    logger.info("Создание агента ТЗ (модель=%s)", getattr(llm, "model_name", "?"))
 
     # langgraph >= 0.2: create_react_agent(model, tools, prompt=system_str)
     graph_agent = create_react_agent(

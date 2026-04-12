@@ -1,0 +1,11 @@
+--- agent1_dzo_inspector/agent.py
++++ agent1_dzo_inspector/agent.py
+@@ -99,6 +99,10 @@
+     logger.info("Создание агента ДЗО (модель=%s)", getattr(llm, 'model_name', '?'))
+
++    if hasattr(llm, "bind_tools"):
++        llm = llm.bind_tools(tools)
++
+     # langgraph >= 0.2: create_react_agent(model, tools, prompt=system_str)
+     graph_agent = create_react_agent(
+         model=llm,

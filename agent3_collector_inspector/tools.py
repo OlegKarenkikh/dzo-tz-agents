@@ -23,6 +23,7 @@ from shared.logger import setup_logger
 # Optional: document parser integration for auto-parsing anketa files
 try:
     from shared.document_parser import parse_anketa as _parse_anketa
+
     _PARSER_AVAILABLE = True
 except ImportError:
     _PARSER_AVAILABLE = False
@@ -33,6 +34,7 @@ logger = setup_logger("agent_collector")
 # --------------------------------------------------------------------------- #
 #  Helper: JSON parsing (same pattern as tender tools)                         #
 # --------------------------------------------------------------------------- #
+
 
 def _parse_query(query: str, tool_name: str):
     """Parse query as JSON, returning dict | None | {}."""
@@ -143,6 +145,7 @@ def classify_document(filename: str, content_hint: str = "") -> str:
 #  Helper: participant matching                                                #
 # --------------------------------------------------------------------------- #
 
+
 def match_participant(
     from_email: str,
     from_name: str,
@@ -180,6 +183,7 @@ def match_participant(
 #  Helper: INN validation                                                      #
 # --------------------------------------------------------------------------- #
 
+
 def validate_inn(anketa_inn: str, expected_inn: str) -> bool:
     """Check if INN from anketa matches expected INN."""
     return anketa_inn.strip() == expected_inn.strip()
@@ -188,6 +192,7 @@ def validate_inn(anketa_inn: str, expected_inn: str) -> bool:
 # --------------------------------------------------------------------------- #
 #  Helper: folder structure                                                    #
 # --------------------------------------------------------------------------- #
+
 
 def plan_folder_structure(
     tender_id: str,
@@ -209,6 +214,7 @@ def plan_folder_structure(
 # --------------------------------------------------------------------------- #
 #  Tools                                                                       #
 # --------------------------------------------------------------------------- #
+
 
 @tool
 def collect_tender_documents(query: str) -> str:
@@ -311,7 +317,7 @@ def collect_tender_documents(query: str) -> str:
 
             # Try to find INN in attachment content hints
             inn_from_anketa = None
-            for att in (attachments or []):
+            for att in attachments or []:
                 if not isinstance(att, dict):
                     continue
                 hint = str(att.get("content_hint", ""))
@@ -323,7 +329,10 @@ def collect_tender_documents(query: str) -> str:
 
             # Match to participant
             matched = match_participant(
-                from_email, from_name, inn_from_anketa, participants_list,
+                from_email,
+                from_name,
+                inn_from_anketa,
+                participants_list,
             )
             if not matched:
                 continue
@@ -336,7 +345,7 @@ def collect_tender_documents(query: str) -> str:
             pr["status"] = "received"
 
             # Classify attachments
-            for att in (attachments or []):
+            for att in attachments or []:
                 if not isinstance(att, dict):
                     continue
                 filename = str(att.get("filename", ""))
@@ -356,7 +365,8 @@ def collect_tender_documents(query: str) -> str:
                         except Exception as parse_err:
                             logger.warning(
                                 "Anketa auto-parse failed for %s: %s",
-                                filename, parse_err,
+                                filename,
+                                parse_err,
                             )
                     # Validate INN
                     if inn_from_anketa:
@@ -445,7 +455,8 @@ def collect_tender_documents(query: str) -> str:
 
         logger.info(
             "✅ collect_tender_documents: %d/%d участников прислали документы",
-            received_count, len(participants_list),
+            received_count,
+            len(participants_list),
         )
         return json.dumps(result, ensure_ascii=False)
 

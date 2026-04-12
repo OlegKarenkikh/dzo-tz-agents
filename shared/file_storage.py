@@ -10,6 +10,7 @@ Provides:
 Env vars:
   STORAGE_BASE_PATH — root directory for saved documents (default: ./storage)
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -44,7 +45,9 @@ class FileStorage:
             dict mapping participant name to created folder path.
         """
         return await asyncio.to_thread(
-            self._create_folder_structure_sync, tender_id, participants,
+            self._create_folder_structure_sync,
+            tender_id,
+            participants,
         )
 
     def _create_folder_structure_sync(
@@ -81,7 +84,10 @@ class FileStorage:
             Full path to the saved file.
         """
         return await asyncio.to_thread(
-            self._save_document_sync, folder_path, filename, content,
+            self._save_document_sync,
+            folder_path,
+            filename,
+            content,
         )
 
     def _save_document_sync(
@@ -103,6 +109,6 @@ class FileStorage:
     def _safe_filename(name: str) -> str:
         """Sanitize a filename for filesystem safety."""
         # Replace problematic characters
-        for ch in ['/', '\\', ':', '*', '?', '"', '<', '>', '|']:
-            name = name.replace(ch, '_')
-        return name.strip().strip('.')
+        for ch in ["/", "\\", ":", "*", "?", '"', "<", ">", "|"]:
+            name = name.replace(ch, "_")
+        return name.strip().strip(".")

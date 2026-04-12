@@ -9,6 +9,7 @@
 
 Применяется когда документ слишком большой для контекстного окна модели.
 """
+
 import logging
 import math
 
@@ -146,6 +147,7 @@ _TENDER_USER = """\
 
 # ── Функции ──────────────────────────────────────────────────────────────────
 
+
 def chunk_document(
     text: str,
     max_chars: int = _CHUNK_MAX_CHARS,
@@ -205,7 +207,9 @@ def _resolve_model_context_tokens(api_key: str, model_name: str) -> int:
     return _DEFAULT_MODEL_CONTEXT_TOKENS
 
 
-def _plan_chunking(text: str, api_key: str, model_name: str, system_prompt: str) -> tuple[int, int, int, int]:
+def _plan_chunking(
+    text: str, api_key: str, model_name: str, system_prompt: str
+) -> tuple[int, int, int, int]:
     """Возвращает параметры чанкинга: (max_chars, overlap_chars, max_chunks, model_ctx_tokens)."""
     model_ctx = max(2_048, _resolve_model_context_tokens(api_key, model_name))
     system_tokens = estimate_tokens(system_prompt) + _SYSTEM_PROMPT_OVERHEAD_TOKENS
@@ -228,7 +232,12 @@ def _plan_chunking(text: str, api_key: str, model_name: str, system_prompt: str)
             _CHARS_PER_TOKEN_ASCII
             if non_ascii_ratio < 0.1
             # Линейная интерполяция от 4 (при ratio=0.1) до 2 (при ratio=0.3)
-            else int(_CHARS_PER_TOKEN_ASCII - (_CHARS_PER_TOKEN_ASCII - _CHARS_PER_TOKEN_NONASCII) * (non_ascii_ratio - 0.1) / 0.2)
+            else int(
+                _CHARS_PER_TOKEN_ASCII
+                - (_CHARS_PER_TOKEN_ASCII - _CHARS_PER_TOKEN_NONASCII)
+                * (non_ascii_ratio - 0.1)
+                / 0.2
+            )
         )
     )
     max_chars = target_chunk_tokens * chars_per_token
@@ -280,7 +289,7 @@ def _call_llm_direct(
                 "model": model_name,
                 "messages": [
                     {"role": "system", "content": system},
-                    {"role": "user",   "content": user},
+                    {"role": "user", "content": user},
                 ],
                 "max_tokens": max_tokens,
                 "temperature": 0.1,
@@ -316,8 +325,8 @@ def analyze_document_in_chunks(
         ``None`` если все чанки завершились ошибкой.
     """
     if agent_type == "tz":
-        sys_prompt  = _TZ_SYSTEM
-        user_tmpl   = _TZ_USER
+        sys_prompt = _TZ_SYSTEM
+        user_tmpl = _TZ_USER
         result_header = (
             "╔══════════════════════════════════════════════════════════════╗\n"
             "║      ПРЕДВАРИТЕЛЬНЫЙ ПОБЛОЧНЫЙ АНАЛИЗ ТЕХНИЧЕСКОГО ЗАДАНИЯ  ║\n"
@@ -335,8 +344,8 @@ def analyze_document_in_chunks(
             "══════════════════════════════════════════════════════════════"
         )
     elif agent_type == "tender":
-        sys_prompt  = _TENDER_SYSTEM
-        user_tmpl   = _TENDER_USER
+        sys_prompt = _TENDER_SYSTEM
+        user_tmpl = _TENDER_USER
         result_header = (
             "╔══════════════════════════════════════════════════════════════╗\n"
             "║   ПРЕДВАРИТЕЛЬНЫЙ ПОБЛОЧНЫЙ АНАЛИЗ ТЕНДЕРНОЙ ДОКУМЕНТАЦИИ   ║\n"
@@ -353,8 +362,8 @@ def analyze_document_in_chunks(
             "══════════════════════════════════════════════════════════════"
         )
     else:
-        sys_prompt  = _DZO_SYSTEM
-        user_tmpl   = _DZO_USER
+        sys_prompt = _DZO_SYSTEM
+        user_tmpl = _DZO_USER
         result_header = (
             "╔══════════════════════════════════════════════════════════════╗\n"
             "║      ПРЕДВАРИТЕЛЬНЫЙ ПОБЛОЧНЫЙ АНАЛИЗ ЗАЯВКИ ДЗО            ║\n"
@@ -404,10 +413,15 @@ def analyze_document_in_chunks(
         user_msg = user_tmpl.format(num=i + 1, total=n, chunk=chunk)
         analysis = _call_llm_direct(api_key, model_name, sys_prompt, user_msg)
         if analysis:
-            analyses.append(f"── Фрагмент {i + 1}/{n} ({'начало' if i == 0 else 'конец' if i == n - 1 else 'середина'}) ──\n{analysis}")
+            analyses.append(
+                f"── Фрагмент {i + 1}/{n} ({'начало' if i == 0 else 'конец' if i == n - 1 else 'середина'}) ──\n{analysis}"
+            )
             logger.debug(
                 "  ✅ Чанк %d/%d: %d симв. → %d симв. анализа",
-                i + 1, n, len(chunk), len(analysis),
+                i + 1,
+                n,
+                len(chunk),
+                len(analysis),
             )
         else:
             analyses.append(f"── Фрагмент {i + 1}/{n} ── [анализ не удался]")
@@ -420,6 +434,8 @@ def analyze_document_in_chunks(
     summary = result_header + "\n\n".join(analyses) + result_footer
     logger.info(
         "✅ Поблочный анализ завершён: %d фрагм. → резюме %d символов (~%d токенов)",
-        n, len(summary), len(summary) // 4,
+        n,
+        len(summary),
+        len(summary) // 4,
     )
     return summary

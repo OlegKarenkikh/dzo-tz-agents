@@ -2,6 +2,7 @@
 Тесты безопасности API — по результатам аудита.
 Проверяют: CORS, API key, metrics endpoint, error masking.
 """
+
 import base64
 import os
 
@@ -154,7 +155,11 @@ class TestInputSizeValidation:
             json={
                 "text": "тест",
                 "attachments": [
-                    {"filename": "big.pdf", "content_base64": oversized_b64, "mime_type": "application/pdf"},
+                    {
+                        "filename": "big.pdf",
+                        "content_base64": oversized_b64,
+                        "mime_type": "application/pdf",
+                    },
                 ],
             },
             headers={"X-API-Key": TEST_KEY},
@@ -170,8 +175,16 @@ class TestInputSizeValidation:
             json={
                 "text": "",
                 "attachments": [
-                    {"filename": "a.pdf", "content_base64": big_b64, "mime_type": "application/pdf"},
-                    {"filename": "b.pdf", "content_base64": big_b64, "mime_type": "application/pdf"},
+                    {
+                        "filename": "a.pdf",
+                        "content_base64": big_b64,
+                        "mime_type": "application/pdf",
+                    },
+                    {
+                        "filename": "b.pdf",
+                        "content_base64": big_b64,
+                        "mime_type": "application/pdf",
+                    },
                 ],
             },
             headers={"X-API-Key": TEST_KEY},
@@ -186,7 +199,11 @@ class TestInputSizeValidation:
             json={
                 "text": "тест",
                 "attachments": [
-                    {"filename": "small.txt", "content_base64": small_b64, "mime_type": "text/plain"},
+                    {
+                        "filename": "small.txt",
+                        "content_base64": small_b64,
+                        "mime_type": "text/plain",
+                    },
                 ],
             },
             headers={"X-API-Key": TEST_KEY},

@@ -1,4 +1,5 @@
 """Tests for config.py safe integer/float parsing."""
+
 import os
 
 import pytest

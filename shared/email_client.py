@@ -14,6 +14,7 @@ Env vars (for EmailClient):
   EMAIL_PASSWORD — password or app token
   EMAIL_USE_SSL  — true/false (default: true)
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -35,6 +36,7 @@ logger = logging.getLogger("email_client")
 #  Helpers (legacy)
 # ---------------------------------------------------------------------------
 
+
 def _decode_str(raw) -> str:
     parts = decode_header(raw or "")
     out = []
@@ -49,6 +51,7 @@ def _decode_str(raw) -> str:
 # ---------------------------------------------------------------------------
 #  Legacy IMAP function (used by runner_base.py)
 # ---------------------------------------------------------------------------
+
 
 def fetch_unseen_emails(
     imap_host: str,
@@ -102,23 +105,27 @@ def fetch_unseen_emails(
                         payload = part.get_payload(decode=True)
                         if payload:
                             ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
-                            attachments.append({
-                                "filename": filename,
-                                "ext": ext,
-                                "data": payload,
-                                "mime": part.get_content_type(),
-                                "b64": base64.b64encode(payload).decode(),
-                            })
+                            attachments.append(
+                                {
+                                    "filename": filename,
+                                    "ext": ext,
+                                    "data": payload,
+                                    "mime": part.get_content_type(),
+                                    "b64": base64.b64encode(payload).decode(),
+                                }
+                            )
 
                 M.store(uid, "+FLAGS", "\\\\Seen")
-                emails.append({
-                    "uid": uid.decode(),
-                    "from": from_,
-                    "subject": subject,
-                    "date": date_str,
-                    "body": body,
-                    "attachments": attachments,
-                })
+                emails.append(
+                    {
+                        "uid": uid.decode(),
+                        "from": from_,
+                        "subject": subject,
+                        "date": date_str,
+                        "body": body,
+                        "attachments": attachments,
+                    }
+                )
             except Exception as e:
                 logger.error(f"Ошибка обработки письма uid={uid}: {e}")
 
@@ -138,9 +145,11 @@ def fetch_unseen_emails(
 #  New async EmailClient with configurable backend
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class EmailMessage:
     """Parsed email message with metadata and attachments."""
+
     uid: str = ""
     from_email: str = ""
     from_name: str = ""
@@ -183,8 +192,7 @@ class EmailClient:
 
         if self.backend not in ("imap", "exchange", "graph"):
             raise ValueError(
-                f"Unsupported EMAIL_BACKEND={self.backend!r}. "
-                f"Supported: imap, exchange, graph"
+                f"Unsupported EMAIL_BACKEND={self.backend!r}. Supported: imap, exchange, graph"
             )
 
     async def fetch_emails(
@@ -209,28 +217,40 @@ class EmailClient:
         raise ValueError(f"Unsupported backend: {self.backend!r}")
 
     async def download_attachment(
-        self, email_uid: str, attachment_id: str,
+        self,
+        email_uid: str,
+        attachment_id: str,
     ) -> bytes:
         """Download a specific attachment by email UID and attachment identifier."""
         if self.backend == "imap":
             return await self._download_imap(email_uid, attachment_id)
         logger.warning(
-            "download_attachment not fully implemented for backend=%s", self.backend,
+            "download_attachment not fully implemented for backend=%s",
+            self.backend,
         )
         return b""
 
     # -- IMAP backend -------------------------------------------------------
 
     async def _fetch_imap(
-        self, folder: str, subject_filter: str | None, since_date: str | None,
+        self,
+        folder: str,
+        subject_filter: str | None,
+        since_date: str | None,
     ) -> list[EmailMessage]:
         """Fetch emails via IMAP (runs in thread to avoid blocking event loop)."""
         return await asyncio.to_thread(
-            self._fetch_imap_sync, folder, subject_filter, since_date,
+            self._fetch_imap_sync,
+            folder,
+            subject_filter,
+            since_date,
         )
 
     def _fetch_imap_sync(
-        self, folder: str, subject_filter: str | None, since_date: str | None,
+        self,
+        folder: str,
+        subject_filter: str | None,
+        since_date: str | None,
     ) -> list[EmailMessage]:
         """Synchronous IMAP fetch with connection pooling."""
         messages: list[EmailMessage] = []
@@ -247,9 +267,10 @@ class EmailClient:
             if since_date:
                 # Convert ISO date to IMAP format: DD-Mon-YYYY
                 from datetime import datetime
+
                 dt = datetime.fromisoformat(since_date)
                 imap_date = dt.strftime("%d-%b-%Y")
-                criteria = f'(UNSEEN SINCE {imap_date})'
+                criteria = f"(UNSEEN SINCE {imap_date})"
 
             _, uids = conn.search(None, criteria)
             for uid in uids[0].split():
@@ -278,7 +299,9 @@ class EmailClient:
     async def _download_imap(self, email_uid: str, attachment_id: str) -> bytes:
         """Download attachment by re-fetching the email via IMAP."""
         return await asyncio.to_thread(
-            self._download_imap_sync, email_uid, attachment_id,
+            self._download_imap_sync,
+            email_uid,
+            attachment_id,
         )
 
     def _download_imap_sync(self, email_uid: str, attachment_id: str) -> bytes:
@@ -307,7 +330,10 @@ class EmailClient:
     # -- Exchange backend (stub) -------------------------------------------
 
     async def _fetch_exchange(
-        self, folder: str, subject_filter: str | None, since_date: str | None,
+        self,
+        folder: str,
+        subject_filter: str | None,
+        since_date: str | None,
     ) -> list[EmailMessage]:
         """Exchange/EWS backend — requires exchangelib (not included in core deps)."""
         logger.warning("Exchange backend not yet implemented; returning empty list")
@@ -316,7 +342,10 @@ class EmailClient:
     # -- MS Graph backend (stub) -------------------------------------------
 
     async def _fetch_graph(
-        self, folder: str, subject_filter: str | None, since_date: str | None,
+        self,
+        folder: str,
+        subject_filter: str | None,
+        since_date: str | None,
     ) -> list[EmailMessage]:
         """MS Graph backend — requires httpx + OAuth2 token (not included in core deps)."""
         logger.warning("MS Graph backend not yet implemented; returning empty list")
@@ -335,8 +364,8 @@ class EmailClient:
         from_email = from_raw
         from_name = ""
         if "<" in from_raw and ">" in from_raw:
-            from_name = from_raw[:from_raw.index("<")].strip().strip('"')
-            from_email = from_raw[from_raw.index("<") + 1:from_raw.index(">")]
+            from_name = from_raw[: from_raw.index("<")].strip().strip('"')
+            from_email = from_raw[from_raw.index("<") + 1 : from_raw.index(">")]
 
         body = ""
         attachments: list[dict[str, Any]] = []
@@ -352,14 +381,16 @@ class EmailClient:
                 payload = part.get_payload(decode=True)
                 if payload:
                     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
-                    attachments.append({
-                        "filename": filename,
-                        "ext": ext,
-                        "data": payload,
-                        "mime": ct,
-                        "b64": base64.b64encode(payload).decode(),
-                        "size_bytes": len(payload),
-                    })
+                    attachments.append(
+                        {
+                            "filename": filename,
+                            "ext": ext,
+                            "data": payload,
+                            "mime": ct,
+                            "b64": base64.b64encode(payload).decode(),
+                            "size_bytes": len(payload),
+                        }
+                    )
 
         return EmailMessage(
             uid=uid,

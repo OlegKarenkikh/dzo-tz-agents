@@ -89,10 +89,20 @@ def test_classify_tender_returns_full_result(filename: str):
 
 # ── Coverage: all 8 insurance types are testable ──────────────────────
 
+
 def test_all_canonical_types_covered():
     """Verify we have test tenders covering all 8 canonical insurance types."""
     # ОСАГО, КАСКО, ДМС, Имущество, Ответственность, НС, Грузы, СМР
-    expected_canonical = {"ОСАГО", "КАСКО", "ДМС", "Имущество", "Ответственность", "НС", "Грузы", "СМР"}
+    expected_canonical = {
+        "ОСАГО",
+        "КАСКО",
+        "ДМС",
+        "Имущество",
+        "Ответственность",
+        "НС",
+        "Грузы",
+        "СМР",
+    }
     actual = set(TESTED_INSURANCE_TYPES)
     missing = expected_canonical - actual
     assert not missing, f"Missing test coverage for insurance types: {missing}"
@@ -110,6 +120,7 @@ def test_17_tender_fixtures_exist():
 
 # ── Insurance type metadata tests ─────────────────────────────────────
 
+
 def test_insurance_types_have_required_fields():
     """Every InsuranceTypeInfo should have keywords and OKPD2 codes."""
     for type_id, info in INSURANCE_TYPES.items():
@@ -126,6 +137,7 @@ def test_canonical_types_in_insurance_types():
 
 
 # ── OKPD2 tests ───────────────────────────────────────────────────────
+
 
 def test_okpd2_osago():
     assert get_okpd2_description("65.12.21.000") == "ОСАГО"
@@ -157,6 +169,7 @@ def test_okpd2_unknown_returns_none():
 
 # ── Regulatory reference tests ────────────────────────────────────────
 
+
 @pytest.mark.parametrize("law_id", ["44-ФЗ", "223-ФЗ", "40-ФЗ", "225-ФЗ", "4015-1"])
 def test_regulatory_reference_lookup(law_id: str):
     ref = get_regulatory_reference(law_id)
@@ -169,6 +182,7 @@ def test_regulatory_reference_unknown():
 
 
 # ── get_insurance_type_info tests ─────────────────────────────────────
+
 
 def test_get_type_info_osago():
     info = get_insurance_type_info("ОСАГО")
@@ -188,6 +202,7 @@ def test_get_type_info_unknown():
 
 
 # ── Edge case classification tests ────────────────────────────────────
+
 
 def test_classify_empty_text():
     t, c = classify_insurance_type("")
@@ -254,6 +269,7 @@ def test_classify_pure_ns_text():
 
 # ── Insurance detection keyword set ───────────────────────────────────
 
+
 def test_detection_keywords_not_empty():
     assert len(INSURANCE_DETECTION_KEYWORDS) > 20
 
@@ -264,6 +280,7 @@ def test_key_abbreviations_in_keywords():
 
 
 # ── is_insurance_tender edge cases ────────────────────────────────────
+
 
 def test_not_insurance_without_procurement():
     """Insurance keywords alone (without procurement context) → False."""

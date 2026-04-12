@@ -67,7 +67,9 @@ class TzEmailRunner(BaseEmailRunner):
             except (json.JSONDecodeError, TypeError, KeyError, IndexError) as exc:
                 _runner_logger.warning(
                     "[%s] parse_steps: ошибка разбора шага %d: %s",
-                    job_id, step_idx, exc,
+                    job_id,
+                    step_idx,
+                    exc,
                 )
         if not email_html:
             email_html = (
@@ -75,11 +77,15 @@ class TzEmailRunner(BaseEmailRunner):
                 + result.get("output", "").replace(chr(10), "<br>")
                 + "</div>"
             )
-        return decision, {
-            "email_html": email_html,
-            "corrected_tz_html": corrected_tz_html,
-            "json_report": json_report,
-        }, reply_subject
+        return (
+            decision,
+            {
+                "email_html": email_html,
+                "corrected_tz_html": corrected_tz_html,
+                "json_report": json_report,
+            },
+            reply_subject,
+        )
 
     def send_reply(
         self,

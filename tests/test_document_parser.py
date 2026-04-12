@@ -3,6 +3,7 @@
 Uses real fixture files from tests/fixtures/collector/ for integration-level
 accuracy verification.
 """
+
 from __future__ import annotations
 
 import os
@@ -19,6 +20,7 @@ FIXTURES_DIR = Path(__file__).parent / "fixtures" / "collector"
 #  Helpers
 # ---------------------------------------------------------------------------
 
+
 def _read_fixture(filename: str) -> bytes:
     """Read a fixture file and return its bytes."""
     path = FIXTURES_DIR / filename
@@ -30,6 +32,7 @@ def _read_fixture(filename: str) -> bytes:
 # ---------------------------------------------------------------------------
 #  DOCX Tests
 # ---------------------------------------------------------------------------
+
 
 class TestParseAnketaDocx:
     def test_romashka_docx_company_name(self):
@@ -105,6 +108,7 @@ class TestParseAnketaDocx:
 #  PDF Tests
 # ---------------------------------------------------------------------------
 
+
 class TestParseAnketaPdf:
     def test_romashka_pdf_company_name(self):
         data = parse_anketa(
@@ -148,6 +152,7 @@ class TestParseAnketaPdf:
 #  Content-type auto-detection
 # ---------------------------------------------------------------------------
 
+
 class TestContentTypeDetection:
     def test_auto_detect_docx(self):
         data = parse_anketa(
@@ -174,6 +179,7 @@ class TestContentTypeDetection:
 # ---------------------------------------------------------------------------
 #  AnketaData dataclass
 # ---------------------------------------------------------------------------
+
 
 class TestAnketaData:
     def test_defaults(self):

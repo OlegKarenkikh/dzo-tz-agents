@@ -14,7 +14,7 @@ class _FakeRunner:
             "output": "ok",
             "intermediate_steps": [
                 ("tool_a", {"overall_status": "Соответствует"}),
-                ("tool_b", "{\"emailHtml\":\"<p>ok</p>\"}"),
+                ("tool_b", '{"emailHtml":"<p>ok</p>"}'),
             ],
         }
 
@@ -132,5 +132,7 @@ def test_invoke_agent_as_tool_marks_cooldown_on_retryable_error(_mock_chain, _mo
             mock_runner.side_effect = [_OkRunner()]
             out2 = invoke_agent_as_tool(source_agent="dzo", target_agent="tz", chat_input="x")
             assert out2["output"] == "ok"
-            called_models = [c.kwargs.get("model_name_override") for c in mock_runner.call_args_list]
+            called_models = [
+                c.kwargs.get("model_name_override") for c in mock_runner.call_args_list
+            ]
             assert called_models == ["gpt-4o-mini"]

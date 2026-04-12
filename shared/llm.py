@@ -8,6 +8,7 @@
   lmstudio      — LM Studio
   github_models — GitHub Models (https://models.github.ai/inference)
 """
+
 import logging
 import re
 import threading
@@ -118,7 +119,9 @@ def probe_max_input_tokens(api_key: str, model_name: str) -> int:
     except Exception as exc:
         logger.warning(
             "⚠️ Не удалось определить max_input_tokens для %s: %s. Используется %d (консервативно для GitHub Models).",
-            model_name, exc, _DEFAULT_GITHUB_MAX_INPUT_TOKENS,
+            model_name,
+            exc,
+            _DEFAULT_GITHUB_MAX_INPUT_TOKENS,
         )
 
     with _llm_cache_lock:
@@ -163,7 +166,9 @@ def probe_max_output_tokens(api_key: str, model_name: str) -> int:
     except Exception as exc:
         logger.warning(
             "⚠️ Не удалось определить max_output_tokens для %s: %s. Используется %d.",
-            model_name, exc, _DEFAULT_MAX_OUTPUT_TOKENS,
+            model_name,
+            exc,
+            _DEFAULT_MAX_OUTPUT_TOKENS,
         )
 
     with _llm_cache_lock:
@@ -180,11 +185,7 @@ def fetch_github_chat_models(api_key: str) -> list[str]:
         resp.raise_for_status()
         data = resp.json()
         models = data if isinstance(data, list) else data.get("data", data.get("models", []))
-        return [
-            m["name"]
-            for m in models
-            if m.get("task") == "chat-completion" and m.get("name")
-        ]
+        return [m["name"] for m in models if m.get("task") == "chat-completion" and m.get("name")]
     except Exception as exc:
         logger.warning(
             "Не удалось получить список GitHub Models: %s. Используется встроенный список.", exc
@@ -374,16 +375,19 @@ def build_llm(temperature: float = 0.2, model_name_override: str | None = None) 
     else:
         effective_key = effective_openai_key()
         if LLM_BACKEND == "openai" and not effective_key:
-            raise ValueError(
-                "Для LLM_BACKEND='openai' необходимо задать OPENAI_API_KEY."
-            )
+            raise ValueError("Для LLM_BACKEND='openai' необходимо задать OPENAI_API_KEY.")
         api_key = effective_key
         base_url = OPENAI_API_BASE or None
         has_fallback = len(FALLBACK_MODELS) > 0
         max_retries = 0 if has_fallback else 2
         max_tokens_out = 8192
 
-    logger.info("🤖 Инициализация LLM: backend=%s, model=%s, max_tokens=%d", LLM_BACKEND, model, max_tokens_out)
+    logger.info(
+        "🤖 Инициализация LLM: backend=%s, model=%s, max_tokens=%d",
+        LLM_BACKEND,
+        model,
+        max_tokens_out,
+    )
     return ChatOpenAI(
         model=model,
         temperature=temperature,

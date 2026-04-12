@@ -13,6 +13,7 @@ logger = setup_logger("agent_tender")
 #  Вспомогательные функции парсинга                                            #
 # --------------------------------------------------------------------------- #
 
+
 def _parse_query(query: str, tool_name: str):
     """Пытается распарсить query как JSON.
 
@@ -50,16 +51,30 @@ def _parse_query(query: str, tool_name: str):
         pass
     logger.warning(
         "⚠️ %s: query не является JSON (%d симв.): %s…",
-        tool_name, len(q), q[:120],
+        tool_name,
+        len(q),
+        q[:120],
     )
     return None  # None = непустой, но не JSON
 
 
 # Допустимые типы документов
 _VALID_TYPES = {
-    "лицензия", "свидетельство", "копия", "оригинал", "форма",
-    "декларация", "гарантия", "выписка", "справка", "сертификат",
-    "договор", "протокол", "приказ", "устав", "иное",
+    "лицензия",
+    "свидетельство",
+    "копия",
+    "оригинал",
+    "форма",
+    "декларация",
+    "гарантия",
+    "выписка",
+    "справка",
+    "сертификат",
+    "договор",
+    "протокол",
+    "приказ",
+    "устав",
+    "иное",
 }
 
 
@@ -93,6 +108,7 @@ def _normalize_document(doc: dict, idx: int) -> dict:
 # --------------------------------------------------------------------------- #
 #  Инструменты агента                                                          #
 # --------------------------------------------------------------------------- #
+
 
 @tool
 def generate_document_list(query: str) -> str:
@@ -166,7 +182,8 @@ def generate_document_list(query: str) -> str:
         }
         logger.info(
             "✅ generate_document_list: список готов (%d документов, %d обязательных)",
-            len(documents), mandatory_count,
+            len(documents),
+            mandatory_count,
         )
         return json.dumps(result, ensure_ascii=False)
     except Exception as e:

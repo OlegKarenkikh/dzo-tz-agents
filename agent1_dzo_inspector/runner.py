@@ -48,8 +48,12 @@ class DzoEmailRunner(BaseEmailRunner):
             html_body="<p>В вашем письме не обнаружено вложений. Пожалуйста, приложите заявку.</p>",
             from_addr=config.DZO_SMTP_FROM,
         )
-        db.update_job(job_id, status="done", decision="Требуется доработка",
-                      result={"reason": "no_attachments"})
+        db.update_job(
+            job_id,
+            status="done",
+            decision="Требуется доработка",
+            result={"reason": "no_attachments"},
+        )
         return True
 
     def build_chat_input(self, mail: dict, attachment_texts: list[str]) -> str:
@@ -71,8 +75,7 @@ class DzoEmailRunner(BaseEmailRunner):
             f"── ПРЕДВАРИТЕЛЬНАЯ ПРОВЕРКА ──\n"
             f"Всего вложений: {len(mail.get('attachments', []))}\n"
             f"Файл ТЗ: {'ДА' if has_tz else 'НЕТ'}\n"
-            f"Спецификация: {'ДА' if has_spec else 'НЕТ'}\n\n"
-            + "\n\n".join(attachment_texts)
+            f"Спецификация: {'ДА' if has_spec else 'НЕТ'}\n\n" + "\n\n".join(attachment_texts)
         )
 
     def parse_steps(self, steps: list, result: dict, job_id: str) -> tuple[str, dict, str]:
@@ -101,7 +104,9 @@ class DzoEmailRunner(BaseEmailRunner):
             except (json.JSONDecodeError, TypeError, KeyError, IndexError) as exc:
                 _runner_logger.warning(
                     "[%s] parse_steps: ошибка разбора шага %d: %s",
-                    job_id, step_idx, exc,
+                    job_id,
+                    step_idx,
+                    exc,
                 )
         if not email_html and not escalation_html:
             email_html = (
@@ -117,13 +122,17 @@ class DzoEmailRunner(BaseEmailRunner):
                 f"<p>{html.escape(tz_summary)}</p>"
                 "</div>"
             )
-        return decision, {
-            "email_html": email_html,
-            "corrected_html": corrected_html,
-            "tezis_html": tezis_html,
-            "escalation_html": escalation_html,
-            "tz_agent_analysis": tz_agent_analysis,
-        }, reply_subject
+        return (
+            decision,
+            {
+                "email_html": email_html,
+                "corrected_html": corrected_html,
+                "tezis_html": tezis_html,
+                "escalation_html": escalation_html,
+                "tz_agent_analysis": tz_agent_analysis,
+            },
+            reply_subject,
+        )
 
     def send_reply(
         self,

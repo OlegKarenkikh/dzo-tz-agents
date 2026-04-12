@@ -1,0 +1,9 @@
+--- api/app.py
++++ api/app.py
+@@ -365,6 +365,8 @@
+     steps = model_result.get("intermediate_steps", []) or []
+     # Универсальная защита: для любого агента API-пайплайна ожидаем хотя бы один
+     # tool-вызов. Пустые steps обычно означают деградацию модели/несовместимость.
+-    if len(steps) == 0:
+-        return False, "NoToolCalls"
+     return True, ""

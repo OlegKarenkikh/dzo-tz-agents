@@ -3,6 +3,7 @@ shared/runner_base.py
 Базовые классы для агентов: BaseAgentRunner (адаптер invoke) и
 BaseEmailRunner (email-раннер для ДЗО/ТЗ).
 """
+
 from __future__ import annotations
 
 import concurrent.futures
@@ -101,8 +102,7 @@ class BaseEmailRunner(ABC):
 
     @property
     @abstractmethod
-    def agent_id(self) -> str:
-        ...
+    def agent_id(self) -> str: ...
 
     @property
     @abstractmethod
@@ -111,12 +111,10 @@ class BaseEmailRunner(ABC):
         ...
 
     @abstractmethod
-    def create_agent(self) -> Any:
-        ...
+    def create_agent(self) -> Any: ...
 
     @abstractmethod
-    def build_chat_input(self, mail: dict, attachment_texts: list[str]) -> str:
-        ...
+    def build_chat_input(self, mail: dict, attachment_texts: list[str]) -> str: ...
 
     @abstractmethod
     def parse_steps(
@@ -197,10 +195,11 @@ class BaseEmailRunner(ABC):
                 else:
                     created_at_display = str(created_at)[:10]
                 logger.info(
-                    "[dedup] Пропускаем дубль: '%s' от %s "
-                    "(ранее обработано %s, решение: %s)",
-                    subject, sender,
-                    created_at_display, dup.get("decision", "?"),
+                    "[dedup] Пропускаем дубль: '%s' от %s (ранее обработано %s, решение: %s)",
+                    subject,
+                    sender,
+                    created_at_display,
+                    dup.get("decision", "?"),
                 )
                 return
 
@@ -231,7 +230,9 @@ class BaseEmailRunner(ABC):
             with JobTimer(self.agent_id):
                 with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
                     future = pool.submit(
-                        agent.invoke, {"input": chat_input}, **invoke_kwargs,
+                        agent.invoke,
+                        {"input": chat_input},
+                        **invoke_kwargs,
                     )
                     result = future.result(timeout=AGENT_INVOKE_TIMEOUT_SECONDS)
 
@@ -261,10 +262,14 @@ class BaseEmailRunner(ABC):
 
         except concurrent.futures.TimeoutError:
             EMAILS_ERRORS.labels(agent=self.agent_id, error_type="TimeoutError").inc()
-            db.update_job(job_id, status="error",
-                          error=f"Agent invoke timeout ({AGENT_INVOKE_TIMEOUT_SECONDS}s)")
-            logger.error("Таймаут агента (%ds) для '%s' от %s",
-                         AGENT_INVOKE_TIMEOUT_SECONDS, subject, sender)
+            db.update_job(
+                job_id,
+                status="error",
+                error=f"Agent invoke timeout ({AGENT_INVOKE_TIMEOUT_SECONDS}s)",
+            )
+            logger.error(
+                "Таймаут агента (%ds) для '%s' от %s", AGENT_INVOKE_TIMEOUT_SECONDS, subject, sender
+            )
             notify(
                 f"🔴 Таймаут Агент-{self.agent_id.upper()}\nОт: {sender}\n"
                 f"Timeout {AGENT_INVOKE_TIMEOUT_SECONDS}s",

@@ -17,6 +17,7 @@ With LLM (pytest -m e2e): tests check full decision accuracy.
 Run (no LLM):  pytest tests/test_real_procurement_docs.py
 Run (with LLM): LLM_BACKEND=openai pytest tests/test_real_procurement_docs.py -m e2e
 """
+
 from __future__ import annotations
 
 import base64
@@ -238,6 +239,7 @@ class TestRealDocumentRulesEngine:
 
     def test_eek_tz_missing_delivery_address(self):
         import re
+
         has_address = bool(re.search(r"(ул[.]|место поставки)", EEK_TZ_2024_TEXT))
         assert not has_address
 
@@ -284,7 +286,10 @@ class TestRealDocumentE2E:
         d = _wait_for_job(job_id, max_wait=120)
         assert d["status"] == "success"
         result_str = json.dumps(d.get("result", {}), ensure_ascii=False).lower()
-        assert any(kw in result_str for kw in ["место поставки", "адрес", "address", "delivery", "section 5"])
+        assert any(
+            kw in result_str
+            for kw in ["место поставки", "адрес", "address", "delivery", "section 5"]
+        )
 
     def test_rbank_tz_flags_multiple_missing_sections(self):
         job_id = _submit_job(

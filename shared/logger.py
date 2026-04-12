@@ -32,8 +32,7 @@ def setup_logger(name: str) -> logging.Logger:
         logger.addHandler(fh)
     except (PermissionError, OSError) as exc:
         warnings.warn(
-            f"[logger] Cannot write log file for '{name}': {exc}. "
-            "Falling back to stdout only.",
+            f"[logger] Cannot write log file for '{name}': {exc}. Falling back to stdout only.",
             stacklevel=2,
         )
 

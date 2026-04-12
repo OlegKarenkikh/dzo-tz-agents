@@ -58,45 +58,57 @@ class TestGithubModelsApiKeyPriority:
 
     def test_github_token_takes_priority_over_openai_api_key(self, monkeypatch):
         """GITHUB_TOKEN имеет приоритет над OPENAI_API_KEY для github_models."""
-        kwargs = self._build_with_env(monkeypatch, {
-            "LLM_BACKEND": "github_models",
-            "OPENAI_API_KEY": "sk-different-key",  # чужой ключ — должен быть проигнорирован
-            "GITHUB_TOKEN": "ghu_github_token",
-            "GH_TOKEN": None,
-        })
+        kwargs = self._build_with_env(
+            monkeypatch,
+            {
+                "LLM_BACKEND": "github_models",
+                "OPENAI_API_KEY": "sk-different-key",  # чужой ключ — должен быть проигнорирован
+                "GITHUB_TOKEN": "ghu_github_token",
+                "GH_TOKEN": None,
+            },
+        )
         assert kwargs.get("api_key") == "ghu_github_token"
         assert kwargs.get("base_url") == "https://models.github.ai/inference"
 
     def test_openai_api_key_used_when_github_token_absent(self, monkeypatch):
         """Если GITHUB_TOKEN не задан — используется OPENAI_API_KEY как fallback."""
-        kwargs = self._build_with_env(monkeypatch, {
-            "LLM_BACKEND": "github_models",
-            "OPENAI_API_KEY": "ghp_explicit_pat",
-            "GITHUB_TOKEN": None,
-            "GH_TOKEN": None,
-        })
+        kwargs = self._build_with_env(
+            monkeypatch,
+            {
+                "LLM_BACKEND": "github_models",
+                "OPENAI_API_KEY": "ghp_explicit_pat",
+                "GITHUB_TOKEN": None,
+                "GH_TOKEN": None,
+            },
+        )
         assert kwargs.get("api_key") == "ghp_explicit_pat"
         assert kwargs.get("base_url") == "https://models.github.ai/inference"
 
     def test_github_token_used_when_set(self, monkeypatch):
         """GITHUB_TOKEN используется когда задан."""
-        kwargs = self._build_with_env(monkeypatch, {
-            "LLM_BACKEND": "github_models",
-            "OPENAI_API_KEY": None,
-            "GITHUB_TOKEN": "ghs_session_token",
-            "GH_TOKEN": None,
-        })
+        kwargs = self._build_with_env(
+            monkeypatch,
+            {
+                "LLM_BACKEND": "github_models",
+                "OPENAI_API_KEY": None,
+                "GITHUB_TOKEN": "ghs_session_token",
+                "GH_TOKEN": None,
+            },
+        )
         assert kwargs.get("api_key") == "ghs_session_token"
         assert kwargs.get("base_url") == "https://models.github.ai/inference"
 
     def test_gh_token_used_as_fallback(self, monkeypatch):
         """Если OPENAI_API_KEY и GITHUB_TOKEN не заданы — используется GH_TOKEN."""
-        kwargs = self._build_with_env(monkeypatch, {
-            "LLM_BACKEND": "github_models",
-            "OPENAI_API_KEY": None,
-            "GITHUB_TOKEN": None,
-            "GH_TOKEN": "ghs_gh_token",
-        })
+        kwargs = self._build_with_env(
+            monkeypatch,
+            {
+                "LLM_BACKEND": "github_models",
+                "OPENAI_API_KEY": None,
+                "GITHUB_TOKEN": None,
+                "GH_TOKEN": "ghs_gh_token",
+            },
+        )
         assert kwargs.get("api_key") == "ghs_gh_token"
 
     def test_no_token_raises_value_error(self, monkeypatch):
@@ -125,24 +137,30 @@ class TestGithubModelsApiKeyPriority:
     def test_endpoint_always_github_models(self, monkeypatch):
         """При github_models endpoint всегда https://models.github.ai/inference,
         даже если задан OPENAI_API_BASE."""
-        kwargs = self._build_with_env(monkeypatch, {
-            "LLM_BACKEND": "github_models",
-            "OPENAI_API_KEY": "ghp_pat",
-            "OPENAI_API_BASE": "http://custom.endpoint/v1",
-            "GITHUB_TOKEN": None,
-            "GH_TOKEN": None,
-        })
+        kwargs = self._build_with_env(
+            monkeypatch,
+            {
+                "LLM_BACKEND": "github_models",
+                "OPENAI_API_KEY": "ghp_pat",
+                "OPENAI_API_BASE": "http://custom.endpoint/v1",
+                "GITHUB_TOKEN": None,
+                "GH_TOKEN": None,
+            },
+        )
         assert kwargs.get("base_url") == "https://models.github.ai/inference"
 
     def test_openai_backend_uses_openai_api_key(self, monkeypatch):
         """Обычный openai-бэкенд использует OPENAI_API_KEY."""
-        kwargs = self._build_with_env(monkeypatch, {
-            "LLM_BACKEND": "openai",
-            "OPENAI_API_KEY": "sk-regular",
-            "OPENAI_API_BASE": None,
-            "GITHUB_TOKEN": None,
-            "GH_TOKEN": None,
-        })
+        kwargs = self._build_with_env(
+            monkeypatch,
+            {
+                "LLM_BACKEND": "openai",
+                "OPENAI_API_KEY": "sk-regular",
+                "OPENAI_API_BASE": None,
+                "GITHUB_TOKEN": None,
+                "GH_TOKEN": None,
+            },
+        )
         assert kwargs.get("api_key") == "sk-regular"
         assert kwargs.get("base_url") is None
 
@@ -159,33 +177,44 @@ class TestBuildFallbackChain:
         with patch("dotenv.load_dotenv"):
             import config
             import shared.llm as llm_module
+
             importlib.reload(config)
             importlib.reload(llm_module)
         return llm_module
 
     def test_github_models_delegates_to_github_chain(self, monkeypatch):
         """github_models бэкенд использует build_github_fallback_chain."""
-        llm_mod = self._reload_with_env(monkeypatch, {
-            "LLM_BACKEND": "github_models",
-            "OPENAI_API_KEY": "test-key",
-            "GITHUB_TOKEN": None,
-            "GH_TOKEN": None,
-            "FALLBACK_MODELS": "",
-        })
-        with patch.object(llm_mod, "build_github_fallback_chain", return_value=["gpt-4o", "gpt-4o-mini"]) as mock_gh:
+        llm_mod = self._reload_with_env(
+            monkeypatch,
+            {
+                "LLM_BACKEND": "github_models",
+                "OPENAI_API_KEY": "test-key",
+                "GITHUB_TOKEN": None,
+                "GH_TOKEN": None,
+                "FALLBACK_MODELS": "",
+            },
+        )
+        with patch.object(
+            llm_mod, "build_github_fallback_chain", return_value=["gpt-4o", "gpt-4o-mini"]
+        ) as mock_gh:
             chain = llm_mod.build_fallback_chain("gpt-4o")
             mock_gh.assert_called_once_with("test-key", "gpt-4o")
             assert chain == ["gpt-4o", "gpt-4o-mini"]
 
     def test_ollama_discovers_local_models(self, monkeypatch):
         """ollama бэкенд обнаруживает модели через API."""
-        llm_mod = self._reload_with_env(monkeypatch, {
-            "LLM_BACKEND": "ollama",
-            "OPENAI_API_KEY": None,
-            "OPENAI_API_BASE": "http://localhost:11434/v1",
-            "FALLBACK_MODELS": "",
-        })
-        with patch.object(llm_mod, "fetch_local_models", return_value=["qwen2.5", "llama3.1", "mistral"]):
+        llm_mod = self._reload_with_env(
+            monkeypatch,
+            {
+                "LLM_BACKEND": "ollama",
+                "OPENAI_API_KEY": None,
+                "OPENAI_API_BASE": "http://localhost:11434/v1",
+                "FALLBACK_MODELS": "",
+            },
+        )
+        with patch.object(
+            llm_mod, "fetch_local_models", return_value=["qwen2.5", "llama3.1", "mistral"]
+        ):
             chain = llm_mod.build_fallback_chain("qwen2.5")
             assert chain[0] == "qwen2.5"
             assert "llama3.1" in chain
@@ -193,12 +222,15 @@ class TestBuildFallbackChain:
 
     def test_ollama_explicit_fallback_models_first(self, monkeypatch):
         """FALLBACK_MODELS задан — автообнаружение пропускается, используются только явные модели."""
-        llm_mod = self._reload_with_env(monkeypatch, {
-            "LLM_BACKEND": "ollama",
-            "OPENAI_API_KEY": None,
-            "OPENAI_API_BASE": "http://localhost:11434/v1",
-            "FALLBACK_MODELS": "mistral,codellama",
-        })
+        llm_mod = self._reload_with_env(
+            monkeypatch,
+            {
+                "LLM_BACKEND": "ollama",
+                "OPENAI_API_KEY": None,
+                "OPENAI_API_BASE": "http://localhost:11434/v1",
+                "FALLBACK_MODELS": "mistral,codellama",
+            },
+        )
         with patch.object(llm_mod, "fetch_local_models") as mock_fetch:
             chain = llm_mod.build_fallback_chain("qwen2.5")
             mock_fetch.assert_not_called()
@@ -209,45 +241,59 @@ class TestBuildFallbackChain:
 
     def test_openai_no_fallback_single_model(self, monkeypatch):
         """openai без FALLBACK_MODELS — одна модель."""
-        llm_mod = self._reload_with_env(monkeypatch, {
-            "LLM_BACKEND": "openai",
-            "OPENAI_API_KEY": "sk-test",
-            "FALLBACK_MODELS": "",
-        })
+        llm_mod = self._reload_with_env(
+            monkeypatch,
+            {
+                "LLM_BACKEND": "openai",
+                "OPENAI_API_KEY": "sk-test",
+                "FALLBACK_MODELS": "",
+            },
+        )
         chain = llm_mod.build_fallback_chain("gpt-4o")
         assert chain == ["gpt-4o"]
 
     def test_openai_with_explicit_fallback(self, monkeypatch):
         """openai с FALLBACK_MODELS — несколько моделей."""
-        llm_mod = self._reload_with_env(monkeypatch, {
-            "LLM_BACKEND": "openai",
-            "OPENAI_API_KEY": "sk-test",
-            "FALLBACK_MODELS": "gpt-4o-mini,gpt-3.5-turbo",
-        })
+        llm_mod = self._reload_with_env(
+            monkeypatch,
+            {
+                "LLM_BACKEND": "openai",
+                "OPENAI_API_KEY": "sk-test",
+                "FALLBACK_MODELS": "gpt-4o-mini,gpt-3.5-turbo",
+            },
+        )
         chain = llm_mod.build_fallback_chain("gpt-4o")
         assert chain == ["gpt-4o", "gpt-4o-mini", "gpt-3.5-turbo"]
 
     def test_primary_not_duplicated(self, monkeypatch):
         """Основная модель не дублируется если она есть и в FALLBACK_MODELS."""
-        llm_mod = self._reload_with_env(monkeypatch, {
-            "LLM_BACKEND": "openai",
-            "OPENAI_API_KEY": "sk-test",
-            "FALLBACK_MODELS": "gpt-4o,gpt-4o-mini",
-        })
+        llm_mod = self._reload_with_env(
+            monkeypatch,
+            {
+                "LLM_BACKEND": "openai",
+                "OPENAI_API_KEY": "sk-test",
+                "FALLBACK_MODELS": "gpt-4o,gpt-4o-mini",
+            },
+        )
         chain = llm_mod.build_fallback_chain("gpt-4o")
         assert chain.count("gpt-4o") == 1
 
     def test_github_models_not_needed_sentinel_falls_back_to_github_token(self, monkeypatch):
         """OPENAI_API_KEY='not-needed' sentinel должен игнорироваться для github_models,
         и API-ключ должен браться из GITHUB_TOKEN."""
-        llm_mod = self._reload_with_env(monkeypatch, {
-            "LLM_BACKEND": "github_models",
-            "OPENAI_API_KEY": "not-needed",
-            "GITHUB_TOKEN": "ghs_real_token",
-            "GH_TOKEN": None,
-            "FALLBACK_MODELS": "",
-        })
-        with patch.object(llm_mod, "build_github_fallback_chain", return_value=["gpt-4o"]) as mock_gh:
+        llm_mod = self._reload_with_env(
+            monkeypatch,
+            {
+                "LLM_BACKEND": "github_models",
+                "OPENAI_API_KEY": "not-needed",
+                "GITHUB_TOKEN": "ghs_real_token",
+                "GH_TOKEN": None,
+                "FALLBACK_MODELS": "",
+            },
+        )
+        with patch.object(
+            llm_mod, "build_github_fallback_chain", return_value=["gpt-4o"]
+        ) as mock_gh:
             llm_mod.build_fallback_chain("gpt-4o")
             # Sentinel must NOT be forwarded; real GITHUB_TOKEN must be used.
             mock_gh.assert_called_once_with("ghs_real_token", "gpt-4o")
@@ -294,6 +340,7 @@ class TestBuildLlmLocalBackend:
         with patch("dotenv.load_dotenv"):
             import config
             import shared.llm as llm_module
+
             importlib.reload(config)
             importlib.reload(llm_module)
 
@@ -310,69 +357,87 @@ class TestBuildLlmLocalBackend:
 
     def test_ollama_uses_default_base_url(self, monkeypatch):
         """Ollama без OPENAI_API_BASE использует localhost:11434."""
-        kwargs = self._build_with_env(monkeypatch, {
-            "LLM_BACKEND": "ollama",
-            "OPENAI_API_KEY": None,
-            "OPENAI_API_BASE": None,
-            "MODEL_NAME": "qwen2.5",
-            "FALLBACK_MODELS": "",
-        })
+        kwargs = self._build_with_env(
+            monkeypatch,
+            {
+                "LLM_BACKEND": "ollama",
+                "OPENAI_API_KEY": None,
+                "OPENAI_API_BASE": None,
+                "MODEL_NAME": "qwen2.5",
+                "FALLBACK_MODELS": "",
+            },
+        )
         assert kwargs.get("base_url") == "http://localhost:11434/v1"
         assert kwargs.get("max_retries") == 0
 
     def test_vllm_uses_default_base_url(self, monkeypatch):
         """vLLM без OPENAI_API_BASE использует localhost:8000."""
-        kwargs = self._build_with_env(monkeypatch, {
-            "LLM_BACKEND": "vllm",
-            "OPENAI_API_KEY": None,
-            "OPENAI_API_BASE": None,
-            "MODEL_NAME": "Qwen/Qwen2.5-72B-Instruct",
-            "FALLBACK_MODELS": "",
-        })
+        kwargs = self._build_with_env(
+            monkeypatch,
+            {
+                "LLM_BACKEND": "vllm",
+                "OPENAI_API_KEY": None,
+                "OPENAI_API_BASE": None,
+                "MODEL_NAME": "Qwen/Qwen2.5-72B-Instruct",
+                "FALLBACK_MODELS": "",
+            },
+        )
         assert kwargs.get("base_url") == "http://localhost:8000/v1"
         assert kwargs.get("max_retries") == 0
 
     def test_lmstudio_uses_default_base_url(self, monkeypatch):
         """LM Studio без OPENAI_API_BASE использует localhost:1234."""
-        kwargs = self._build_with_env(monkeypatch, {
-            "LLM_BACKEND": "lmstudio",
-            "OPENAI_API_KEY": None,
-            "OPENAI_API_BASE": None,
-            "MODEL_NAME": "local-model",
-            "FALLBACK_MODELS": "",
-        })
+        kwargs = self._build_with_env(
+            monkeypatch,
+            {
+                "LLM_BACKEND": "lmstudio",
+                "OPENAI_API_KEY": None,
+                "OPENAI_API_BASE": None,
+                "MODEL_NAME": "local-model",
+                "FALLBACK_MODELS": "",
+            },
+        )
         assert kwargs.get("base_url") == "http://localhost:1234/v1"
         assert kwargs.get("max_retries") == 0
 
     def test_ollama_custom_base_url(self, monkeypatch):
         """Ollama с OPENAI_API_BASE использует кастомный URL."""
-        kwargs = self._build_with_env(monkeypatch, {
-            "LLM_BACKEND": "ollama",
-            "OPENAI_API_KEY": None,
-            "OPENAI_API_BASE": "http://gpu-server:11434/v1",
-            "MODEL_NAME": "qwen2.5",
-            "FALLBACK_MODELS": "",
-        })
+        kwargs = self._build_with_env(
+            monkeypatch,
+            {
+                "LLM_BACKEND": "ollama",
+                "OPENAI_API_KEY": None,
+                "OPENAI_API_BASE": "http://gpu-server:11434/v1",
+                "MODEL_NAME": "qwen2.5",
+                "FALLBACK_MODELS": "",
+            },
+        )
         assert kwargs.get("base_url") == "http://gpu-server:11434/v1"
 
     def test_openai_with_fallback_disables_retries(self, monkeypatch):
         """OpenAI с FALLBACK_MODELS отключает SDK ретрай."""
-        kwargs = self._build_with_env(monkeypatch, {
-            "LLM_BACKEND": "openai",
-            "OPENAI_API_KEY": "sk-test",
-            "OPENAI_API_BASE": None,
-            "FALLBACK_MODELS": "gpt-4o-mini",
-        })
+        kwargs = self._build_with_env(
+            monkeypatch,
+            {
+                "LLM_BACKEND": "openai",
+                "OPENAI_API_KEY": "sk-test",
+                "OPENAI_API_BASE": None,
+                "FALLBACK_MODELS": "gpt-4o-mini",
+            },
+        )
         assert kwargs.get("max_retries") == 0
 
     def test_openai_without_fallback_has_retries(self, monkeypatch):
         """OpenAI без FALLBACK_MODELS сохраняет SDK ретрай."""
-        kwargs = self._build_with_env(monkeypatch, {
-            "LLM_BACKEND": "openai",
-            "OPENAI_API_KEY": "sk-test",
-            "OPENAI_API_BASE": None,
-            "FALLBACK_MODELS": "",
-        })
+        kwargs = self._build_with_env(
+            monkeypatch,
+            {
+                "LLM_BACKEND": "openai",
+                "OPENAI_API_KEY": "sk-test",
+                "OPENAI_API_BASE": None,
+                "FALLBACK_MODELS": "",
+            },
+        )
         assert kwargs.get("max_retries") == 2
 
 

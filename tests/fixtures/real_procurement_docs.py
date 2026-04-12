@@ -14,6 +14,7 @@ Expected expert decisions (without LLM — rules-engine only):
   RBANK_TZ_2021  → ВЕРНУТЬ НА ДОРАБОТКУ  (нет цели, места поставки, нормативов)
   DZO_APPLICATION → ВЕРНУТЬ НА ДОРАБОТКУ  (критично: банковская гарантия не приложена)
 """
+
 from __future__ import annotations
 
 # ── Document 1: ЕЭК ТЗ на закупку лицензий ПО ИИС ЕАЭС (2024) ───────────────
@@ -56,8 +57,8 @@ EEK_TZ_2024_EXPECTED = {
     "has_quantities": True,
     "has_delivery_term": True,
     "has_regulatory_reference": True,
-    "has_delivery_address": False,   # <<< KNOWN GAP — missing physical address
-    "has_evaluation_criteria": False, # criteria in separate section IV
+    "has_delivery_address": False,  # <<< KNOWN GAP — missing physical address
+    "has_evaluation_criteria": False,  # criteria in separate section IV
     "expert_score_pct": 87.5,
     "expert_decision": "ПРИНЯТЬ С ЗАМЕЧАНИЕМ",
     "rules_engine_decision": "ВЕРНУТЬ НА ДОРАБОТКУ",  # agent uses stricter threshold (85%)
@@ -89,13 +90,13 @@ RBANK_TZ_2021 = """
 """
 
 RBANK_TZ_2021_EXPECTED = {
-    "has_goal": False,           # No explicit "Цель закупки" section
-    "has_requirements": True,    # Detailed hardware specs present
-    "has_quantities": True,      # 35 + 5 units
-    "has_delivery_term": True,   # 10 days after signing
+    "has_goal": False,  # No explicit "Цель закупки" section
+    "has_requirements": True,  # Detailed hardware specs present
+    "has_quantities": True,  # 35 + 5 units
+    "has_delivery_term": True,  # 10 days after signing
     "has_regulatory_reference": False,  # No GOST/TR references
-    "has_delivery_address": False,      # Bank address not specified
-    "has_evaluation_criteria": False,   # No supplier evaluation section
+    "has_delivery_address": False,  # Bank address not specified
+    "has_evaluation_criteria": False,  # No supplier evaluation section
     "expert_score_pct": 56.0,
     "expert_decision": "ВЕРНУТЬ НА ДОРАБОТКУ",
     "rules_engine_decision": "ПРИНЯТЬ",  # FALSE POSITIVE — keyword matching limitation
@@ -137,11 +138,11 @@ DZO_APPLICATION = """
 """
 
 DZO_APPLICATION_EXPECTED = {
-    "has_company_details": True,     # ООО, ИНН, КПП, адрес, контакт
-    "has_subject": True,             # АИС УДЗ, стек, срок
-    "has_price": True,               # 8 500 000 + НДС детализированы
-    "has_qualifications": True,      # ФСТЭК, 12 проектов, штат
-    "has_attachments_list": True,    # Устав, ЕГРЮЛ, справки
+    "has_company_details": True,  # ООО, ИНН, КПП, адрес, контакт
+    "has_subject": True,  # АИС УДЗ, стек, срок
+    "has_price": True,  # 8 500 000 + НДС детализированы
+    "has_qualifications": True,  # ФСТЭК, 12 проектов, штат
+    "has_attachments_list": True,  # Устав, ЕГРЮЛ, справки
     "bank_guarantee_attached": False,  # <<< CRITICAL — explicitly NOT attached
     "expert_score_pct": 80.0,
     "expert_decision": "ВЕРНУТЬ НА ДОРАБОТКУ",

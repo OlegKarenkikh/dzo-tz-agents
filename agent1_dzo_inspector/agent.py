@@ -96,7 +96,7 @@ def create_dzo_agent(model_name: str | None = None) -> AgentRunner:
         generate_response_email,
         generate_corrected_application,
     ]
-    logger.info("Создание агента ДЗО (модель=%s)", getattr(llm, 'model_name', '?'))
+    logger.info("Создание агента ДЗО (модель=%s)", getattr(llm, "model_name", "?"))
 
     # langgraph >= 0.2: create_react_agent(model, tools, prompt=system_str)
     graph_agent = create_react_agent(
