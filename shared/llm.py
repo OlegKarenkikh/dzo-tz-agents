@@ -371,6 +371,18 @@ def build_llm(temperature: float = 0.2, model_name_override: str | None = None) 
         base_url = resolve_local_base_url()
         max_retries = 0
         max_tokens_out = 8192
+    elif LLM_BACKEND == "qwen_proxy":
+        # Собственный Qwen прокси (https://qwen-proxy-bdt6.onrender.com)
+        # OpenAI-совместимый, поддерживает tool calling, модели: qwen3-32b, qwen-coder
+        _QWEN_PROXY_BASE = "https://qwen-proxy-bdt6.onrender.com/v1"
+        api_key = OPENAI_API_KEY
+        if not api_key:
+            raise ValueError(
+                "Для LLM_BACKEND='qwen_proxy' необходимо задать OPENAI_API_KEY."
+            )
+        base_url = (OPENAI_API_BASE or _QWEN_PROXY_BASE).rstrip("/")
+        max_retries = 0
+        max_tokens_out = 8192
     else:
         effective_key = effective_openai_key()
         if LLM_BACKEND == "openai" and not effective_key:

@@ -3,9 +3,11 @@ import sys
 import types
 from unittest.mock import MagicMock
 
-os.environ["OPENAI_API_KEY"] = "sk-test"
-os.environ["API_KEY"] = "test-secret"
-os.environ["LLM_BACKEND"] = "openai"
+# Always default to a deterministic dummy key; integration tests must supply the real key
+# explicitly via CLI env vars (e.g. OPENAI_API_KEY=real_key pytest -m integration).
+os.environ.setdefault("OPENAI_API_KEY", "sk-test")
+os.environ.setdefault("API_KEY", "test-secret")
+os.environ.setdefault("LLM_BACKEND", "openai")
 
 
 def _make_fake_graph() -> MagicMock:
