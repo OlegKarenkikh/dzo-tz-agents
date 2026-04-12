@@ -149,6 +149,7 @@ def _wait_for_job(job_id: str, max_wait: int = 30) -> dict:
     raise TimeoutError(f"Job {job_id} did not complete in {max_wait}s")
 
 
+@pytest.mark.integration
 class TestRealDocumentPipeline:
     def test_eek_tz_pipeline_accepted(self):
         job_id = _submit_job(
