@@ -54,7 +54,7 @@ jobs:
 
       - name: Start API server
         run: |
-          uvicorn app.main:app --host 0.0.0.0 --port 8000 &
+          uvicorn api.app:app --host 0.0.0.0 --port 8000 > /tmp/uvicorn.log 2>&1 &
           echo $! > /tmp/uvicorn.pid
         env:
           LLM_BACKEND: "stub"
@@ -62,15 +62,17 @@ jobs:
 
       - name: Wait for API server to be ready
         run: |
-          for i in $(seq 1 15); do
-            if curl -sf http://localhost:8000/api/v1/health > /dev/null 2>&1; then
+          for i in $(seq 1 20); do
+            if curl -sf http://localhost:8000/health > /dev/null 2>&1; then
               echo "Server is up after ${i}s"
               exit 0
             fi
             echo "Waiting... (${i}s)"
             sleep 1
           done
-          echo "ERROR: Server did not start in 15s" && exit 1
+          echo "=== uvicorn startup log ==="
+          cat /tmp/uvicorn.log
+          echo "ERROR: Server did not start in 20s" && exit 1
 
       - name: Run tests
         run: pytest tests/ -v --tb=short --cov=. --cov-report=xml --cov-report=term-missing
@@ -80,7 +82,10 @@ jobs:
 
       - name: Stop API server
         if: always()
-        run: kill $(cat /tmp/uvicorn.pid) 2>/dev/null || true
+        run: |
+          echo "=== uvicorn log ==="
+          cat /tmp/uvicorn.log || true
+          kill $(cat /tmp/uvicorn.pid) 2>/dev/null || true
 
       - name: Upload coverage
         if: matrix.python-version == '3.11'
