@@ -2,14 +2,13 @@
 Интеграционные тесты LLM через собственный Qwen прокси.
 
 Сервис: https://qwen-proxy-bdt6.onrender.com
-Ключ:   qwen32masterkey
 Модели: qwen3-32b, qwen-coder
 
 Запуск (unit, без API):
   pytest tests/test_qwen_proxy_integration.py -v
 
 Запуск (интеграционные — реальные вызовы):
-  OPENAI_API_KEY=qwen32masterkey OPENAI_API_BASE=https://qwen-proxy-bdt6.onrender.com \
+  OPENAI_API_KEY=<your_key> OPENAI_API_BASE=https://qwen-proxy-bdt6.onrender.com \
   LLM_BACKEND=qwen_proxy MODEL_NAME=qwen3-32b \
   pytest tests/test_qwen_proxy_integration.py -v -m integration
 """
@@ -22,7 +21,6 @@ import httpx
 import pytest
 
 QWEN_PROXY_BASE = "https://qwen-proxy-bdt6.onrender.com"
-QWEN_PROXY_KEY = "qwen32masterkey"
 QWEN_DEFAULT_MODEL = "qwen3-32b"
 QWEN_CODER_MODEL = "qwen-coder"
 
@@ -63,9 +61,11 @@ GROUND_TRUTH = {
 
 
 @pytest.fixture
-def qwen_cfg():
+def qwen_cfg(request):
+    api_key = os.environ.get("OPENAI_API_KEY", "")
+    if not api_key or api_key.startswith("sk-test"):
+        pytest.skip("OPENAI_API_KEY not set — skipping integration test (pass a real key via env)")
     raw_base = os.environ.get("OPENAI_API_BASE", QWEN_PROXY_BASE)
-    api_key = os.environ.get("OPENAI_API_KEY", QWEN_PROXY_KEY)
     # Нормализуем: убираем /v1 — _chat добавит сам
     base = raw_base.rstrip("/")
     if base.endswith("/v1"):
@@ -122,16 +122,16 @@ class TestQwenProxyConfig:
     def test_qwen_proxy_valid_backend(self, monkeypatch):
         kwargs = self._build(monkeypatch, {
             "LLM_BACKEND": "qwen_proxy",
-            "OPENAI_API_KEY": "qwen32masterkey",
+            "OPENAI_API_KEY": "test-api-key",
             "OPENAI_API_BASE": None,
         })
         assert kwargs.get("base_url") == "https://qwen-proxy-bdt6.onrender.com/v1"
-        assert kwargs.get("api_key") == "qwen32masterkey"
+        assert kwargs.get("api_key") == "test-api-key"
 
     def test_qwen_proxy_custom_base_url(self, monkeypatch):
         kwargs = self._build(monkeypatch, {
             "LLM_BACKEND": "qwen_proxy",
-            "OPENAI_API_KEY": "qwen32masterkey",
+            "OPENAI_API_KEY": "test-api-key",
             "OPENAI_API_BASE": "https://custom.local/v1",
         })
         assert kwargs.get("base_url") == "https://custom.local/v1"
@@ -150,7 +150,7 @@ class TestQwenProxyConfig:
     def test_qwen_proxy_zero_retries(self, monkeypatch):
         kwargs = self._build(monkeypatch, {
             "LLM_BACKEND": "qwen_proxy",
-            "OPENAI_API_KEY": "qwen32masterkey",
+            "OPENAI_API_KEY": "test-api-key",
             "OPENAI_API_BASE": None,
         })
         assert kwargs.get("max_retries") == 0
@@ -158,7 +158,7 @@ class TestQwenProxyConfig:
     def test_qwen_coder_model(self, monkeypatch):
         kwargs = self._build(monkeypatch, {
             "LLM_BACKEND": "qwen_proxy",
-            "OPENAI_API_KEY": "qwen32masterkey",
+            "OPENAI_API_KEY": "test-api-key",
             "OPENAI_API_BASE": None,
             "MODEL_NAME": "qwen-coder",
         })
@@ -326,8 +326,15 @@ class TestQwenProxyToolCalling:
 @pytest.mark.integration
 class TestQwenProxyLangChain:
     def test_langchain_chat(self, qwen_cfg):
-        from langchain_openai import ChatOpenAI
-        from langchain_core.messages import HumanMessage, SystemMessage
+        import sys
+
+        # Remove the conftest stub so the real langchain_openai package is imported.
+        sys.modules.pop("langchain_openai", None)
+        try:
+            from langchain_openai import ChatOpenAI
+            from langchain_core.messages import HumanMessage, SystemMessage
+        except ImportError:
+            pytest.skip("langchain-openai package not installed")
         llm = ChatOpenAI(
             model=qwen_cfg["model"],
             api_key=qwen_cfg["api_key"],

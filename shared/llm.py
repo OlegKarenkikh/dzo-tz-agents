@@ -378,9 +378,9 @@ def build_llm(temperature: float = 0.2, model_name_override: str | None = None) 
         api_key = OPENAI_API_KEY
         if not api_key:
             raise ValueError(
-                "Для LLM_BACKEND='qwen_proxy' необходимо задать OPENAI_API_KEY=qwen32masterkey."
+                "Для LLM_BACKEND='qwen_proxy' необходимо задать OPENAI_API_KEY."
             )
-        base_url = OPENAI_API_BASE or _QWEN_PROXY_BASE
+        base_url = (OPENAI_API_BASE or _QWEN_PROXY_BASE).rstrip("/")
         max_retries = 0
         max_tokens_out = 8192
     else:
