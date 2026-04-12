@@ -52,8 +52,46 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[ui,dev]"
 
+      - name: Start API server
+        run: |
+          uvicorn api.app:app --host 0.0.0.0 --port 8000 > /tmp/uvicorn.log 2>&1 &
+          echo $! > /tmp/uvicorn.pid
+        env:
+          LLM_BACKEND: "qwen_proxy"
+          OPENAI_API_KEY: "qwen32masterkey"
+          OPENAI_API_BASE: "https://qwen-proxy-bdt6.onrender.com"
+          MODEL_NAME: "qwen-coder"
+
+      - name: Wait for API server to be ready
+        run: |
+          for i in $(seq 1 20); do
+            if curl -sf http://localhost:8000/health > /dev/null 2>&1; then
+              echo "Server is up after ${i}s"
+              exit 0
+            fi
+            echo "Waiting... (${i}s)"
+            sleep 1
+          done
+          echo "=== uvicorn startup log ==="
+          cat /tmp/uvicorn.log
+          echo "ERROR: Server did not start in 20s" && exit 1
+
       - name: Run tests
         run: pytest tests/ -v --tb=short --cov=. --cov-report=xml --cov-report=term-missing
+        env:
+          TEST_API_BASE: "http://localhost:8000"
+          TEST_API_KEY: "sandbox-test-api-key-12345"
+          LLM_BACKEND: "qwen_proxy"
+          OPENAI_API_KEY: "qwen32masterkey"
+          OPENAI_API_BASE: "https://qwen-proxy-bdt6.onrender.com"
+          MODEL_NAME: "qwen-coder"
+
+      - name: Stop API server
+        if: always()
+        run: |
+          echo "=== uvicorn log ==="
+          cat /tmp/uvicorn.log || true
+          kill $(cat /tmp/uvicorn.pid) 2>/dev/null || true
 
       - name: Upload coverage
         if: matrix.python-version == '3.11'

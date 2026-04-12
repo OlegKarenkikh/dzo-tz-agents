@@ -149,6 +149,17 @@ def _wait_for_job(job_id: str, max_wait: int = 30) -> dict:
     raise TimeoutError(f"Job {job_id} did not complete in {max_wait}s")
 
 
+_server_available = False
+try:
+    import socket as _s
+    _c = _s.create_connection(("localhost", 8000), timeout=1)
+    _c.close()
+    _server_available = True
+except OSError:
+    pass
+
+@pytest.mark.integration
+@pytest.mark.skipif(not _server_available, reason="API server not running on localhost:8000")
 class TestRealDocumentPipeline:
     def test_eek_tz_pipeline_accepted(self):
         job_id = _submit_job(
@@ -271,7 +282,7 @@ class TestRealDocumentRulesEngine:
 
 
 @pytest.mark.e2e
-@pytest.mark.skipif(not os.getenv("LLM_BACKEND"), reason="LLM_BACKEND not set")
+@pytest.mark.skipif(not os.getenv("LLM_BACKEND") or not _server_available, reason="LLM_BACKEND not set or server not running")
 class TestRealDocumentE2E:
     def test_eek_tz_flags_missing_delivery_address(self):
         job_id = _submit_job(
