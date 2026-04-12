@@ -57,9 +57,10 @@ jobs:
           uvicorn api.app:app --host 0.0.0.0 --port 8000 > /tmp/uvicorn.log 2>&1 &
           echo $! > /tmp/uvicorn.pid
         env:
-          LLM_BACKEND: "openai"
-          OPENAI_API_KEY: "sandbox-ci-dummy-key"
-          MODEL_NAME: "gpt-4o"
+          LLM_BACKEND: "qwen_proxy"
+          OPENAI_API_KEY: "qwen32masterkey"
+          OPENAI_API_BASE: "https://qwen-proxy-bdt6.onrender.com"
+          MODEL_NAME: "qwen-coder"
 
       - name: Wait for API server to be ready
         run: |
@@ -80,9 +81,10 @@ jobs:
         env:
           TEST_API_BASE: "http://localhost:8000"
           TEST_API_KEY: "sandbox-test-api-key-12345"
-          LLM_BACKEND: "openai"
-          OPENAI_API_KEY: "sandbox-ci-dummy-key"
-          MODEL_NAME: "gpt-4o"
+          LLM_BACKEND: "qwen_proxy"
+          OPENAI_API_KEY: "qwen32masterkey"
+          OPENAI_API_BASE: "https://qwen-proxy-bdt6.onrender.com"
+          MODEL_NAME: "qwen-coder"
 
       - name: Stop API server
         if: always()
