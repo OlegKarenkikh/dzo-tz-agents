@@ -1,1 +1,290 @@
-aW1wb3J0IGpzb24KaW1wb3J0IHJlCmZyb20gZGF0ZXRpbWUgaW1wb3J0IFVUQ, gZGF0ZXRpbWUKCmZyb20gbGFuZ2NoYWluLnRvb2xzIGltcG9ydCB0b29sCgpmcm9tIHNoYXJlZC5hZ2VudF90b29saW5nIGltcG9ydCBpbnZva2VfYWdlbnRfYXNfdG9vbApmcm9tIHNoYXJlZC5sb2dnZXIgaW1wb3J0IHNldHVwX2xvZ2dlcgoKbG9nZ2VyID0gc2V0dXBfbG9nZ2VyKCJhZ2VudF90ZW5kZXIiKQo=
+import json
+import re
+from datetime import UTC, datetime
+
+from langchain.tools import tool
+
+from shared.agent_tooling import invoke_agent_as_tool
+from shared.logger import setup_logger
+
+logger = setup_logger("agent_tender")
+
+# --------------------------------------------------------------------------- #
+#  Вспомогательные функции парсинга                                            #
+# --------------------------------------------------------------------------- #
+
+def _parse_query(query: str, tool_name: str):
+    """Пытается распарсить query как JSON.
+
+    Возвращает:
+      - dict   — если успешно распарсен JSON
+      - None   — если строка непустая, но не является JSON
+      - {}     — если строка пустая/пробелы (обрыв из-за лимита токенов)
+    """
+    if not query or not query.strip():
+        logger.warning("⚠️ %s: пустой query (вероятно, превышен лимит токенов)", tool_name)
+        return {}
+    q = query.strip()
+    try:
+        return json.loads(q)
+    except json.JSONDecodeError:
+        pass
+    # Попытка 2: raw_decode извлекает первый валидный JSON, игнорируя хвостовой мусор.
+    try:
+        obj, _ = json.JSONDecoder().raw_decode(q)
+        if isinstance(obj, dict):
+            logger.debug(
+                "✅ %s: JSON извлечён через raw_decode (trailing-мусор обрезан)",
+                tool_name,
+            )
+            return obj
+    except json.JSONDecodeError:
+        pass
+    # Попытка 3: цитируем незакавыченные ключи
+    try:
+        fixed = re.sub(r'(?<!["\w])([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r'"\1":', q)
+        if not fixed.startswith("{"):
+            fixed = "{" + fixed + "}"
+        return json.loads(fixed)
+    except json.JSONDecodeError:
+        pass
+    logger.warning(
+        "⚠️ %s: query не является JSON (%d симв.): %s…",
+        tool_name, len(q), q[:120],
+    )
+    return None  # None = непустой, но не JSON
+
+
+# Допустимые типы документов
+_VALID_TYPES = {
+    "лицензия", "свидетельство", "копия", "оригинал", "форма",
+    "декларация", "гарантия", "выписка", "справка", "сертификат",
+    "договор", "протокол", "приказ", "устав", "иное",
+}
+
+# Стандартизированные категории (совместимы с tender-assistant)
+_VALID_CATEGORIES = {
+    "form",           # Заявки, анкеты, декларации (форма участника)
+    "certificate",    # Лицензии, свидетельства, сертификаты, допуски
+    "statement",      # Декларации, заявления, согласия
+    "extract",        # Выписки, справки (ЕГРЮЛ, ФНС, реестры)
+    "qualification",  # Подтверждение опыта, квалификации (договоры, акты)
+    "other",          # Всё остальное (гарантии, балансы, доверенности)
+}
+
+# Маппинг типов dzo -> стандартная категория
+_TYPE_TO_CATEGORY: dict[str, str] = {
+    "форма": "form",
+    "декларация": "statement",
+    "лицензия": "certificate",
+    "свидетельство": "certificate",
+    "сертификат": "certificate",
+    "выписка": "extract",
+    "справка": "extract",
+    "договор": "qualification",
+    "протокол": "qualification",
+    "копия": "qualification",
+    "оригинал": "form",
+    "гарантия": "other",
+    "приказ": "other",
+    "устав": "other",
+    "иное": "other",
+}
+
+
+def _infer_category(doc_type: str) -> str:
+    """Определяет стандартную категорию по типу документа."""
+    return _TYPE_TO_CATEGORY.get(doc_type, "other")
+
+
+
+def _normalize_document(doc: dict, idx: int) -> dict:
+    """Нормализует и дополняет запись о документе обязательными полями."""
+    name = str(doc.get("name", "")).strip()
+    if not name:
+        name = f"Документ {idx + 1}"
+
+    doc_type = str(doc.get("type", "иное")).strip().lower()
+    if doc_type not in _VALID_TYPES:
+        doc_type = "иное"
+
+    raw_mandatory = doc.get("mandatory", True)
+    if isinstance(raw_mandatory, str):
+        mandatory = raw_mandatory.lower() not in {"false", "нет", "0", "условный", "желательный"}
+    else:
+        mandatory = bool(raw_mandatory)
+
+    category = _infer_category(doc_type)
+    llm_category = str(doc.get("category", "")).strip().lower()
+    if llm_category in _VALID_CATEGORIES:
+        category = llm_category
+
+    validity = str(doc.get("validity", "Не указан")).strip() or "Не указан"
+
+    quote = str(doc.get("quote", "")).strip()
+    if not quote:
+        quote = str(doc.get("requirements", "")).strip()[:180]
+
+    raw_part = str(doc.get("application_part", "")).strip().lower()
+    application_part = raw_part if raw_part in {"qualification", "price", "other"} else "qualification"
+
+    return {
+        "id": idx + 1,
+        "name": name,
+        "type": doc_type,
+        "category": category,
+        "mandatory": mandatory,
+        "section_reference": str(doc.get("section_reference", "")).strip(),
+        "requirements": str(doc.get("requirements", "")).strip(),
+        "validity": validity,
+        "quote": quote,
+        "application_part": application_part,
+        "basis": str(doc.get("basis", "")).strip(),
+    }
+
+
+# --------------------------------------------------------------------------- #
+#  Инструменты агента                                                          #
+# --------------------------------------------------------------------------- #
+
+@tool
+def generate_document_list(query: str) -> str:
+    """
+    Генерирует структурированный JSON-список документов, требуемых от участника закупки.
+
+    ⚠️ НЕ передавай полный текст документации! Передай ТОЛЬКО результаты анализа:
+    {"procurement_subject":"Страхование ДМС",
+     "documents":[
+       {"name":"Копия лицензии ЦБ РФ на ДМС",
+        "type":"лицензия","category":"certificate","mandatory":true,
+        "section_reference":"Раздел 3.2",
+        "requirements":"Нотариально заверенная копия, действующая на дату подачи",
+        "validity":"действующая на дату подачи",
+        "quote":"Копия лицензии ЦБ РФ на ДМС — нотариально заверенная",
+        "application_part":"qualification",
+        "basis":"Прямое требование"},
+       {"name":"Свидетельство о членстве в РСС",
+        "type":"свидетельство","category":"certificate","mandatory":true,
+        "section_reference":"Раздел 2.2",
+        "requirements":"Действующее на дату подачи заявки",
+        "validity":"действующее",
+        "quote":"Участник должен состоять в Российском союзе страховщиков",
+        "application_part":"qualification",
+        "basis":"Прямое требование"}
+     ]}
+    """
+    try:
+        logger.debug("🔧 generate_document_list вызван (%d симв.)", len(query) if query else 0)
+
+        # Если сам запрос пустой/пробелы — LLM не смогла выдать результат
+        if not query or not query.strip():
+            return json.dumps(
+                {"error": "Пустой запрос инструмента (превышен лимит токенов LLM)"},
+                ensure_ascii=False,
+            )
+
+        d = _parse_query(query, "generate_document_list")
+
+        if d is None or not isinstance(d, dict):
+            logger.warning(
+                "⚠️ generate_document_list: получен не-JSON или не-dict, создаём скелет результата"
+            )
+            d = {
+                "procurement_subject": "Не определён",
+                "documents": [],
+            }
+
+        raw_docs = d.get("documents", [])
+        if not isinstance(raw_docs, list):
+            raw_docs = []
+
+        # Оставляем только dict-элементы, чтобы _normalize_document не падал на doc.get(...)
+        valid_docs = [doc for doc in raw_docs if isinstance(doc, dict)]
+        skipped_count = len(raw_docs) - len(valid_docs)
+        if skipped_count > 0:
+            logger.warning(
+                "⚠️ generate_document_list: пропущено %d не-dict документов из %d",
+                skipped_count,
+                len(raw_docs),
+            )
+
+        documents = [_normalize_document(doc, i) for i, doc in enumerate(valid_docs)]
+
+        mandatory_count = sum(1 for doc in documents if doc["mandatory"])
+        conditional_count = len(documents) - mandatory_count
+
+        result = {
+            "timestamp": datetime.now(UTC).isoformat(),
+            "procurement_subject": str(d.get("procurement_subject", "Не определён")).strip(),
+            "documents": documents,
+            "summary": {
+                "total": len(documents),
+                "mandatory": mandatory_count,
+                "conditional": conditional_count,
+            },
+        }
+        logger.info(
+            "✅ generate_document_list: список готов (%d документов, %d обязательных)",
+            len(documents), mandatory_count,
+        )
+        return json.dumps(result, ensure_ascii=False)
+    except Exception as e:
+        logger.error("❌ generate_document_list: ошибка %s", e)
+        return json.dumps({"error": str(e)}, ensure_ascii=False)
+
+
+@tool
+def invoke_peer_agent(query: str) -> str:
+    """
+    Универсальный вызов другого агента как инструмента.
+
+    Ожидает JSON:
+    {"target_agent":"dzo|tz|tender|...","query_text":"...","subject":"...","sender":"..."}
+    """
+    try:
+        d = _parse_query(query, "invoke_peer_agent")
+        if not isinstance(d, dict):
+            return json.dumps({"error": "query должен быть JSON-объектом"}, ensure_ascii=False)
+
+        target_agent = str(d.get("target_agent", "")).strip()
+        query_text = str(d.get("query_text", "")).strip()
+        if not target_agent or not query_text:
+            return json.dumps(
+                {"error": "Обязательные поля: target_agent, query_text"},
+                ensure_ascii=False,
+            )
+
+        result = invoke_agent_as_tool(
+            source_agent="tender",
+            target_agent=target_agent,
+            chat_input=query_text,
+            metadata={
+                "delegated_by": "tender",
+                "subject": str(d.get("subject", "")),
+                "sender": str(d.get("sender", "")),
+            },
+        )
+
+        return json.dumps(
+            {
+                "peerAgentResult": {
+                    "target_agent": target_agent,
+                    "output": result.get("output", ""),
+                    "observations": result.get("observations", []),
+                }
+            },
+            ensure_ascii=False,
+        )
+    except Exception as e:
+        logger.error("❌ invoke_peer_agent(tender): ошибка %s", e)
+        return json.dumps(
+            {
+                "peerAgentResult": {
+                    "target_agent": "",
+                    "output": "",
+                    "observations": [],
+                    "error": str(e),
+                }
+            },
+            ensure_ascii=False,
+        )
