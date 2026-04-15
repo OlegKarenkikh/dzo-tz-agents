@@ -61,6 +61,45 @@ class BaseAgentRunner:
                 output = getattr(last, "content", "") or ""
                 if isinstance(output, list):
                     output = "\n".join(str(x) for x in output)
+                # Fallback: some models (e.g. qwen3 via proxy) only emit
+                # tool_calls and never produce a closing text summary.
+                # 1) Walk backwards through AIMessages for non-empty content.
+                # 2) If all AIMessages are empty, build a compact summary
+                #    from ToolMessage decision/subject fields.
+                if not output:
+                    from langchain_core.messages import AIMessage, ToolMessage
+                    for msg in reversed(messages):
+                        if isinstance(msg, AIMessage):
+                            candidate = getattr(msg, "content", "") or ""
+                            if isinstance(candidate, list):
+                                candidate = "\n".join(str(x) for x in candidate)
+                            if candidate.strip():
+                                output = candidate
+                                break
+                if not output:
+                    import json as _json
+                    parts: list[str] = []
+                    for msg in messages:
+                        if not isinstance(msg, ToolMessage):
+                            continue
+                        raw = getattr(msg, "content", "") or ""
+                        try:
+                            data = _json.loads(raw) if isinstance(raw, str) else raw
+                        except Exception:
+                            data = {}
+                        if not isinstance(data, dict):
+                            continue
+                        decision = (
+                            data.get("decision")
+                            or (data.get("tzAgentAnalysis") or {}).get("overall_status")
+                        )
+                        subject = data.get("subject")
+                        if decision:
+                            parts.append(f"Решение: {decision}")
+                        if subject:
+                            parts.append(f"Тема ответа: {subject}")
+                    if parts:
+                        output = "; ".join(dict.fromkeys(parts))
 
         for msg in messages:
             if hasattr(msg, "tool_call_id"):  # ToolMessage
