@@ -62,6 +62,41 @@ _VALID_TYPES = {
     "договор", "протокол", "приказ", "устав", "иное",
 }
 
+# Стандартизированные категории (совместимы с tender-assistant)
+_VALID_CATEGORIES = {
+    "form",           # Заявки, анкеты, декларации (форма участника)
+    "certificate",    # Лицензии, свидетельства, сертификаты, допуски
+    "statement",      # Декларации, заявления, согласия
+    "extract",        # Выписки, справки (ЕГРЮЛ, ФНС, реестры)
+    "qualification",  # Подтверждение опыта, квалификации (договоры, акты)
+    "other",          # Всё остальное (гарантии, балансы, доверенности)
+}
+
+# Маппинг типов dzo -> стандартная категория
+_TYPE_TO_CATEGORY: dict[str, str] = {
+    "форма": "form",
+    "декларация": "statement",
+    "лицензия": "certificate",
+    "свидетельство": "certificate",
+    "сертификат": "certificate",
+    "выписка": "extract",
+    "справка": "extract",
+    "договор": "qualification",
+    "протокол": "qualification",
+    "копия": "qualification",
+    "оригинал": "form",
+    "гарантия": "other",
+    "приказ": "other",
+    "устав": "other",
+    "иное": "other",
+}
+
+
+def _infer_category(doc_type: str) -> str:
+    """Определяет стандартную категорию по типу документа."""
+    return _TYPE_TO_CATEGORY.get(doc_type, "other")
+
+
 
 def _normalize_document(doc: dict, idx: int) -> dict:
     """Нормализует и дополняет запись о документе обязательными полями."""
@@ -79,13 +114,31 @@ def _normalize_document(doc: dict, idx: int) -> dict:
     else:
         mandatory = bool(raw_mandatory)
 
+    category = _infer_category(doc_type)
+    llm_category = str(doc.get("category", "")).strip().lower()
+    if llm_category in _VALID_CATEGORIES:
+        category = llm_category
+
+    validity = str(doc.get("validity", "Не указан")).strip() or "Не указан"
+
+    quote = str(doc.get("quote", "")).strip()
+    if not quote:
+        quote = str(doc.get("requirements", "")).strip()[:180]
+
+    raw_part = str(doc.get("application_part", "")).strip().lower()
+    application_part = raw_part if raw_part in {"qualification", "price", "other"} else "qualification"
+
     return {
         "id": idx + 1,
         "name": name,
         "type": doc_type,
+        "category": category,
         "mandatory": mandatory,
         "section_reference": str(doc.get("section_reference", "")).strip(),
         "requirements": str(doc.get("requirements", "")).strip(),
+        "validity": validity,
+        "quote": quote,
+        "application_part": application_part,
         "basis": str(doc.get("basis", "")).strip(),
     }
 
@@ -100,18 +153,24 @@ def generate_document_list(query: str) -> str:
     Генерирует структурированный JSON-список документов, требуемых от участника закупки.
 
     ⚠️ НЕ передавай полный текст документации! Передай ТОЛЬКО результаты анализа:
-    {"procurement_subject":"Строительство объекта",
+    {"procurement_subject":"Страхование ДМС",
      "documents":[
-       {"name":"Копия лицензии на строительную деятельность",
-        "type":"лицензия","mandatory":true,
-        "section_reference":"Раздел 3.2, п. 3.2.1",
+       {"name":"Копия лицензии ЦБ РФ на ДМС",
+        "type":"лицензия","category":"certificate","mandatory":true,
+        "section_reference":"Раздел 3.2",
         "requirements":"Нотариально заверенная копия, действующая на дату подачи",
+        "validity":"действующая на дату подачи",
+        "quote":"Копия лицензии ЦБ РФ на ДМС — нотариально заверенная",
+        "application_part":"qualification",
         "basis":"Прямое требование"},
-       {"name":"Свидетельство о членстве в СРО",
-        "type":"свидетельство","mandatory":true,
-        "section_reference":"Раздел 2.5",
+       {"name":"Свидетельство о членстве в РСС",
+        "type":"свидетельство","category":"certificate","mandatory":true,
+        "section_reference":"Раздел 2.2",
         "requirements":"Действующее на дату подачи заявки",
-        "basis":"Вытекает из предмета закупки (строительные работы)"}
+        "validity":"действующее",
+        "quote":"Участник должен состоять в Российском союзе страховщиков",
+        "application_part":"qualification",
+        "basis":"Прямое требование"}
      ]}
     """
     try:
