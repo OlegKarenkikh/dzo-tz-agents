@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from api.app import _normalize_decision, _KNOWN_DECISIONS, _TECHNICAL_STATUSES
+from api.app import _normalize_decision, _KNOWN_DECISIONS, _DECISION_SYNONYMS, _TECHNICAL_STATUSES
 
 
 class TestNormalizeDecision:
@@ -83,10 +83,10 @@ class TestNormalizeDecision:
         assert technical == "Неизвестно"
 
     def test_token_limit_exhausted_with_output(self):
-        """token_limit_exhausted + output with decision → normalizes."""
+        """token_limit_exhausted + output with decision → normalizes (synonym applied)."""
         output = 'Анализ завершен.\n{"decision": "ТРЕБУЕТСЯ ДОРАБОТКА", "issues": []}'
         decision, technical = _normalize_decision("token_limit_exhausted", output)
-        assert decision == "ТРЕБУЕТСЯ ДОРАБОТКА"
+        assert decision == "ВЕРНУТЬ НА ДОРАБОТКУ"
         assert technical == "token_limit_exhausted"
 
     def test_rate_limit_exhausted_no_output(self):
@@ -116,6 +116,7 @@ class TestNormalizeDecision:
             "ЗАЯВКА ПОЛНАЯ", "ТРЕБУЕТСЯ ДОРАБОТКА", "ТРЕБУЕТСЯ ЭСКАЛАЦИЯ",
             "ДОКУМЕНТАЦИЯ ПОЛНАЯ", "КРИТИЧЕСКИЕ НАРУШЕНИЯ",
             "СБОР ЗАВЕРШЁН", "СБОР НЕ ЗАВЕРШЁН", "ТРЕБУЕТСЯ ПРОВЕРКА",
+            "СООТВЕТСТВУЕТ", "НЕ СООТВЕТСТВУЕТ",
         }
         assert expected.issubset(_KNOWN_DECISIONS)
 
@@ -151,3 +152,55 @@ class TestNormalizeDecision:
         decision, technical = _normalize_decision("tool_calls_missing", output)
         assert decision == "ПРИНЯТЬ С ЗАМЕЧАНИЕМ"
         assert technical == "tool_calls_missing"
+
+    # ── Decision synonym normalization tests (v2.0.2) ──
+
+    def test_synonym_sootvetstvuet_to_prinyat(self):
+        """'СООТВЕТСТВУЕТ' as current decision → normalizes to 'ПРИНЯТЬ'."""
+        decision, technical = _normalize_decision("СООТВЕТСТВУЕТ", "some output")
+        assert decision == "ПРИНЯТЬ"
+        assert technical is None
+
+    def test_synonym_ne_sootvetstvuet_to_vernut(self):
+        """'НЕ СООТВЕТСТВУЕТ' as current decision → normalizes to 'ВЕРНУТЬ НА ДОРАБОТКУ'."""
+        decision, technical = _normalize_decision("НЕ СООТВЕТСТВУЕТ", "some output")
+        assert decision == "ВЕРНУТЬ НА ДОРАБОТКУ"
+        assert technical is None
+
+    def test_synonym_trebuet_dorabotki_as_current(self):
+        """'ТРЕБУЕТ ДОРАБОТКИ' as current decision → normalizes to 'ВЕРНУТЬ НА ДОРАБОТКУ'."""
+        decision, technical = _normalize_decision("ТРЕБУЕТ ДОРАБОТКИ", "some output")
+        assert decision == "ВЕРНУТЬ НА ДОРАБОТКУ"
+        assert technical is None
+
+    def test_synonym_trebuetsya_dorabotka_in_output(self):
+        """'ТРЕБУЕТСЯ ДОРАБОТКА' in output JSON → normalizes to 'ВЕРНУТЬ НА ДОРАБОТКУ'."""
+        output = '{"decision": "ТРЕБУЕТСЯ ДОРАБОТКА", "score_pct": 55}'
+        decision, technical = _normalize_decision("documents_found", output)
+        assert decision == "ВЕРНУТЬ НА ДОРАБОТКУ"
+        assert technical == "documents_found"
+
+    def test_synonym_sootvetstvuet_in_output_json(self):
+        """'СООТВЕТСТВУЕТ' extracted from output JSON → normalizes to 'ПРИНЯТЬ'."""
+        output = '```json\n{"decision": "СООТВЕТСТВУЕТ", "score_pct": 95}\n```'
+        decision, technical = _normalize_decision("documents_found", output)
+        assert decision == "ПРИНЯТЬ"
+        assert technical == "documents_found"
+
+    def test_synonym_kriticheskie_narusheniya_stays(self):
+        """'КРИТИЧЕСКИЕ НАРУШЕНИЯ' is in _KNOWN_DECISIONS and not a synonym — stays."""
+        decision, technical = _normalize_decision("КРИТИЧЕСКИЕ НАРУШЕНИЯ", "some output")
+        assert decision == "КРИТИЧЕСКИЕ НАРУШЕНИЯ"
+        assert technical is None
+
+    def test_known_decisions_includes_synonyms(self):
+        """Verify new synonym entries are in _KNOWN_DECISIONS."""
+        assert "СООТВЕТСТВУЕТ" in _KNOWN_DECISIONS
+        assert "НЕ СООТВЕТСТВУЕТ" in _KNOWN_DECISIONS
+
+    def test_decision_synonyms_dict(self):
+        """Verify _DECISION_SYNONYMS mappings."""
+        assert _DECISION_SYNONYMS["СООТВЕТСТВУЕТ"] == "ПРИНЯТЬ"
+        assert _DECISION_SYNONYMS["НЕ СООТВЕТСТВУЕТ"] == "ВЕРНУТЬ НА ДОРАБОТКУ"
+        assert _DECISION_SYNONYMS["ТРЕБУЕТ ДОРАБОТКИ"] == "ВЕРНУТЬ НА ДОРАБОТКУ"
+        assert _DECISION_SYNONYMS["ТРЕБУЕТСЯ ДОРАБОТКА"] == "ВЕРНУТЬ НА ДОРАБОТКУ"

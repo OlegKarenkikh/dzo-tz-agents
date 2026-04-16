@@ -4,6 +4,26 @@
 Формат соответствует [Keep a Changelog](https://keepachangelog.com/ru/1.0.0/).
 Проект использует [Semantic Versioning](https://semver.org/lang/ru/).
 
+## [2.0.2] — 2026-04-16
+
+### Added
+- `_DECISION_SYNONYMS` dict in `api/app.py` — normalizes LLM decision variations to standard form:
+  "СООТВЕТСТВУЕТ" → "ПРИНЯТЬ", "НЕ СООТВЕТСТВУЕТ" / "ТРЕБУЕТ ДОРАБОТКИ" / "ТРЕБУЕТСЯ ДОРАБОТКА" → "ВЕРНУТЬ НА ДОРАБОТКУ"
+- `llm_decision_acceptable` field in test fixtures for borderline cases (eek_tz_2024, tender_cargo_rzd, tender_dms_smak)
+- 8 new unit tests for decision synonym normalization in `test_decision_normalizer.py`
+- Standardized decision wording instructions in `prompts/tz_v2.md`
+
+### Changed
+- `prompts/tender_v2.md`: tightened "КРИТИЧЕСКИЕ НАРУШЕНИЯ" threshold — now requires truly blocking issues
+  (missing procurement subject, missing price, legal violations); missing individual sections are "ТРЕБУЕТСЯ ДОРАБОТКА"
+- `prompts/tz_v2.md`: explicit instruction to use only standard decision wordings (ПРИНЯТЬ / ПРИНЯТЬ С ЗАМЕЧАНИЕМ / ВЕРНУТЬ НА ДОРАБОТКУ)
+- `_normalize_decision()` now applies synonym mapping before checking `_KNOWN_DECISIONS`
+
+### Fixed
+- `collector_to_2025_0183` fixture: expected decision corrected from "ПРИНЯТЬ" to "СБОР НЕ ЗАВЕРШЁН"
+  (50% completeness with missing NDA should not pass collection)
+- Tender prompt over-strict: LLM returning "КРИТИЧЕСКИЕ НАРУШЕНИЯ" for complete documentation with minor gaps
+
 ## [2.0.1] — 2026-04-16
 
 ### Added
