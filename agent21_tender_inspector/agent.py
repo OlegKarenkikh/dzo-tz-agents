@@ -8,7 +8,7 @@ from shared.runner_base import BaseAgentRunner
 
 logger = setup_logger("agent_tender")
 
-SYSTEM_PROMPT = load_prompt("tender_v1.md")
+SYSTEM_PROMPT = load_prompt("tender_v2.md")
 
 
 # Backward-compatible alias: AgentRunner = BaseAgentRunner (из shared.runner_base)

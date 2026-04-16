@@ -13,7 +13,7 @@ from shared.runner_base import BaseAgentRunner
 
 logger = setup_logger("agent_tz")
 
-SYSTEM_PROMPT = load_prompt("tz_v1.md")
+SYSTEM_PROMPT = load_prompt("tz_v2.md")
 
 
 # Backward-compatible alias: AgentRunner = BaseAgentRunner (из shared.runner_base)

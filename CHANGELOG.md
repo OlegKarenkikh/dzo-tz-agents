@@ -4,6 +4,32 @@
 Формат соответствует [Keep a Changelog](https://keepachangelog.com/ru/1.0.0/).
 Проект использует [Semantic Versioning](https://semver.org/lang/ru/).
 
+## [2.0.1] — 2026-04-16
+
+### Added
+- `_normalize_decision()` in `api/app.py` — extracts expert decision from agent output,
+  replacing technical statuses (`documents_found`, `token_limit_exhausted`, etc.) with
+  actual expert verdicts from JSON/markdown output
+- `prompts/tz_v2.md` — calibrated TZ prompt: 6 mandatory + 2 recommended sections,
+  score calculated only on mandatory sections, adjusted thresholds (≥85% + 0 missing → ПРИНЯТЬ)
+- `prompts/tender_v2.md` — procurement type adaptation: different mandatory sections
+  for конкурс/запрос/аукцион/генеральный договор, `procurement_type` in JSON output
+- `tests/test_decision_normalizer.py` — 20 unit tests for decision normalization
+- Exponential backoff for rate limit (429) errors: 5s, 10s, 20s, 30s before retry
+
+### Changed
+- Tender agent: `decision = "documents_found"` no longer unconditionally overwrites
+  expert decision; technical status stored in `artifacts["tender_tool_status"]`
+- `agent2_tz_inspector/agent.py`: prompt updated to `tz_v2.md`
+- `agent21_tender_inspector/agent.py`: prompt updated to `tender_v2.md`
+- `shared/prompt_loader.py`: added `_LATEST_VERSIONS` registry (tz→v2, tender→v2)
+
+### Fixed
+- Decision field contaminated with internal statuses instead of expert verdicts
+- TZ agent over-strict scoring: optional sections counted as mandatory defects
+- Tender agent ignoring procurement type when evaluating completeness
+- Rate limit errors causing immediate failure instead of retry with backoff
+
 ## [2.0.0] — 2026-04-16
 
 ### Added

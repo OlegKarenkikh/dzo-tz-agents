@@ -29,6 +29,7 @@ import importlib.metadata
 import json
 import logging
 import math
+import re as _re_mod
 import os
 import secrets
 import threading
@@ -467,6 +468,70 @@ def _apply_email_artifact(artifacts: dict, tool_name: str, email_html: str) -> N
         return
 
     artifacts["email_html"] = email_html
+
+_KNOWN_DECISIONS = {
+    "ПРИНЯТЬ", "ПРИНЯТЬ С ЗАМЕЧАНИЕМ", "ВЕРНУТЬ НА ДОРАБОТКУ",
+    "ЗАЯВКА ПОЛНАЯ", "ТРЕБУЕТСЯ ДОРАБОТКА", "ТРЕБУЕТСЯ ЭСКАЛАЦИЯ",
+    "ДОКУМЕНТАЦИЯ ПОЛНАЯ", "ТРЕБУЕТСЯ ДОРАБОТКА", "КРИТИЧЕСКИЕ НАРУШЕНИЯ",
+    "СБОР ЗАВЕРШЁН", "СБОР НЕ ЗАВЕРШЁН", "ТРЕБУЕТСЯ ПРОВЕРКА",
+}
+
+_TECHNICAL_STATUSES = {
+    "documents_found", "tool_error", "tool_calls_missing",
+    "token_limit_exhausted", "rate_limit_exhausted", "Неизвестно",
+}
+
+
+def _normalize_decision(current_decision: str, output: str) -> tuple[str, str | None]:
+    """Извлекает экспертное решение из output агента.
+
+    Returns:
+        (final_decision, technical_status | None)
+        Если current_decision уже экспертное — возвращает (current_decision, None).
+        Если current_decision — технический статус, но в output есть экспертное — возвращает (expert, technical).
+    """
+    if current_decision.upper() in _KNOWN_DECISIONS:
+        return current_decision, None
+
+    if not output:
+        return current_decision, None
+
+    # 1. Ищем JSON-блок в output
+    json_match = _re_mod.search(r'```json\s*(\{.*?\})\s*```', output, _re_mod.DOTALL)
+    if json_match:
+        try:
+            parsed = json.loads(json_match.group(1))
+            if isinstance(parsed, dict):
+                for key in ("decision", "expert_decision", "verdict", "status"):
+                    val = parsed.get(key)
+                    if isinstance(val, str) and val.upper() in _KNOWN_DECISIONS:
+                        return val, current_decision
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    # 2. Ищем "decision": "..." в сыром тексте
+    dec_match = _re_mod.search(r'"decision"\s*:\s*"([^"]+)"', output)
+    if dec_match:
+        val = dec_match.group(1).strip()
+        if val.upper() in _KNOWN_DECISIONS:
+            return val, current_decision
+
+    # 3. Ищем markdown-формат: Оценка: **РЕШЕНИЕ**
+    md_match = _re_mod.search(r'Оценка:\s*\*?\*?([^*\n]+)', output)
+    if md_match:
+        val = md_match.group(1).strip()
+        if val.upper() in _KNOWN_DECISIONS:
+            return val, current_decision
+
+    # 4. Ищем "status": "..." для collector
+    status_match = _re_mod.search(r'"status"\s*:\s*"([^"]+)"', output)
+    if status_match:
+        val = status_match.group(1).strip()
+        if val.upper() in _KNOWN_DECISIONS:
+            return val, current_decision
+
+    return current_decision, None
+
 
 def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -> None:
     job = db_get_job(job_id)
@@ -921,7 +986,12 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                                     )
                             break
                         if retry + 1 < max_retries or compaction_bonus_retry_available:
-                            time.sleep(AGENT_RATE_LIMIT_BACKOFF)
+                            backoff_sec = min(30, 5 * (2 ** retry))  # 5, 10, 20, 30
+                            logger.warning(
+                                "[%s] Rate limit hit, backoff %ds before retry %d/%d",
+                                job_id, backoff_sec, retry + 1, max(1, AGENT_MAX_RETRIES),
+                            )
+                            time.sleep(backoff_sec)
                         retry += 1
 
                 if last_exc is None:
@@ -1035,10 +1105,14 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                                 summary = {}
                             total = summary.get("total", len(obs["documents"]))
                             artifacts["document_list"] = {**obs, "total": total}
-                            decision = "documents_found"
+                            artifacts["tender_tool_status"] = "documents_found"
+                            if not decision:
+                                decision = "documents_found"
                         elif "error" in obs and not artifacts.get("document_list"):
                             artifacts["document_list_error"] = obs
-                            decision = "tool_error"
+                            artifacts["tender_tool_status"] = "tool_error"
+                            if not decision:
+                                decision = "tool_error"
                 except Exception as _step_err:
                     logger.warning("[%s] step parse error: %s", job_id, _step_err)
                     _log_event(
@@ -1087,6 +1161,17 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                         job_id,
                     )
                     decision = "Неизвестно"
+
+            # ── Нормализация decision ──────────────────────────────
+            technical_status: str | None = None
+            agent_output = result.get("output", "")
+            decision, technical_status = _normalize_decision(decision, agent_output)
+            if technical_status:
+                artifacts["decision_technical"] = technical_status
+                logger.info(
+                    "[%s] Decision нормализован: %s → %s (technical: %s)",
+                    job_id, technical_status, decision, technical_status,
+                )
 
             if agent_type == "dzo" and _has_tz_signal and not artifacts.get("tz_agent_analysis"):
                 artifacts["missing_recommended_tool"] = {

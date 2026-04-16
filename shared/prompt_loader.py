@@ -13,6 +13,13 @@ logger = logging.getLogger("prompt_loader")
 
 _PROMPTS_DIR = pathlib.Path(__file__).resolve().parent.parent / "prompts"
 
+_LATEST_VERSIONS = {
+    "tz": "v2",
+    "tender": "v2",
+    "dzo": "v1",
+    "collector": "v1",
+}
+
 
 @functools.lru_cache(maxsize=16)
 def load_prompt(name: str) -> str:
