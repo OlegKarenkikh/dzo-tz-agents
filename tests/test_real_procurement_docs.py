@@ -28,83 +28,12 @@ from pathlib import Path
 import pytest
 import requests
 
-EEK_TZ_2024_TEXT = """
-Раздел II. Техническое задание
-
-1. Общие положения.
-Целью закупки является обеспечение эффективного функционирования и
-эксплуатационной готовности инфраструктурной платформы как части интеграционного
-сегмента Комиссии.
-
-Закупка лицензий осуществляется в соответствии с подпунктом 4.6.1 пункта 4.6
-Плана мероприятий по созданию, обеспечению функционирования и развитию ИИС ЕАЭС
-в 2024 году, утверждённого распоряжением Совета ЕЭК от 27 сентября 2023 г. № 26.
-
-2. Требования к лицензиям, комплектности и срокам передачи:
-2.1. Заказчику должны быть предоставлены права на использование ПО на условиях
-простой (неисключительной) лицензии без ограничения срока использования.
-2.2. Все передаваемые лицензии должны включать доступ к обновлениям ПО на 36 месяцев.
-2.4. Лицензии должны быть переданы Заказчику в течение 10 (десяти) календарных дней
-с даты заключения договора.
-
-Таблица 1. Спецификация (выдержка):
-1. OS2200X8617DIGS-KTSR01-SO36 — Astra Linux Special Edition, серверная, 9 шт.
-2. OS2200X8617DIGS-KTWS01-SO36 — Astra Linux Special Edition, рабочая станция, 400 шт.
-3. AD2100X8610DIG1D8SR01-SO36  — ALD Pro, контроллер домена, 2 шт.
-5. EXV10000006DIGMS1SV01-0000  — VMmanager 6 Infrastructure, 1 шт.
-6. EXV10000006DIGCORSV01-SO36  — VMmanager 6, расширение 1 физ. ядро, 576 шт.
-
-Начальная (максимальная) цена договора: 18 332 016 рублей 00 копеек (НДС не облагается).
-Заказчик: Евразийская экономическая комиссия
-Контакт: dept_it@eecommission.org, тел. +7(495)669-2400 доб.4444, Шеметов Д.М.
-"""
-
-RBANK_TZ_2021_TEXT = """
-ТЕХНИЧЕСКОЕ ЗАДАНИЕ
-на закупку товаров (работ, услуг)
-
-УТВЕРЖДАЮ: Заместитель Председателя Правления А.А.Цуран, февраль 2021 г.
-
-1. Предмет закупки: компьютеры и другое оборудование.
-
-№1. Моноблок, 35 шт. Оплата по факту. Срок поставки: не позднее 10 дней после
-подписания договора 2022 года.
-Характеристики: Материнская плата ASUS или Gigabyte, порты HDMI, USB 3.0/2.0.
-Процессор: не ниже Intel Core i3 8100. Корпус: настольный, регулировка наклона.
-ОЗУ: DDR4, не менее 8GB. Накопитель: SSD SATAIII 120GB Kingston/Samsung.
-Дисплей: 23.8", IPS, 1920x1080, антибликовое матовое покрытие, WLED.
-Клавиатура + мышь Logitech, проводные. Камера встроенная 0.3Мп.
-ОС: Windows 10 Pro (опционально).
-
-№2. Ноутбуки, 5 шт. Экран 15-15.6" IPS 1920x1080. Проц. Intel Core i3 8100.
-ОЗУ DDR4 8GB. SSD 120GB M.2. Срок: 10 дней с подписания договора.
-"""
-
-DZO_APPLICATION_TEXT = """
-ЗАЯВКА НА УЧАСТИЕ В ЗАКУПКЕ ДЗО
-Открытый конкурс в электронной форме № 19/ОКЭ-2025
-
-От: ООО «Технологии Будущего»
-ИНН: 7701234567, КПП: 770101001
-Юридический адрес: 115114, г. Москва, ул. Летниковская, д. 5
-Руководитель: Генеральный директор Петров Александр Сергеевич
-Контакт: +7(495)123-45-67, ivanova@techfuture.ru
-
-ПРЕДМЕТ: Разработка и внедрение АИС УДЗ
-Стек: Python/FastAPI + React.js, интеграция с ЕИС (zakupki.gov.ru)
-Количество рабочих мест: 50+. Срок: 12 месяцев.
-Соответствие ГОСТ 34.602-2020: да.
-НМЦ: 8 500 000 руб. (НДС 20%: 1 700 000 руб., итого: 10 200 000 руб.)
-
-Опыт: с 2015 года, 12 аналогичных гос. проектов. Штат: 25 человек.
-Лицензия ФСТЭК: № 0001 от 01.01.2020.
-
-Приложения: Устав — да; Выписка ЕГРЮЛ от 01.03.2025 — да;
-Справка об отсутствии задолженностей — да; Список договоров (3 шт.) — да.
-Банковская гарантия — НЕ ПРИЛОЖЕНА (требуется по условиям конкурса).
-
-Подпись: Петров А.С. Дата: 10.04.2025
-"""
+from tests.fixtures.real_procurement_docs import (
+    EEK_TZ_2024 as EEK_TZ_2024_TEXT,
+    RBANK_TZ_2021 as RBANK_TZ_2021_TEXT,
+    DZO_APPLICATION as DZO_APPLICATION_TEXT,
+    REAL_DOCS_REGISTRY,
+)
 
 API_BASE = os.getenv("TEST_API_BASE", "http://localhost:8000")
 API_KEY = os.getenv("TEST_API_KEY", "sandbox-test-api-key-12345")
@@ -158,7 +87,7 @@ except OSError:
 @pytest.mark.integration
 @pytest.mark.skipif(not _server_available, reason="API server not running on localhost:8000")
 class TestRealDocumentPipeline:
-    def test_eek_tz_pipeline_accepted(self):
+    def test_eek_tz_pipeline_reaches_prepare_input(self):
         job_id = _submit_job(
             agent="tz",
             subject="ТЗ ЕЭК — закупка лицензий ПО ИИС ЕАЭС 2024 (Конкурс №1205)",
@@ -174,7 +103,7 @@ class TestRealDocumentPipeline:
         assert "extract_attachments_done" in stages
         assert "prepare_input" in stages
 
-    def test_rbank_tz_pipeline_accepted(self):
+    def test_rbank_tz_pipeline_reaches_extract_stage(self):
         job_id = _submit_job(
             agent="tz",
             subject="ТЗ на закупку компьютерного оборудования — 35 моноблоков + 5 ноутбуков",
@@ -191,7 +120,7 @@ class TestRealDocumentPipeline:
         assert extract_ev is not None
         assert extract_ev["details"]["extracted_count"] == 1
 
-    def test_dzo_application_pipeline_accepted(self):
+    def test_dzo_application_pipeline_reaches_extract_stage(self):
         job_id = _submit_job(
             agent="dzo",
             subject="Заявка ДЗО — ООО «Технологии Будущего» — Конкурс 19/ОКЭ-2025",
@@ -321,3 +250,23 @@ class TestRealDocumentE2E:
         result_str = json.dumps(d.get("result", {}), ensure_ascii=False).lower()
         assert "гарантия" in result_str or "guarantee" in result_str
         assert "заявка полная" not in result_str
+
+    @pytest.mark.e2e
+    @pytest.mark.parametrize("doc_key", list(REAL_DOCS_REGISTRY.keys()))
+    def test_accuracy_against_ground_truth(self, doc_key):
+        """Parametrized: verify each real document against expert ground truth."""
+        doc = REAL_DOCS_REGISTRY[doc_key]
+        job_id = _submit_job(
+            agent=doc["agent"],
+            subject=f"Accuracy: {doc['subject'][:60]}",
+            body=f"Ground truth test for {doc['filename']}",
+            doc_text=doc["text"],
+            filename=doc["filename"],
+        )
+        d = _wait_for_job(job_id, max_wait=120)
+        assert d["status"] == "success", f"Job failed for {doc_key}"
+        result_str = json.dumps(d.get("result", {}), ensure_ascii=False).lower()
+        expected = doc["expected"]
+        for missing_key in expected.get("key_missing", []):
+            assert missing_key.lower() in result_str, \
+                f"[{doc_key}] Agent did not detect missing: '{missing_key}'"

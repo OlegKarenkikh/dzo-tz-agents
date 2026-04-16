@@ -205,6 +205,15 @@ git push origin v1.1.0
 | `emailSend` | `smtplib.SMTP` |
 | `switch` / `if` | Python `if/elif` |
 
+## Точность
+
+| Режим | Документов | decisions\_match | Целевой показатель |
+|---|---|---|---|
+| Rules-engine (без LLM) | 3 | 33.3% | ≥ 70% |
+| LLM E2E (qwen3-32b) | 3 | Измеряется | ≥ 85% |
+
+Подробнее: [docs/accuracy.md](docs/accuracy.md)
+
 ## Безопасность
 
 - Непривилегированный `appuser` во всех контейнерах

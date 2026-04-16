@@ -9,6 +9,7 @@
   github_models — GitHub Models (https://models.github.ai/inference)
 """
 import logging
+import os
 import re
 import threading
 
@@ -354,7 +355,7 @@ def build_fallback_chain(primary: str) -> list[str]:
     return chain
 
 
-def build_llm(temperature: float = 0.2, model_name_override: str | None = None) -> ChatOpenAI:
+def build_llm(temperature: float = 0.0, model_name_override: str | None = None) -> ChatOpenAI:
     model = model_name_override or MODEL_NAME
     if LLM_BACKEND == "github_models":
         api_key = GITHUB_TOKEN or effective_openai_key()
@@ -395,7 +396,13 @@ def build_llm(temperature: float = 0.2, model_name_override: str | None = None) 
         max_retries = 0 if has_fallback else 2
         max_tokens_out = 8192
 
-    logger.info("🤖 Инициализация LLM: backend=%s, model=%s, max_tokens=%d", LLM_BACKEND, model, max_tokens_out)
+    model_kwargs: dict = {}
+    _seed = int(os.environ.get("LLM_SEED", "42"))
+    if _seed >= 0:
+        model_kwargs["seed"] = _seed
+
+    logger.info("🤖 Инициализация LLM: backend=%s, model=%s, max_tokens=%d, temp=%.2f, seed=%s",
+                LLM_BACKEND, model, max_tokens_out, temperature, model_kwargs.get("seed"))
     return ChatOpenAI(
         model=model,
         temperature=temperature,
@@ -403,4 +410,5 @@ def build_llm(temperature: float = 0.2, model_name_override: str | None = None) 
         api_key=api_key,
         base_url=base_url,
         max_retries=max_retries,
+        model_kwargs=model_kwargs or None,
     )
