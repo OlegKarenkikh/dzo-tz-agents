@@ -289,10 +289,29 @@ class TestRealDocumentE2E:
             assert missing_key.lower() in result_str, \
                 f"[{doc_key}] Agent did not detect missing: '{missing_key}'"
 
-        # Record result for accuracy report
+        # Record result for accuracy report — compute real match
+        expected_decision = expected.get("expert_decision", "").lower()
+        actual_status = d.get("status", "unknown")
+        result_text = json.dumps(d.get("result", {}), ensure_ascii=False).lower()
+
+        # Extract actual decision from agent output
+        def _extract_decision(text):
+            text = text.lower()
+            if any(w in text for w in ["вернуть", "доработк", "требуется доработка"]):
+                return "вернуть"
+            if any(w in text for w in ["принять с замечанием", "замечан"]):
+                return "принять с замечанием"
+            if any(w in text for w in ["соответствует", "принять", "заявка полная", "полная"]):
+                return "принять"
+            return "unknown"
+
+        actual_decision = _extract_decision(result_text)
+        expected_normalized = _extract_decision(expected_decision) if expected_decision else "unknown"
+        is_match = actual_decision == expected_normalized and actual_decision != "unknown"
+
         record_accuracy_result(
             doc_key=doc_key,
             expected_decision=expected.get("expert_decision", "unknown"),
-            actual_decision=d.get("status", "unknown"),
-            match=True,  # If we reach here, assertions passed
+            actual_decision=actual_decision,
+            match=is_match,
         )
