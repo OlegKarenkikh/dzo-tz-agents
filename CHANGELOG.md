@@ -4,6 +4,21 @@
 Формат соответствует [Keep a Changelog](https://keepachangelog.com/ru/1.0.0/).
 Проект использует [Semantic Versioning](https://semver.org/lang/ru/).
 
+## [1.9.0] — 2026-04-16
+
+### Added
+- `POST /api/v1/upload` — multipart/form-data file upload endpoint (PDF, DOCX, XLSX, TXT, etc.)
+  with automatic text extraction and agent auto-detection
+- `prompts/` directory — versioned prompt files: `dzo_v1.md`, `tz_v1.md`, `tender_v1.md`, `collector_v1.md`
+- `shared/prompt_loader.py` — cached prompt loading with `load_prompt()` and `list_prompts()`
+- `shared/date_normalizer.py` — Russian date normalization: "1 мая 2026", "01.05.2026",
+  "II квартал 2026", "45 рабочих дней" → ISO format
+- Tests: upload endpoint (5), date normalizer (15+), prompt loader (7)
+
+### Changed
+- Agent prompts moved from inline strings to external files in `prompts/` directory
+- All 4 agents now use `shared.prompt_loader.load_prompt()` for prompt loading
+
 ## [1.8.0] — 2026-04-16
 
 ### Added
