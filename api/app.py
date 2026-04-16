@@ -109,10 +109,17 @@ CORS_ORIGINS = [
 ]
 
 
+_DEFAULT_API_KEYS = {"change-me-strong-api-key", "my-test-api-key-12345", ""}
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    if not _get_api_key():
+    api_key = _get_api_key()
+    if not api_key:
         logger.warning("АПИ-ключ не задан! Установите переменную окружения API_KEY.")
+    elif api_key in _DEFAULT_API_KEYS:
+        logger.warning(
+            "⚠️  API_KEY имеет значение по умолчанию! Замените на уникальный ключ для продакшена."
+        )
     init_db()
     logger.info("АПИ запущен. Модель: %s, бэкенд: %s", os.getenv("MODEL_NAME", "gpt-4o"), os.getenv("LLM_BACKEND", "openai"))
     yield

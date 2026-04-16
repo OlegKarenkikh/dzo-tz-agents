@@ -22,8 +22,23 @@ _run_log: list = []
 
 @app.get("/health")
 def health():
+    agents_status = {}
+    for agent_name, create_fn_path in [
+        ("dzo", "agent1_dzo_inspector.agent"),
+        ("tz", "agent2_tz_inspector.agent"),
+        ("tender", "agent21_tender_inspector.agent"),
+        ("collector", "agent3_collector_inspector.agent"),
+    ]:
+        try:
+            __import__(create_fn_path)
+            agents_status[agent_name] = "ready"
+        except Exception as e:
+            agents_status[agent_name] = f"error: {e}"
+
     return {
         "status": "ok",
+        "agents": agents_status,
+        "version": "1.7.0",
         "uptime_sec": (datetime.now() - start_time).seconds,
         "agent_mode": os.getenv("AGENT_MODE", "both"),
         "model": os.getenv("MODEL_NAME", "gpt-4o"),

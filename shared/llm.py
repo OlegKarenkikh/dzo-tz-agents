@@ -9,7 +9,6 @@
   github_models — GitHub Models (https://models.github.ai/inference)
 """
 import logging
-import os
 import re
 import threading
 
@@ -396,19 +395,28 @@ def build_llm(temperature: float = 0.0, model_name_override: str | None = None) 
         max_retries = 0 if has_fallback else 2
         max_tokens_out = 8192
 
-    model_kwargs: dict = {}
-    _seed = int(os.environ.get("LLM_SEED", "42"))
-    if _seed >= 0:
-        model_kwargs["seed"] = _seed
+    from config import LLM_TEMPERATURE, LLM_SEED, LLM_TOP_P
 
-    logger.info("🤖 Инициализация LLM: backend=%s, model=%s, max_tokens=%d, temp=%.2f, seed=%s",
-                LLM_BACKEND, model, max_tokens_out, temperature, model_kwargs.get("seed"))
-    return ChatOpenAI(
+    effective_temp = temperature if temperature != 0.0 else LLM_TEMPERATURE
+
+    model_kwargs = {}
+    if LLM_SEED is not None:
+        model_kwargs["seed"] = LLM_SEED
+    if LLM_TOP_P != 1.0:
+        model_kwargs["top_p"] = LLM_TOP_P
+
+    logger.info("🤖 Инициализация LLM: backend=%s, model=%s, max_tokens=%d",
+                LLM_BACKEND, model, max_tokens_out)
+
+    kwargs: dict = dict(
         model=model,
-        temperature=temperature,
+        temperature=effective_temp,
         max_tokens=max_tokens_out,
         api_key=api_key,
         base_url=base_url,
         max_retries=max_retries,
-        model_kwargs=model_kwargs or None,
     )
+    if model_kwargs:
+        kwargs["model_kwargs"] = model_kwargs
+
+    return ChatOpenAI(**kwargs)
