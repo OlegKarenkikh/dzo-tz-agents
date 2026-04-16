@@ -201,7 +201,7 @@ class TestBuildLocalFallbackChain:
 # ── build_llm real — shadow module with env patch ─────────────────────────
 class TestBuildLLMReal:
     _BASE_ENV = {
-        "OPENAI_API_KEY": "qwen32masterkey",
+        "OPENAI_API_KEY": "sk-test-coverage-placeholder",
         "LLM_BACKEND": "qwen_proxy",
         "MODEL_NAME": "qwen3-32b",
         "OPENAI_API_BASE": "",

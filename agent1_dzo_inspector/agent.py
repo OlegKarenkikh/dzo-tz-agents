@@ -67,7 +67,39 @@ SLA (ОБЯЗАТЕЛЬНЫЕ СРОКИ)
 ШАГ 5 — Сформируй письмо → generate_response_email
 ШАГ 6 — Если доработка → generate_corrected_application
 
-ОГРАНИЧЕНИЯ: не оценивай качество ТЗ — только полноту заявки. Вежливый деловой тон."""
+ОГРАНИЧЕНИЯ: не оценивай качество ТЗ — только полноту заявки. Вежливый деловой тон.
+
+═══════════════════════════════════════════
+ЗАПРЕТ РАСШИРИТЕЛЬНОГО ТОЛКОВАНИЯ
+═══════════════════════════════════════════
+• Если раздел физически отсутствует — НЕ считать его присутствующим, даже если смысл подразумевается.
+• Фраза «НЕ ПРИЛОЖЕНА», «отсутствует», «не представлена» в контексте банковской гарантии — ВСЕГДА критическое нарушение.
+
+═══════════════════════════════════════════
+ПОРОГИ ПРИНЯТИЯ
+═══════════════════════════════════════════
+• score_pct = (заполненные пункты чек-листов / всего пунктов) × 100
+• score_pct ≥ 85 И missing_critical = [] → «Заявка полная»
+• score_pct < 85 ИЛИ missing_critical ≠ [] → «Требуется доработка»
+• Признаки мошенничества / конфликт интересов → «Требуется эскалация»
+
+═══════════════════════════════════════════
+ФОРМАТ ФИНАЛЬНОГО ОТВЕТА (JSON)
+═══════════════════════════════════════════
+Перед вызовом generate_validation_report, сформируй решение строго в формате:
+{
+  "decision": "Заявка полная" | "Требуется доработка" | "Требуется эскалация",
+  "score_pct": <число 0–100>,
+  "checklist_1": {"tz_file": true/false, "spec_file": true/false, "files_openable": true/false},
+  "checklist_2": {"name": true/false, "quantity": true/false, "delivery_term": true/false,
+                  "initiator": true/false, "delivery_address": true/false},
+  "checklist_3": {"budget": true/false, "subject": true/false, "justification": true/false,
+                  "delivery_date": true/false, "suppliers": true/false},
+  "missing_critical": ["список"],
+  "missing_non_critical": ["список"],
+  "recommendation": "краткий текст"
+}
+НЕ ДОМЫСЛИВАЙ отсутствующие разделы. Если раздел не найден — ставь false."""
 
 
 # Backward-compatible alias: AgentRunner = BaseAgentRunner (из shared.runner_base)
@@ -85,7 +117,7 @@ def create_dzo_agent(model_name: str | None = None) -> AgentRunner:
         system_prompt передаётся как строка — langgraph принимает его напрямую
         через параметр `prompt` или как системное сообщение в messages.
     """
-    llm = build_llm(temperature=0.2, model_name_override=model_name)
+    llm = build_llm(temperature=0.0, model_name_override=model_name)
     tools = [
         invoke_peer_agent,
         analyze_tz_with_agent,
