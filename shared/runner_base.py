@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import concurrent.futures
 import json
+import re as _re
 from abc import ABC, abstractmethod
 from typing import Any
 
@@ -120,6 +121,20 @@ class BaseAgentRunner:
             self._logger.info("  🔧 %s → %s", name, str(obs)[:200])
 
         return {"output": output, "intermediate_steps": intermediate_steps}
+
+    def _validate_output(self, output: str) -> bool:
+        """Check if output contains a decision field."""
+        if not output:
+            return False
+        output_lower = output.lower()
+        decision_keywords = [
+            "заявка полная", "требуется доработка", "требуется эскалация",
+            "принять", "вернуть на доработку", "принять с замечанием",
+            "документация полная", "критические нарушения",
+            "сбор завершён", "сбор не завершён",
+            "decision",
+        ]
+        return any(kw in output_lower for kw in decision_keywords)
 
 
 class BaseEmailRunner(ABC):

@@ -84,6 +84,9 @@ SMTP_PASSWORD     = os.getenv("SMTP_PASSWORD")
 MANAGER_EMAIL     = os.getenv("MANAGER_EMAIL", "manager@company.ru")
 
 MODEL_NAME        = os.getenv("MODEL_NAME", "gpt-4o")
+LLM_TEMPERATURE: float = _safe_float("LLM_TEMPERATURE", 0.0)
+LLM_SEED: int | None = _safe_int("LLM_SEED", 42) if os.getenv("LLM_SEED") else None
+LLM_TOP_P: float = _safe_float("LLM_TOP_P", 1.0)
 POLL_INTERVAL_SEC = _safe_int("POLL_INTERVAL_SEC", 300)
 
 AGENT_JOB_TIMEOUT_SEC    = _safe_int("AGENT_JOB_TIMEOUT_SEC", 300)

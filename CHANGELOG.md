@@ -4,6 +4,26 @@
 Формат соответствует [Keep a Changelog](https://keepachangelog.com/ru/1.0.0/).
 Проект использует [Semantic Versioning](https://semver.org/lang/ru/).
 
+## [1.7.0] — 2026-04-16
+
+### Added
+- Enhanced SYSTEM_PROMPT for all 4 agents: mandatory JSON output format, weighted checklists,
+  stricter decision thresholds, anti-hallucination rules
+- `config.py`: `LLM_TEMPERATURE`, `LLM_SEED`, `LLM_TOP_P` configurable environment variables
+- `shared/runner_base.py`: `_validate_output()` method for decision keyword checking
+- `tests/test_accuracy_report.py`: E2E accuracy report generator (generates accuracy_report.json)
+- `api/healthcheck.py`: enhanced /health with per-agent status and version
+- `.env.example`: E2E testing section, determinism settings
+- 10 real/synthetic procurement documents in test registry across all 4 agents (tz, dzo, tender, collector)
+
+### Changed
+- `shared/llm.py`: `build_llm()` uses config variables for seed/top_p instead of raw os.environ
+- All agents: `temperature=0.0` for reproducibility (was 0.1–0.2)
+- DZO agent: score threshold raised from 85% to 95% for "Заявка полная"
+- TZ agent: weighted section checklist replacing simple count-based scoring
+- Tender agent: added mandatory sections list (44-ФЗ/223-ФЗ) and critical violation rules
+- Collector agent: INN/name discrepancy handling rules, 90% completeness threshold
+
 ## [1.6.0] — 2026-04-10
 
 ### Added
