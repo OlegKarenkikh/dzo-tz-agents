@@ -131,6 +131,25 @@ class TestDZOAgentE2E:
         assert output, "DZO agent returned empty output"
         assert len(output) > 10, "DZO agent output too short (got: %r)" % output
 
+    def test_dzo_agent_deterministic(self):
+        """Same input -> same decision on two consecutive calls."""
+        from agent1_dzo_inspector.agent import create_dzo_agent
+        agent = create_dzo_agent()
+        cfg = {"recursion_limit": 8}
+        r1 = agent.invoke({"input": _short_dzo_input()}, config=cfg)
+        r2 = agent.invoke({"input": _short_dzo_input()}, config=cfg)
+        o1, o2 = r1.get("output", "").lower(), r2.get("output", "").lower()
+
+        def _decision(t):
+            if any(w in t for w in ["требуется доработка", "доработк", "эскалац"]):
+                return "not_approved"
+            if "заявка полная" in t:
+                return "approved"
+            return "unknown"
+
+        d1, d2 = _decision(o1), _decision(o2)
+        assert d1 == d2, f"Non-deterministic DZO: {d1} vs {d2}"
+
 
 class TestTZAgentE2E:
     def test_tz_agent_returns_structured_output(self):
@@ -141,6 +160,33 @@ class TestTZAgentE2E:
         output = result.get("output", "")
         assert output, "TZ agent returned empty output"
         assert len(output) > 50, "TZ agent output too short"
+
+    def test_tz_agent_deterministic(self):
+        """Same input -> same decision on two consecutive calls.
+
+        Validates that temperature=0.0 + seed=42 produce reproducible decisions.
+        """
+        from agent2_tz_inspector.agent import create_tz_agent
+        agent = create_tz_agent()
+        cfg = {"recursion_limit": 8}
+        result1 = agent.invoke({"input": _short_tz_input()}, config=cfg)
+        result2 = agent.invoke({"input": _short_tz_input()}, config=cfg)
+        out1 = result1.get("output", "").lower()
+        out2 = result2.get("output", "").lower()
+
+        def _extract_decision(text: str) -> str:
+            if any(w in text for w in ["требует доработки", "вернуть", "доработк"]):
+                return "return"
+            if any(w in text for w in ["соответствует", "принять", "полностью"]):
+                return "accept"
+            return "unknown"
+
+        d1, d2 = _extract_decision(out1), _extract_decision(out2)
+        assert d1 == d2, (
+            f"Non-deterministic: call1={d1!r}, call2={d2!r}\n"
+            f"Output1: {out1[:200]}\nOutput2: {out2[:200]}"
+        )
+        assert d1 != "unknown", f"Could not extract decision from: {out1[:200]}"
 
 
 class TestTenderAgentE2E:

@@ -45,3 +45,16 @@ QWEN_API_KEY=your_key pytest tests/ -m e2e -v
 
 - `tests/fixtures/real_procurement_docs.py` — тексты документов и ground truth
 - `tests/fixtures/real_procurement_expected.json` — структурированные ожидаемые результаты
+
+## Как добавить новый тестовый документ
+
+1. Добавьте текст документа как константу в `tests/fixtures/real_procurement_docs.py`
+2. Добавьте запись в `REAL_DOCS_REGISTRY` с полями:
+   - `agent`: `"tz"` или `"dzo"`
+   - `text`: ваша константа
+   - `filename`: имя файла для отправки в API
+   - `subject`: краткое описание
+   - `expected`: словарь с `expert_decision`, `key_missing`, `structural_score_pct`
+   - `source_url`: ссылка на источник или `None` для синтетических
+3. Добавьте запись в `tests/fixtures/real_procurement_expected.json`
+4. Запустите `pytest tests/test_real_procurement_docs.py -v` — новый документ автоматически подхватится параметризованным тестом

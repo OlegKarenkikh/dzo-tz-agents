@@ -145,6 +145,13 @@ def _restore_real_llm_for_e2e(request):
         yield
         return
 
+    _qwen_key = _os.environ.get("QWEN_API_KEY", "")
+    if not _qwen_key or _qwen_key.startswith("sk-test"):
+        import pytest as _pt
+        _pt.skip("E2E tests require QWEN_API_KEY env var (real key, not placeholder)")
+        yield
+        return
+
     # Override env with real creds
     _orig = {k: _os.environ.get(k) for k in ("OPENAI_API_KEY","OPENAI_API_BASE","MODEL_NAME")}
     _os.environ["OPENAI_API_KEY"]  = _os.environ.get("QWEN_API_KEY", "sk-test-e2e-placeholder")

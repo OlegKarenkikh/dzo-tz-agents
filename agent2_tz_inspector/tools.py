@@ -3,10 +3,11 @@ from datetime import datetime
 from html import escape as html_escape
 
 from langchain.tools import tool
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from shared.agent_tooling import invoke_agent_as_tool
 from shared.logger import setup_logger
+from shared.schemas import TZInspectionResult
 
 logger = setup_logger("agent_tz")
 
@@ -93,63 +94,49 @@ class PeerAgentInvokeInput(BaseModel):
 # Инструменты агента
 # ---------------------------------------------------------------------------
 
-@tool(args_schema=JsonReportInput)
+class _TZReportInput(BaseModel):
+    """Permissive input schema — validation happens inside the function body."""
+    model_config = ConfigDict(extra="allow")
+
+    overall_status: str = "Требует доработки"
+    category: str = "Не определена"
+    sections: list = Field(default_factory=list)
+    critical_issues: list = Field(default_factory=list)
+    recommendations: list = Field(default_factory=list)
+    score_pct: float = 0
+
+
+@tool(args_schema=_TZReportInput)
 def generate_json_report(
-    overall_status: str,
+    overall_status: str = "Требует доработки",
     category: str = "Не определена",
-    sections: list[SectionResult] = None,
-    critical_issues: list[str] = None,
-    recommendations: list[str] = None,
+    sections: list = None,
+    critical_issues: list = None,
+    recommendations: list = None,
+    score_pct: float = 0,
 ) -> str:
     """
-    Генерирует JSON-отчёт проверки ТЗ по 8 разделам.
+    Генерирует структурированный JSON-отчёт проверки ТЗ по 8 разделам.
     Передай ТОЛЬКО краткие результаты анализа — не полный текст ТЗ.
     """
-    sections = sections or []
-    critical_issues = critical_issues or []
-    recommendations = recommendations or []
+    kwargs = {
+        "overall_status": overall_status,
+        "category": category,
+        "sections": sections or [],
+        "critical_issues": critical_issues or [],
+        "recommendations": recommendations or [],
+        "score_pct": score_pct,
+    }
     try:
-        logger.debug("🔧 generate_json_report вызван (%d разделов)", len(sections))
-
-        # Дополняем отсутствующие из 8 обязательных разделов
-        existing_ids = {s.id for s in sections}
-        required = [
-            (1, "Цель закупки"),
-            (2, "Требования к товару/работе/услуге"),
-            (3, "Количество и единицы измерения"),
-            (4, "Срок и условия поставки"),
-            (5, "Место поставки"),
-            (6, "Требования к исполнителю"),
-            (7, "Критерии оценки заявок"),
-            (8, "Приложения"),
-        ]
-        sections_list = [s.model_dump() for s in sections]
-        for rid, rname in required:
-            if rid not in existing_ids:
-                sections_list.append({"id": rid, "name": rname, "status": "❓", "comment": "Не проверено"})
-        sections_list.sort(key=lambda s: s.get("id", 99))
-
-        report = {
-            "timestamp":       datetime.now().isoformat(),
-            "overall_status":  overall_status,
-            "category":        category,
-            "sections":        sections_list,
-            "critical_issues": critical_issues,
-            "recommendations": recommendations,
-            "stats": {
-                "total":  8,
-                "ok":     sum(1 for s in sections_list if s.get("status") == "ОК"),
-                "issues": sum(1 for s in sections_list if s.get("status") not in ("ОК", "❓")),
-            },
-        }
-        logger.info(
-            "✅ generate_json_report: отчёт готов (статус: %s, разделов: %d)",
-            overall_status, len(sections_list),
-        )
-        return json.dumps(report, ensure_ascii=False)
-    except Exception as e:
-        logger.error("❌ generate_json_report: ошибка %s", e)
-        return json.dumps({"error": str(e)})
+        validated = TZInspectionResult.model_validate(kwargs)
+        return validated.model_dump_json(ensure_ascii=False, indent=2)
+    except ValidationError as e:
+        # Graceful fallback — return raw JSON with validation warnings
+        return json.dumps({
+            "raw_input": kwargs,
+            "validation_errors": [err["msg"] for err in e.errors()],
+            "overall_status": kwargs.get("overall_status", "Требует доработки"),
+        }, ensure_ascii=False, indent=2)
 
 
 @tool(args_schema=CorrectedTzInput)

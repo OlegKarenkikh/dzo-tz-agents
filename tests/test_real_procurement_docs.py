@@ -78,15 +78,23 @@ def _wait_for_job(job_id: str, max_wait: int = 30) -> dict:
     raise TimeoutError(f"Job {job_id} did not complete in {max_wait}s")
 
 
-_server_available = False
-try:
-    import socket as _s; _c = _s.create_connection(("localhost", 8000), timeout=1); _c.close(); _server_available = True
-except OSError:
-    pass
+@pytest.fixture(scope="session")
+def server_available():
+    import socket
+    try:
+        c = socket.create_connection(("localhost", 8000), timeout=2)
+        c.close()
+        return True
+    except OSError:
+        return False
+
 
 @pytest.mark.integration
-@pytest.mark.skipif(not _server_available, reason="API server not running on localhost:8000")
 class TestRealDocumentPipeline:
+    @pytest.fixture(autouse=True)
+    def _require_server(self, server_available):
+        if not server_available:
+            pytest.skip("API server not running on localhost:8000")
     def test_eek_tz_pipeline_reaches_prepare_input(self):
         job_id = _submit_job(
             agent="tz",
@@ -208,8 +216,13 @@ class TestRealDocumentRulesEngine:
 
 
 @pytest.mark.e2e
-@pytest.mark.skipif(not os.getenv("LLM_BACKEND") or not _server_available, reason="LLM_BACKEND not set or server not running")
 class TestRealDocumentE2E:
+    @pytest.fixture(autouse=True)
+    def _require_server_and_llm(self, server_available):
+        if not server_available:
+            pytest.skip("API server not running on localhost:8000")
+        if not os.getenv("LLM_BACKEND"):
+            pytest.skip("LLM_BACKEND not set — E2E tests are opt-in")
     def test_eek_tz_flags_missing_delivery_address(self):
         job_id = _submit_job(
             agent="tz",

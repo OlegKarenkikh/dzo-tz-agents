@@ -13,39 +13,33 @@ from agent2_tz_inspector.tools import (
 
 
 class TestGenerateJsonReport:
-    def test_full_report(self):
-        sections = [
-            {"id": i, "name": f"Раздел {i}", "status": "ОК", "comment": ""}
-            for i in range(1, 9)
-        ]
-        payload = json.dumps({
-            "overall_status": "Соответствует",
-            "category": "Товары",
-            "sections": sections,
-            "critical_issues": [],
-            "recommendations": [],
-        })
-        result = json.loads(generate_json_report.invoke(json.loads(payload)))
-        assert result["overall_status"] == "Соответствует"
-        assert result["stats"]["ok"] == 8
-        assert result["stats"]["issues"] == 0
+    def test_validates_schema(self):
+        """Valid kwargs -> output passes TZInspectionResult validation."""
+        from shared.schemas import TZInspectionResult
 
-    def test_partial_report(self):
-        sections = [
-            {"id": 1, "name": "Цель", "status": "ОК", "comment": ""},
-            {"id": 2, "name": "Требования", "status": "Отсутствует", "comment": "Нет раздела"},
-        ]
-        payload = json.dumps({
-            "overall_status": "Требует доработки",
-            "sections": sections,
+        result = generate_json_report.invoke({
+            "overall_status": "Вернуть на доработку",
+            "category": "Поставка оборудования",
+            "sections": [],
+            "critical_issues": ["Отсутствует раздел 'Цель закупки'"],
+            "recommendations": ["Добавить цель закупки"],
+            "score_pct": 50.0,
         })
-        result = json.loads(generate_json_report.invoke(json.loads(payload)))
-        assert result["stats"]["ok"] == 1
-        assert result["stats"]["issues"] == 1
+        data = json.loads(result)
+        validated = TZInspectionResult.model_validate(data)
+        assert validated.overall_status == "Вернуть на доработку"
 
-    def test_validation_error_on_wrong_types(self):
-        with pytest.raises(ValidationError):
-            generate_json_report.invoke({"overall_status": 123})
+    def test_normalizes_status(self):
+        """Uppercase status -> normalized to title case."""
+        from shared.schemas import TZInspectionResult
+
+        result = generate_json_report.invoke({
+            "overall_status": "ВЕРНУТЬ НА ДОРАБОТКУ",
+            "score_pct": 40.0,
+        })
+        data = json.loads(result)
+        validated = TZInspectionResult.model_validate(data)
+        assert validated.overall_status == "Вернуть на доработку"
 
 
 class TestGenerateCorrectedTz:
