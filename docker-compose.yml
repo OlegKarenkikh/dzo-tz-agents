@@ -50,6 +50,7 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-dzo}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-dzo_agents}
+      ENABLE_DOCS: "${ENABLE_DOCS:-true}"
     depends_on:
       postgres:
         condition: service_healthy

@@ -230,3 +230,50 @@ python test_agent_local.py tz "ТЕХНИЧЕСКОЕ ЗАДАНИЕ
 - name: Test TZ agent
   run: AGENT_DEBUG=0 python test_agent_local.py tz "test input"
 ```
+
+---
+
+## 🐳 Тестирование через Docker
+
+### Сборка и запуск
+
+```bash
+# Сборка образа
+make build
+
+# Запуск полного стека (API + PostgreSQL + UI)
+make up
+
+# Проверить статус контейнеров
+docker compose ps
+
+# Health check
+curl -s http://localhost:8000/health | python3 -m json.tool
+```
+
+### Запуск тестов внутри контейнера
+
+```bash
+# Юнит-тесты внутри контейнера
+docker compose exec api python -m pytest tests/ -m "not e2e and not integration" --strict-markers -v
+
+# С покрытием
+docker compose exec api python -m pytest tests/ --cov=. --cov-report=term-missing
+```
+
+### Мониторинг
+
+```bash
+# Запуск мониторинга (Prometheus + Grafana + Alertmanager)
+make monitoring
+
+# Grafana: http://localhost:3000 (admin / $GRAFANA_PASSWORD)
+# Prometheus: http://localhost:9090
+# Alertmanager: http://localhost:9093
+```
+
+### Остановка
+
+```bash
+make down
+```

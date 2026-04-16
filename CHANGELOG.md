@@ -4,6 +4,18 @@
 Формат соответствует [Keep a Changelog](https://keepachangelog.com/ru/1.0.0/).
 Проект использует [Semantic Versioning](https://semver.org/lang/ru/).
 
+## [1.7.1] — 2026-04-16
+
+### Added
+- API tests: collector endpoint, stats endpoint, validation errors (422), health agents/version checks
+- `TESTING.md`: Docker testing section with compose commands and monitoring
+- `README.md`: coverage badge (68%)
+- `docker-compose.override.yml`: dev profile with debug logging and volume mounts
+- `docker-compose.yml`: `ENABLE_DOCS` environment variable for production security
+
+### Changed
+- Test count increased from ~641 to ~650+ with new API coverage
+
 ## [1.7.0] — 2026-04-16
 
 ### Added

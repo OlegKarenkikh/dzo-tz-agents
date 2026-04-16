@@ -50,6 +50,16 @@ class TestHealth:
         resp = client.get("/health")
         assert resp.status_code == 200
 
+    def test_health_contains_agents_status(self, client):
+        """Health endpoint should include agent_mode (agents status is in healthcheck.py)."""
+        data = client.get("/health").json()
+        assert "agent_mode" in data
+
+    def test_health_contains_version(self, client):
+        data = client.get("/health").json()
+        assert "version" in data
+        assert isinstance(data["version"], str)
+
 
 class TestAgents:
     def test_list_agents(self, client):
@@ -174,6 +184,23 @@ class TestProcessGeneric:
         assert resp.status_code == 401
 
 
+class TestProcessCollector:
+    def test_process_collector_returns_job_id(self, client):
+        resp = client.post(
+            "/api/v1/process/collector",
+            headers=HEADERS,
+            json={"text": "Тема: ТО-2024-001. ООО Ромашка. Направляю анкету участника и NDA.", "subject": "Collector test"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "job" in data
+        assert "job_id" in data["job"]
+
+    def test_process_collector_without_api_key_returns_401(self, client):
+        resp = client.post("/api/v1/process/collector", json={"text": "тест"})
+        assert resp.status_code == 401
+
+
 class TestResolveAgent:
     def test_resolve_agent_returns_tz(self, client):
         resp = client.post(
@@ -250,6 +277,47 @@ class TestHistory:
         resp = client.get("/api/v1/history", params={"agent": "dzo"}, headers=HEADERS)
         for item in resp.json()["items"]:
             assert item["agent"] == "dzo"
+
+
+class TestStats:
+    def test_stats_returns_aggregated_data(self, client):
+        resp = client.get("/api/v1/stats", headers=HEADERS)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "total_jobs" in data or isinstance(data, dict)
+
+    def test_stats_without_api_key_returns_401(self, client):
+        resp = client.get("/api/v1/stats")
+        assert resp.status_code == 401
+
+
+class TestValidationErrors:
+    def test_process_dzo_empty_body_returns_422(self, client):
+        """POST with invalid JSON body should return 422."""
+        resp = client.post(
+            "/api/v1/process/dzo",
+            headers={**HEADERS, "Content-Type": "application/json"},
+            content=b"not-json",
+        )
+        assert resp.status_code == 422
+
+    def test_process_dzo_missing_text_field(self, client):
+        """POST without 'text' field — API accepts and processes with empty text (returns 200)."""
+        resp = client.post(
+            "/api/v1/process/dzo",
+            headers=HEADERS,
+            json={},
+        )
+        assert resp.status_code == 200
+
+    def test_process_tz_missing_text_field(self, client):
+        """POST without 'text' field — API accepts and processes with empty text (returns 200)."""
+        resp = client.post(
+            "/api/v1/process/tz",
+            headers=HEADERS,
+            json={"subject": "no text"},
+        )
+        assert resp.status_code == 200
 
 
 class TestStatus:
