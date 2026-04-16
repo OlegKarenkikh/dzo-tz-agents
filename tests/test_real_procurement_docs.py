@@ -36,6 +36,35 @@ from tests.fixtures.real_procurement_docs import (
 )
 from tests.conftest import record_accuracy_result
 
+
+def _extract_decision(text_or_dict) -> str:
+    """Extract normalized decision from agent output.
+
+    Tries structured JSON field first, then falls back to keyword matching.
+    Returns one of: "вернуть", "принять с замечанием", "принять", "эскалация", "unknown"
+    """
+    # If dict, try structured field first
+    if isinstance(text_or_dict, dict):
+        decision = text_or_dict.get("decision", "") or text_or_dict.get("overall_status", "")
+        if decision:
+            text_or_dict = decision
+        else:
+            text_or_dict = json.dumps(text_or_dict, ensure_ascii=False)
+
+    text = str(text_or_dict).lower().strip()
+
+    # Ordered from most specific to least specific
+    if any(w in text for w in ["эскалац", "мошенничеств", "конфликт интересов"]):
+        return "эскалация"
+    if any(w in text for w in ["вернуть на доработку", "требуется доработка", "требует доработки", "доработк"]):
+        return "вернуть"
+    if any(w in text for w in ["принять с замечанием", "замечан"]):
+        return "принять с замечанием"
+    if any(w in text for w in ["соответствует", "заявка полная", "полная", "принять"]):
+        return "принять"
+    return "unknown"
+
+
 API_BASE = os.getenv("TEST_API_BASE", "http://localhost:8000")
 API_KEY = os.getenv("TEST_API_KEY", "sandbox-test-api-key-12345")
 HEADERS = {"x-api-key": API_KEY}
@@ -132,10 +161,10 @@ class TestRealDocumentPipeline:
     def test_dzo_application_pipeline_reaches_extract_stage(self):
         job_id = _submit_job(
             agent="dzo",
-            subject="Заявка ДЗО — ООО «Технологии Будущего» — Конкурс 19/ОКЭ-2025",
-            body="Заявка на участие в конкурсе на разработку АИС УДЗ. ИНН 7701234567.",
+            subject="Заявка ДЗО на закупку силовых трансформаторов — ОКЭ-2025-0047",
+            body="Заявка ДЗО на закупку трансформаторов ТМГ-1000. ИНН 7707049388.",
             doc_text=DZO_APPLICATION_TEXT,
-            filename="dzo_application_techfuture.txt",
+            filename="dzo_application_oke_2025.md",
         )
         assert job_id
         d = requests.get(f"{API_BASE}/api/v1/jobs/{job_id}", headers=HEADERS, timeout=5).json()
@@ -204,20 +233,20 @@ class TestRealDocumentRulesEngine:
         assert not self._has_section(RBANK_TZ_2021_TEXT, "ГОСТ", "ТР ТС", "техрегламент")
 
     def test_dzo_app_has_inn(self):
-        assert "7701234567" in DZO_APPLICATION_TEXT
+        assert "7707049388" in DZO_APPLICATION_TEXT
 
     def test_dzo_app_has_price(self):
-        assert self._has_section(DZO_APPLICATION_TEXT, "руб", "НМЦ", "8 500 000")
+        assert self._has_section(DZO_APPLICATION_TEXT, "руб", "НМЦК", "4 350 000")
 
     def test_dzo_app_critical_missing_bank_guarantee(self):
         assert "НЕ ПРИЛОЖЕНА" in DZO_APPLICATION_TEXT
         assert "банковская гарантия" in DZO_APPLICATION_TEXT.lower()
 
     def test_dzo_app_has_attachments_list(self):
-        assert self._has_section(DZO_APPLICATION_TEXT, "Устав", "ЕГРЮЛ", "справк")
+        assert self._has_section(DZO_APPLICATION_TEXT, "Техническое задание", "Коммерческие предложения", "Проект договора")
 
-    def test_dzo_app_has_executor_requirements(self):
-        assert self._has_section(DZO_APPLICATION_TEXT, "ФСТЭК", "лицензи", "опыт", "12 аналогичных")
+    def test_dzo_app_has_initiator(self):
+        assert self._has_section(DZO_APPLICATION_TEXT, "Козлов", "Начальник отдела снабжения")
 
 
 @pytest.mark.e2e
@@ -258,10 +287,10 @@ class TestRealDocumentE2E:
     def test_dzo_critical_bank_guarantee_blocks_approval(self):
         job_id = _submit_job(
             agent="dzo",
-            subject="E2E: Заявка ДЗО банковская гарантия",
-            body="Заявка ДЗО с отсутствующей банковской гарантией.",
+            subject="E2E: Заявка ДЗО ОКЭ-2025-0047 банковская гарантия",
+            body="Заявка ДЗО на закупку трансформаторов с отсутствующей банковской гарантией.",
             doc_text=DZO_APPLICATION_TEXT,
-            filename="e2e_dzo_no_guarantee.txt",
+            filename="e2e_dzo_oke_2025.md",
         )
         d = _wait_for_job(job_id, max_wait=120)
         assert d["status"] == "success"
@@ -289,29 +318,50 @@ class TestRealDocumentE2E:
             assert missing_key.lower() in result_str, \
                 f"[{doc_key}] Agent did not detect missing: '{missing_key}'"
 
-        # Record result for accuracy report — compute real match
-        expected_decision = expected.get("expert_decision", "").lower()
-        actual_status = d.get("status", "unknown")
-        result_text = json.dumps(d.get("result", {}), ensure_ascii=False).lower()
+        # Try structured result first, then fall back to text
+        result_dict = d.get("result", {})
+        if isinstance(result_dict, dict) and (result_dict.get("decision") or result_dict.get("overall_status")):
+            actual_decision = _extract_decision(result_dict)
+        else:
+            result_str = json.dumps(result_dict, ensure_ascii=False).lower()
+            actual_decision = _extract_decision(result_str)
 
-        # Extract actual decision from agent output
-        def _extract_decision(text):
-            text = text.lower()
-            if any(w in text for w in ["вернуть", "доработк", "требуется доработка"]):
-                return "вернуть"
-            if any(w in text for w in ["принять с замечанием", "замечан"]):
-                return "принять с замечанием"
-            if any(w in text for w in ["соответствует", "принять", "заявка полная", "полная"]):
-                return "принять"
-            return "unknown"
-
-        actual_decision = _extract_decision(result_text)
-        expected_normalized = _extract_decision(expected_decision) if expected_decision else "unknown"
+        expected_decision_raw = expected.get("expert_decision", "unknown")
+        expected_normalized = _extract_decision(expected_decision_raw)
         is_match = actual_decision == expected_normalized and actual_decision != "unknown"
 
         record_accuracy_result(
             doc_key=doc_key,
-            expected_decision=expected.get("expert_decision", "unknown"),
+            expected_decision=expected_decision_raw,
             actual_decision=actual_decision,
             match=is_match,
         )
+
+
+class TestExtractDecision:
+    """Unit tests for _extract_decision helper."""
+
+    def test_structured_dict_decision(self):
+        assert _extract_decision({"decision": "Требуется доработка"}) == "вернуть"
+
+    def test_structured_dict_overall_status(self):
+        assert _extract_decision({"overall_status": "Соответствует"}) == "принять"
+
+    def test_uppercase_text(self):
+        assert _extract_decision("ВЕРНУТЬ НА ДОРАБОТКУ") == "вернуть"
+
+    def test_accept_with_remark(self):
+        assert _extract_decision("Принять с замечанием") == "принять с замечанием"
+
+    def test_escalation(self):
+        assert _extract_decision("Требуется эскалация — обнаружен конфликт интересов") == "эскалация"
+
+    def test_unknown_text(self):
+        assert _extract_decision("some random text") == "unknown"
+
+    def test_empty_dict(self):
+        assert _extract_decision({}) == "unknown"
+
+    def test_json_string_with_decision(self):
+        text = json.dumps({"decision": "Заявка полная", "score_pct": 95}, ensure_ascii=False)
+        assert _extract_decision(text) == "принять"

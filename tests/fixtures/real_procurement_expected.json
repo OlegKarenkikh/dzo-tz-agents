@@ -56,27 +56,31 @@
   "dzo_application": {
     "source": null,
     "document_type": "Заявка ДЗО",
-    "procurement_type": "Открытый конкурс ДЗО",
+    "procurement_type": "Открытый конкурс среди субъектов МСП (223-ФЗ)",
     "year": 2025,
-    "nmts_rub": 8500000,
+    "nmts_rub": 4350000,
     "agent": "dzo",
     "sections_present": {
-      "реквизиты_компании": true,
-      "предмет_заявки": true,
-      "стоимость": true,
-      "квалификация": true,
-      "перечень_вложений": true,
-      "банковская_гарантия": false
+      "предмет_закупки": true,
+      "объём_и_спецификация": true,
+      "инициатор": true,
+      "обоснование": true,
+      "стоимость_и_бюджет": true,
+      "сроки_поставки": true,
+      "место_поставки": false,
+      "обеспечение_заявки": false,
+      "приложения": true
     },
     "structural_score_pct": 83.3,
     "_score_note": "structural_score_pct = sections found / total sections; expert_score_pct = expert weighted assessment",
-    "expert_score_pct": 80.0,
+    "expert_score_pct": 83.3,
     "expert_decision": "ВЕРНУТЬ НА ДОРАБОТКУ",
     "rules_engine_decision": "ВЕРНУТЬ НА ДОРАБОТКУ",
     "decisions_match": true,
     "discrepancy_reason": null,
-    "critical_gaps": ["банковская гарантия"],
-    "non_critical_gaps": []
+    "critical_gaps": ["банковская гарантия не приложена", "неполный адрес поставки (только город)"],
+    "non_critical_gaps": ["нет штрафных санкций за просрочку поставки"],
+    "key_findings": "Банковская гарантия НЕ ПРИЛОЖЕНА (критическое нарушение). Адрес поставки неполный — указан только город без улицы."
   },
   "tz_vague_criteria": {
     "source": null,
