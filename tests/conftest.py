@@ -147,9 +147,9 @@ def _restore_real_llm_for_e2e(request):
 
     # Override env with real creds
     _orig = {k: _os.environ.get(k) for k in ("OPENAI_API_KEY","OPENAI_API_BASE","MODEL_NAME")}
-    _os.environ["OPENAI_API_KEY"]  = "qwen32masterkey"
-    _os.environ["OPENAI_API_BASE"] = "https://qwen-proxy-bdt6.onrender.com/v1"
-    _os.environ["MODEL_NAME"]      = "qwen3-32b"
+    _os.environ["OPENAI_API_KEY"]  = _os.environ.get("E2E_API_KEY", "qwen32masterkey")
+    _os.environ["OPENAI_API_BASE"] = _os.environ.get("E2E_API_BASE", "https://qwen-proxy-bdt6.onrender.com/v1")
+    _os.environ["MODEL_NAME"]      = _os.environ.get("E2E_MODEL_NAME", "qwen3-32b")
 
     # Reload config + shared.llm to pick up new env
     import config as _cfg; _il.reload(_cfg)

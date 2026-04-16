@@ -28,6 +28,8 @@ from pathlib import Path
 import pytest
 import requests
 
+from tests.fixtures.real_procurement_docs import REAL_DOCS_REGISTRY
+
 EEK_TZ_2024_TEXT = """
 Раздел II. Техническое задание
 
@@ -105,6 +107,14 @@ DZO_APPLICATION_TEXT = """
 
 Подпись: Петров А.С. Дата: 10.04.2025
 """
+
+from tests.fixtures.real_procurement_docs import (
+    KLEVER_TZ_2025,
+    RBANK_SHORT_TZ_2021,
+    ROSSETI_TENDER_2024,
+    DZO_FULL_APPLICATION,
+    DZO_ERRORS_APPLICATION,
+)
 
 API_BASE = os.getenv("TEST_API_BASE", "http://localhost:8000")
 API_KEY = os.getenv("TEST_API_KEY", "sandbox-test-api-key-12345")
@@ -277,6 +287,37 @@ class TestRealDocumentRulesEngine:
     def test_dzo_app_has_executor_requirements(self):
         assert self._has_section(DZO_APPLICATION_TEXT, "ФСТЭК", "лицензи", "опыт", "12 аналогичных")
 
+    def test_rbank_rules_engine_false_positive_is_fixed(self):
+        """After fix: rules-engine should detect missing sections in rbank TZ."""
+        from shared.document_parser import detect_sections
+        result = detect_sections(RBANK_TZ_2021_TEXT)
+        assert result["has_goal"] is False, "rbank should NOT have goal section"
+        assert result["has_delivery_address"] is False, "rbank should NOT have delivery address"
+        assert result["has_regulatory_reference"] is False, "rbank should NOT have regulatory refs"
+        assert result["has_evaluation_criteria"] is False, "rbank should NOT have eval criteria"
+
+    def test_eek_tz_structural_detection(self):
+        """EEK TZ should have goal and requirements detected structurally."""
+        from shared.document_parser import detect_sections
+        result = detect_sections(EEK_TZ_2024_TEXT)
+        assert result["has_goal"] is True
+        assert result["has_requirements"] is True
+        assert result["has_quantities"] is True
+        assert result["has_delivery_term"] is True
+        assert result["has_delivery_address"] is False  # Known gap
+
+    def test_klever_tz_all_sections_present(self):
+        """Klever TZ (full doc) should have all sections detected."""
+        from shared.document_parser import detect_sections
+        result = detect_sections(KLEVER_TZ_2025)
+        assert result["has_goal"] is True
+        assert result["has_requirements"] is True
+        assert result["has_quantities"] is True
+        assert result["has_delivery_term"] is True
+        assert result["has_delivery_address"] is True
+        assert result["has_regulatory_reference"] is True
+        assert result["has_evaluation_criteria"] is True
+
 
 @pytest.mark.e2e
 @pytest.mark.skipif(not os.getenv("LLM_BACKEND") or not _server_available, reason="LLM_BACKEND not set or server not running")
@@ -321,3 +362,25 @@ class TestRealDocumentE2E:
         result_str = json.dumps(d.get("result", {}), ensure_ascii=False).lower()
         assert "гарантия" in result_str or "guarantee" in result_str
         assert "заявка полная" not in result_str
+
+    @pytest.mark.e2e
+    @pytest.mark.parametrize("doc_key", [k for k, v in REAL_DOCS_REGISTRY.items() if v["agent"] in ("tz", "dzo")])
+    def test_all_real_docs_accuracy(self, doc_key):
+        """Parametrized test: check each real document against ground truth."""
+        doc = REAL_DOCS_REGISTRY[doc_key]
+        job_id = _submit_job(
+            agent=doc["agent"],
+            subject=f"E2E: {doc['subject'][:60]}",
+            body=f"Документ для проверки: {doc['filename']}",
+            doc_text=doc["text"],
+            filename=doc["filename"],
+        )
+        d = _wait_for_job(job_id, max_wait=120)
+        assert d["status"] == "success", f"Job failed for {doc_key}: {d.get('error', 'unknown')}"
+
+        result_str = json.dumps(d.get("result", {}), ensure_ascii=False).lower()
+        expected = doc["expected"]
+
+        # Check that key_missing gaps are detected
+        for gap in expected.get("key_missing", []):
+            assert gap.lower() in result_str, f"Agent did not detect missing: {gap} for {doc_key}"

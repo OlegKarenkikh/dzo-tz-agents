@@ -4,6 +4,32 @@
 Формат соответствует [Keep a Changelog](https://keepachangelog.com/ru/1.0.0/).
 Проект использует [Semantic Versioning](https://semver.org/lang/ru/).
 
+## [1.7.0] — 2026-04-16
+
+### Added
+- 5 new real procurement document test fixtures (`klever_tz_2025`, `rbank_short_tz_2021`,
+  `rosseti_tender_2024`, `dzo_full_application`, `dzo_errors_application`) — total 8 documents
+- `shared/document_parser.py`: structural section detection (`detect_sections()`,
+  `compute_tz_score()`, `compute_tz_decision()`) with heading-aware keyword matching
+- `shared/schemas.py`: Pydantic structured output models (`DZODecision`, `TZDecision`,
+  `TenderDecision`, `CollectorDecision`) for validated agent responses
+- `tests/test_accuracy_report.py`: accuracy report generator for all agents (E2E)
+- Parametrized E2E test `test_all_real_docs_accuracy` for all real documents
+- `docs/accuracy.md`: methodology and metrics documentation
+- E2E CI job (main branch only) with accuracy report artifact upload
+- `config.py`: `LLM_TEMPERATURE`, `LLM_SEED`, `LLM_TOP_P` environment variables
+- `shared/runner_base.py`: `_validate_output()` method for decision keyword checking
+- `.env.example`: E2E testing section, determinism settings
+
+### Changed
+- All 4 agent SYSTEM_PROMPTs: added decision thresholds, mandatory JSON format,
+  anti-hallucination rules, weighted checklists
+- All agents: `temperature` set to `0.0` for reproducibility (was 0.1–0.2)
+- `shared/llm.py`: `build_llm()` now accepts and passes `seed`/`top_p` via `model_kwargs`
+- `api/healthcheck.py`: enhanced health endpoint with per-agent status and version
+- `tests/conftest.py`: E2E credentials sourced from env vars (not hardcoded)
+- `tests/fixtures/real_procurement_expected.json`: updated summary for 8 documents
+
 ## [1.6.0] — 2026-04-10
 
 ### Added

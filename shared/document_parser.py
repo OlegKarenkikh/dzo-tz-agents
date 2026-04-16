@@ -351,6 +351,195 @@ def _extract_docx_text(file_bytes: bytes) -> str:
     return "\n".join(p.text for p in doc.paragraphs)
 
 
+# ---------------------------------------------------------------------------
+#  TZ Section Detection (rules-engine)
+# ---------------------------------------------------------------------------
+
+_HEADING_RE = re.compile(
+    r"^(?:"
+    r"\d+\.(?:\d+\.)*\s+"       # numbered: "1. ", "2.1. "
+    r"|[IVXLC]+\.\s+"           # roman: "II. "
+    r"|#{1,4}\s+"               # markdown: "## "
+    r"|[А-ЯA-Z\s]{4,}$"        # ALL CAPS line (min 4 chars)
+    r")",
+    re.MULTILINE,
+)
+
+
+def _is_heading_line(line: str) -> bool:
+    """Check if a line looks like a section heading."""
+    stripped = line.strip()
+    if not stripped:
+        return False
+    # Numbered heading: "1. Title", "2.1. Title"
+    if re.match(r"^\d+\.(?:\d+\.)*\s+\S", stripped):
+        return True
+    # Roman numeral heading
+    if re.match(r"^[IVXLC]+\.\s+\S", stripped):
+        return True
+    # Markdown heading
+    if stripped.startswith("#"):
+        return True
+    # ALL CAPS line (at least 4 chars, mostly uppercase letters)
+    alpha_chars = [c for c in stripped if c.isalpha()]
+    if len(alpha_chars) >= 4 and sum(1 for c in alpha_chars if c.isupper()) / len(alpha_chars) > 0.7:
+        return True
+    return False
+
+
+def _find_in_headings(text: str, keywords: list[str]) -> bool:
+    """Check if any keyword appears in a heading line."""
+    for line in text.split("\n"):
+        if not _is_heading_line(line):
+            continue
+        line_lower = line.lower()
+        for kw in keywords:
+            if kw.lower() in line_lower:
+                return True
+    return False
+
+
+def _find_in_context(text: str, keyword: str, context_keywords: list[str], max_distance: int = 100) -> bool:
+    """Check if keyword appears near context keywords (within max_distance chars)."""
+    text_lower = text.lower()
+    kw_lower = keyword.lower()
+    pos = 0
+    while True:
+        idx = text_lower.find(kw_lower, pos)
+        if idx == -1:
+            break
+        context_window = text_lower[max(0, idx - max_distance):idx + len(kw_lower) + max_distance]
+        for ckw in context_keywords:
+            if ckw.lower() in context_window:
+                return True
+        pos = idx + 1
+    return False
+
+
+def detect_sections(text: str) -> dict[str, bool]:
+    """Detect presence of standard TZ sections using structural analysis.
+
+    Unlike naive keyword matching, this function checks that keywords
+    appear in section HEADINGS or in appropriate CONTEXT, not just
+    anywhere in the document body.
+
+    Returns dict with boolean flags for each standard section.
+    """
+    result = {}
+
+    # has_goal: "Цель закупки" must appear as heading or in structured context
+    result["has_goal"] = _find_in_headings(text, [
+        "цель закупки", "цель ", "общие положения",
+    ]) or _find_in_context(text, "целью", ["закупк", "обеспечен"], 150)
+
+    # has_requirements: technical requirements section
+    result["has_requirements"] = _find_in_headings(text, [
+        "требовани", "технические характеристики", "спецификаци",
+    ]) or _find_in_headings(text, ["параметр"])
+
+    # has_quantities: quantities with units — look for "N шт.", "N ед.", etc.
+    qty_pattern = re.compile(
+        r"\b\d+\s*(?:шт|ед|компл|комплект|лицензи|рулон|мешок|банк|пачек|пачк|коробок|штук)\b",
+        re.IGNORECASE,
+    )
+    result["has_quantities"] = bool(qty_pattern.search(text))
+
+    # has_delivery_term: delivery timeline
+    term_patterns = [
+        r"\b(?:срок(?:ам)?\s+(?:поставки|выполнения|оказания|передачи))",
+        r"\b(?:в\s+течение\s+\d+\s*(?:\([^)]*\)\s*)?(?:календарных|рабочих)?\s*дней)",
+        r"\b(?:не\s+позднее\s+\d+\s*(?:\([^)]*\)\s*)?дней)",
+        r"\b\d+\s*(?:\([^)]*\)\s*)?(?:календарных|рабочих)\s+(?:дней|месяцев)",
+    ]
+    result["has_delivery_term"] = any(
+        re.search(p, text, re.IGNORECASE) for p in term_patterns
+    )
+
+    # has_delivery_address: actual delivery address (not just "г." in specs)
+    # Must find address-like context: street + building, or "место поставки" heading
+    address_in_heading = _find_in_headings(text, ["место поставки", "место доставки", "адрес поставки"])
+    address_pattern = re.compile(
+        r"(?:ул\.|улица|пр\.|проспект|пер\.|переулок|ш\.|шоссе|наб\.|набережная)"
+        r"[^.]{2,50}"
+        r"(?:д\.|дом|стр\.|строение|корп\.|корпус)",
+        re.IGNORECASE,
+    )
+    # "место поставки" or "адрес доставки" followed by actual address
+    place_keyword = re.search(
+        r"(?:место\s+поставки|место\s+оказания|адрес\s+доставки)[:\s]+[^\n]{5,}",
+        text,
+        re.IGNORECASE,
+    )
+    result["has_delivery_address"] = bool(
+        address_in_heading or address_pattern.search(text) or place_keyword
+    )
+
+    # has_regulatory_reference: GOST, TR TS, Federal Law references
+    # Must be standalone words, not inside serial numbers
+    regulatory_patterns = [
+        r"\bГОСТ\s+(?:Р\s+)?[\d.]",
+        r"\bТР\s+ТС\b",
+        r"\b(?:44|223)-ФЗ\b",
+        r"\bФедеральн\w+\s+закон\w*\b",
+        r"\bтехнич\w+\s+регламент\w*\b",
+        r"\bИСО\s+\d",
+        r"\bISO\s+\d",
+    ]
+    result["has_regulatory_reference"] = any(
+        re.search(p, text, re.IGNORECASE) for p in regulatory_patterns
+    )
+
+    # has_evaluation_criteria: evaluation/scoring criteria
+    criteria_in_heading = _find_in_headings(text, [
+        "критерии оценки", "критерии выбора", "оценка предложений",
+        "порядок оценки",
+    ])
+    criteria_pattern = re.compile(
+        r"(?:цена|стоимость|квалификация|опыт|качество)\s*[—–-]\s*\d+\s*%",
+        re.IGNORECASE,
+    )
+    result["has_evaluation_criteria"] = bool(
+        criteria_in_heading or criteria_pattern.search(text)
+    )
+
+    return result
+
+
+def compute_tz_score(sections: dict[str, bool]) -> float:
+    """Compute TZ completeness score based on section weights."""
+    weights = {
+        "has_goal": 15.0,
+        "has_requirements": 20.0,
+        "has_quantities": 10.0,
+        "has_delivery_term": 10.0,
+        "has_delivery_address": 10.0,
+        "has_regulatory_reference": 10.0,
+        "has_evaluation_criteria": 10.0,
+    }
+    # has_requirements gets extra weight
+    total_weight = sum(weights.values())
+    achieved = sum(w for k, w in weights.items() if sections.get(k, False))
+    return round(achieved / total_weight * 100, 1)
+
+
+def compute_tz_decision(sections: dict[str, bool], score: float) -> str:
+    """Compute rules-engine decision for TZ document."""
+    critical_missing = []
+    if not sections.get("has_goal"):
+        critical_missing.append("цель закупки")
+    if not sections.get("has_requirements"):
+        critical_missing.append("технические требования")
+    if not sections.get("has_quantities"):
+        critical_missing.append("количество")
+
+    if len(critical_missing) >= 2 or score < 50:
+        return "ВЕРНУТЬ НА ДОРАБОТКУ"
+    elif len(critical_missing) == 1 or score < 85:
+        return "ПРИНЯТЬ С ЗАМЕЧАНИЕМ"
+    else:
+        return "ПРИНЯТЬ"
+
+
 def _parse_nda_text(text: str) -> NDAData:
     """Parse NDA text to extract signatory info."""
     data = NDAData()
