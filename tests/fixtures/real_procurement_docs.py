@@ -17,6 +17,7 @@ Expected expert decisions (without LLM — rules-engine only):
 from __future__ import annotations
 
 # ── Document 1: ЕЭК ТЗ на закупку лицензий ПО ИИС ЕАЭС (2024) ───────────────
+# п. 2.3 опущен — выдержка из оригинального документа (раздел отсутствует в исходном PDF)
 
 EEK_TZ_2024 = """
 Раздел II. Техническое задание
@@ -66,6 +67,8 @@ EEK_TZ_2024_EXPECTED = {
 
 
 # ── Document 2: rbank ТЗ на закупку компьютерного оборудования (2021) ─────────
+# Документ утверждён в феврале 2021 г., описывает поставку в 2022 г. — это корректно:
+# ТЗ подготовлено заранее на следующий финансовый год.
 
 RBANK_TZ_2021 = """
 ТЕХНИЧЕСКОЕ ЗАДАНИЕ
@@ -110,6 +113,9 @@ RBANK_TZ_2021_EXPECTED = {
 
 # ── Document 3: Заявка ДЗО — ООО «Технологии Будущего» ───────────────────────
 
+# Синтетический документ на основе шаблонов 44-ФЗ / 223-ФЗ.
+# Не является реальным ground truth — используется для regression testing.
+# TODO: заменить реальным документом из zakupki.gov.ru
 DZO_APPLICATION = """
 ЗАЯВКА НА УЧАСТИЕ В ЗАКУПКЕ ДЗО
 Открытый конкурс в электронной форме № 19/ОКЭ-2025
@@ -211,6 +217,7 @@ REAL_DOCS_REGISTRY = {
         "filename": "tz_rbank_equipment_2021.txt",
         "subject": "ТЗ на закупку компьютерного оборудования — 35 моноблоков + 5 ноутбуков",
         "source_url": "https://rbank.by/upload/medialibrary/a99/Tekh.zadanie-na-tender.pdf",
+        "source_note": "Snapshot verified April 2026. External URL may become unavailable; text is preserved in fixture.",
     },
     "dzo_application": {
         "text": DZO_APPLICATION,
@@ -218,7 +225,8 @@ REAL_DOCS_REGISTRY = {
         "agent": "dzo",
         "filename": "dzo_application_techfuture.txt",
         "subject": "Заявка ДЗО — ООО Технологии Будущего — Конкурс 19/ОКЭ-2025",
-        "source_url": None,  # Synthetic based on public 44-FZ/223-FZ templates
+        "synthetic": True,
+        "source_url": None,  # Synthetic: based on 44-FZ/223-FZ public templates
     },
     "tz_vague_criteria": {
         "agent": "tz",

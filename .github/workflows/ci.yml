@@ -125,6 +125,7 @@ jobs:
         env:
           LLM_BACKEND: "qwen_proxy"
           OPENAI_API_KEY: ${{ secrets.QWEN_API_KEY }}
+          QWEN_API_KEY: ${{ secrets.QWEN_API_KEY }}
           OPENAI_API_BASE: ${{ secrets.QWEN_API_BASE || 'https://qwen-proxy-bdt6.onrender.com' }}
           MODEL_NAME: ${{ secrets.QWEN_MODEL || 'qwen3-32b' }}
           API_KEY: "sandbox-test-api-key-12345"

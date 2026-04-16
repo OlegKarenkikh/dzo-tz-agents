@@ -110,7 +110,6 @@ addopts = "-v --tb=short -m 'not e2e and not integration'"
 markers = [
     "integration: marks tests as integration (requiring running API server)",
     "e2e: end-to-end tests requiring real LLM and running API server (opt-in, pytest -m e2e)",
-    "unit: fast unit tests with mocked dependencies",
 ]
 filterwarnings = ["ignore::DeprecationWarning"]
 

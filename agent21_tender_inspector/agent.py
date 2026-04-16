@@ -86,9 +86,9 @@ def create_tender_agent(model_name: str | None = None) -> AgentRunner:
     Note:
         Использует langgraph.prebuilt.create_react_agent — единый API LangGraph.
     """
-    # temperature=0.1 — низкая для детерминированного анализа документов;
+    # temperature=0.0 — детерминированный анализ документов;
     # повышение ухудшает воспроизводимость классификации и извлечения данных
-    llm = build_llm(temperature=0.1, model_name_override=model_name)
+    llm = build_llm(temperature=0.0, model_name_override=model_name)
     tools = [invoke_peer_agent, generate_document_list]
     logger.info(
         "Создание агента Тендер (модель=%s)",

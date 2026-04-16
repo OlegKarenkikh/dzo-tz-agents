@@ -34,6 +34,7 @@ from tests.fixtures.real_procurement_docs import (
     DZO_APPLICATION as DZO_APPLICATION_TEXT,
     REAL_DOCS_REGISTRY,
 )
+from tests.conftest import record_accuracy_result
 
 API_BASE = os.getenv("TEST_API_BASE", "http://localhost:8000")
 API_KEY = os.getenv("TEST_API_KEY", "sandbox-test-api-key-12345")
@@ -183,7 +184,11 @@ class TestRealDocumentRulesEngine:
 
     def test_eek_tz_missing_delivery_address(self):
         import re
-        has_address = bool(re.search(r"(ул[.]|место поставки)", EEK_TZ_2024_TEXT))
+        ADDRESS_PATTERNS = re.compile(
+            r"(ул[.]|пр[.]|пр-т|бульвар|наб[.]|шоссе|место\s+поставки|адрес\s+поставки)",
+            re.IGNORECASE,
+        )
+        has_address = bool(ADDRESS_PATTERNS.search(EEK_TZ_2024_TEXT))
         assert not has_address
 
     def test_rbank_tz_has_item_count(self):
@@ -283,3 +288,11 @@ class TestRealDocumentE2E:
         for missing_key in expected.get("key_missing", []):
             assert missing_key.lower() in result_str, \
                 f"[{doc_key}] Agent did not detect missing: '{missing_key}'"
+
+        # Record result for accuracy report
+        record_accuracy_result(
+            doc_key=doc_key,
+            expected_decision=expected.get("expert_decision", "unknown"),
+            actual_decision=d.get("status", "unknown"),
+            match=True,  # If we reach here, assertions passed
+        )
