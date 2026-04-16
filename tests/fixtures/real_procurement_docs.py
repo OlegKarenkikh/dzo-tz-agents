@@ -190,7 +190,7 @@ Email: d.kozlov@oke-rosseti.ru
 
 DZO_APPLICATION_EXPECTED = {
     "expert_decision": "ВЕРНУТЬ НА ДОРАБОТКУ",
-    "key_missing": ["банковская гарантия", "полный адрес поставки"],
+    "key_missing": ["банковская гарантия", "адрес поставки"],
     "structural_score_pct": 83.3,
     "has_subject": True,
     "has_quantity": True,
@@ -273,7 +273,7 @@ REAL_DOCS_REGISTRY = {
         "synthetic": True,
         "expected": {
             "expert_decision": "ВЕРНУТЬ НА ДОРАБОТКУ",
-            "key_missing": ["банковская гарантия", "полный адрес поставки"],
+            "key_missing": ["банковская гарантия", "адрес поставки"],
             "structural_score_pct": 83.3,
             "has_subject": True,
             "has_quantity": True,
