@@ -61,7 +61,7 @@ EEK_TZ_2024_EXPECTED = {
     "has_evaluation_criteria": False, # criteria in separate section IV
     "expert_score_pct": 87.5,
     "expert_decision": "ПРИНЯТЬ С ЗАМЕЧАНИЕМ",
-    "rules_engine_decision": "ВЕРНУТЬ НА ДОРАБОТКУ",  # agent uses stricter threshold (85%)
+    "rules_engine_decision": "ВЕРНУТЬ НА ДОРАБОТКУ",  # structural_score=62.5% < 75% → агент возвращает на доработку
     "key_missing": ["место поставки"],
 }
 
@@ -230,6 +230,7 @@ REAL_DOCS_REGISTRY = {
     },
     "tz_vague_criteria": {
         "agent": "tz",
+        "synthetic": True,
         "text": TZ_VAGUE_CRITERIA,
         "filename": "tz_vague_criteria.md",
         "subject": "Поставка офисной техники — расплывчатые критерии",
@@ -242,6 +243,7 @@ REAL_DOCS_REGISTRY = {
     },
     "tz_no_units": {
         "agent": "tz",
+        "synthetic": True,
         "text": TZ_NO_UNITS,
         "filename": "tz_no_units.md",
         "subject": "Расходные материалы — нет единиц измерения и нормативов",

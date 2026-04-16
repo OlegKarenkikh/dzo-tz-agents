@@ -115,9 +115,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[ui,dev]"
 
-      - name: Install pytest-json-report
-        run: pip install pytest-json-report
-
       - name: Start API server
         run: |
           uvicorn api.app:app --host 0.0.0.0 --port 8000 > /tmp/uvicorn-e2e.log 2>&1 &
@@ -144,10 +141,7 @@ jobs:
           echo "ERROR: Server did not start in 20s" && exit 1
 
       - name: Run E2E tests
-        run: >
-          pytest tests/ -m e2e -v --tb=short
-          --json-report --json-report-file=accuracy_report.json
-          --json-report-indent=2
+        run: pytest tests/ -m e2e -v --tb=short
         env:
           TEST_API_BASE: "http://localhost:8000"
           TEST_API_KEY: "sandbox-test-api-key-12345"
