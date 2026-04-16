@@ -38,7 +38,7 @@ def health():
     return {
         "status": "ok",
         "agents": agents_status,
-        "version": "1.9.0",
+        "version": "2.0.0",
         "uptime_sec": (datetime.now() - start_time).seconds,
         "agent_mode": os.getenv("AGENT_MODE", "both"),
         "model": os.getenv("MODEL_NAME", "gpt-4o"),

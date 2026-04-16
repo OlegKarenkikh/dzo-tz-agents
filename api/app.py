@@ -114,15 +114,19 @@ _DEFAULT_API_KEYS = {"change-me-strong-api-key", "my-test-api-key-12345", ""}
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from config import API_KEYS, JWT_SECRET
     api_key = _get_api_key()
-    if not api_key:
-        logger.warning("АПИ-ключ не задан! Установите переменную окружения API_KEY.")
+    if not api_key and not API_KEYS and not JWT_SECRET:
+        logger.warning("Аутентификация не настроена! Установите API_KEY, API_KEYS или JWT_SECRET.")
     elif api_key in _DEFAULT_API_KEYS:
         logger.warning(
             "⚠️  API_KEY имеет значение по умолчанию! Замените на уникальный ключ для продакшена."
         )
+    if JWT_SECRET:
+        logger.info("JWT аутентификация включена (алгоритм: %s)", os.getenv("JWT_ALGORITHM", "HS256"))
     init_db()
-    logger.info("АПИ запущен. Модель: %s, бэкенд: %s", os.getenv("MODEL_NAME", "gpt-4o"), os.getenv("LLM_BACKEND", "openai"))
+    logger.info("АПИ запущен. Модель: %s, бэкенд: %s, API ключей: %d",
+                os.getenv("MODEL_NAME", "gpt-4o"), os.getenv("LLM_BACKEND", "openai"), len(API_KEYS))
     yield
     close_db()
     logger.info("АПИ остановлен.")
@@ -295,15 +299,52 @@ def _attachment_meta(attachments: list) -> list[dict]:
 
 
 def _get_api_key() -> str:
+    """Legacy: return first configured API key (backward compat)."""
     return os.getenv("API_KEY", "")
 
 
+def _verify_jwt(token: str) -> dict | None:
+    """Verify a JWT bearer token. Returns payload or None."""
+    from config import JWT_SECRET, JWT_ALGORITHM
+    if not JWT_SECRET:
+        return None
+    try:
+        import jwt
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        return payload
+    except Exception:
+        return None
+
+
 def _require_api_key(key: str | None = Depends(_api_key_header)) -> str:
-    api_key = _get_api_key()
-    if not api_key:
+    from config import API_KEYS, JWT_SECRET
+
+    # If no auth configured at all, allow anonymous
+    if not API_KEYS and not JWT_SECRET:
         return ""
-    if not key or not secrets.compare_digest(key, api_key):
+
+    if not key:
         raise HTTPException(status_code=401, detail="Неверный или отсутствующий API-ключ")
+
+    # Try JWT bearer token first (if JWT_SECRET is configured)
+    if JWT_SECRET and (key.startswith("eyJ") or key.count(".") == 2):
+        payload = _verify_jwt(key)
+        if payload:
+            return payload.get("sub", "jwt-user")
+        raise HTTPException(status_code=401, detail="Невалидный JWT токен")
+
+    # Try API key matching
+    if API_KEYS:
+        for valid_key in API_KEYS:
+            if secrets.compare_digest(key, valid_key):
+                return key
+        raise HTTPException(status_code=401, detail="Неверный или отсутствующий API-ключ")
+
+    # Fallback to legacy single key
+    api_key = _get_api_key()
+    if api_key and not secrets.compare_digest(key, api_key):
+        raise HTTPException(status_code=401, detail="Неверный или отсутствующий API-ключ")
+
     return key
 
 

@@ -4,6 +4,25 @@
 Формат соответствует [Keep a Changelog](https://keepachangelog.com/ru/1.0.0/).
 Проект использует [Semantic Versioning](https://semver.org/lang/ru/).
 
+## [2.0.0] — 2026-04-16
+
+### Added
+- Multi-key authentication: `API_KEYS` env var accepts comma-separated list of valid API keys
+- JWT Bearer Token authentication: `JWT_SECRET` + `JWT_ALGORITHM` for signed token auth
+- `monitoring/rules/slo.yml`: SLO/SLA alert rules — decision error rate, p99 latency < 30s,
+  uptime > 99.5%, job duration p95, all-models-unavailable
+- `docker-compose.langfuse.yml`: self-hosted Langfuse stack with auto DB initialization
+- Tests: JWT auth (4 tests), multi-key auth (2 tests)
+
+### Changed
+- `_require_api_key()` now supports: legacy single key, multiple keys, JWT bearer tokens
+- Startup validation improved: warns if no auth configured, checks for default keys
+- `.env.example`: JWT and multi-key auth sections, updated Langfuse self-hosted docs
+
+### Breaking Changes
+- `API_KEY` env var still works but `API_KEYS` (comma-separated) is now preferred
+- Auth behavior when no keys configured: still allows anonymous access (backward compatible)
+
 ## [1.9.0] — 2026-04-16
 
 ### Added
