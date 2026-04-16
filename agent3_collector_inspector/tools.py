@@ -414,11 +414,16 @@ def collect_tender_documents(query: str) -> str:
             1 for pr in participant_results.values()
             if pr["status"] == "missing"
         )
+        # Полнота = участник прислал И анкету, И NDA
+        fully_complete = sum(
+            1 for pr in participant_results.values()
+            if pr["status"] == "received" and pr["anketa_received"] and pr["nda_received"]
+        )
 
         if total_participants == 0:
             decision = "ТРЕБУЕТСЯ ПРОВЕРКА"
         elif (
-            received_count / max(total_participants, 1) >= 0.9
+            fully_complete / max(total_participants, 1) >= 0.9
             and len(critical_discrepancies) == 0
             and missing_with_docs <= 1
         ):
