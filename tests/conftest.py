@@ -1,4 +1,6 @@
+import json as _json
 import os
+import pathlib as _pathlib
 import sys
 import types
 from unittest.mock import MagicMock
@@ -131,9 +133,46 @@ _install_mocks()
 
 
 # ---------------------------------------------------------------------------
-# Fixture: restore real LLM for @pytest.mark.e2e tests
+# Accuracy report collection
 # ---------------------------------------------------------------------------
 import pytest as _pytest_module
+
+_accuracy_results: list[dict] = []
+
+
+def record_accuracy_result(doc_key: str, expected_decision: str, actual_decision: str, match: bool):
+    """Record an accuracy test result for the final report."""
+    _accuracy_results.append({
+        "doc_key": doc_key,
+        "expected_decision": expected_decision,
+        "actual_decision": actual_decision,
+        "match": match,
+    })
+
+
+@_pytest_module.fixture(scope="session", autouse=True)
+def _write_accuracy_report():
+    """Collect accuracy test results and write accuracy_report.json at session end."""
+    yield
+    if _accuracy_results:
+        report = {
+            "results": _accuracy_results,
+            "total": len(_accuracy_results),
+            "matched": sum(1 for r in _accuracy_results if r.get("match")),
+            "match_pct": round(
+                sum(1 for r in _accuracy_results if r.get("match"))
+                / len(_accuracy_results) * 100, 1
+            ),
+        }
+        _pathlib.Path("accuracy_report.json").write_text(
+            _json.dumps(report, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+
+# ---------------------------------------------------------------------------
+# Fixture: restore real LLM for @pytest.mark.e2e tests
+# ---------------------------------------------------------------------------
 
 @_pytest_module.fixture(autouse=True)
 def _restore_real_llm_for_e2e(request):
@@ -198,7 +237,7 @@ def _restore_real_llm_for_e2e(request):
 
     # Restore mocks
     import shared.llm as _sllm2; import langgraph.prebuilt as _lgp2
-    _sllm2.build_llm = lambda *a, **kw: __import__("unittest.mock", fromlist=["MagicMock"]).MagicMock()
+    _sllm2.build_llm = _fake_build_llm
     import sys as _sys
     for _mname, _sv in _saved.items():
         _m = _sys.modules.get(_mname)

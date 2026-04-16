@@ -227,10 +227,16 @@ class TestRESTAPIFlowE2E:
 
     def test_process_dzo_endpoint(self, client):
         """POST /api/v1/process/dzo should return 200 with agent output."""
+        payload = {
+            "sender_email": "test@example.com",
+            "subject": "Тестовая заявка ДЗО",
+            "text": _short_dzo_input(),
+            "attachments": [],
+        }
         resp = client.post(
             "/api/v1/process/dzo",
-            json={"text": _short_dzo_input()},
-            headers={"X-API-Key": "test-e2e-key"},
+            json=payload,
+            headers={"x-api-key": "test-e2e-key"},
         )
         assert resp.status_code == 200
         data = resp.json()

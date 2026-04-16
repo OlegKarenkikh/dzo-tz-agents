@@ -135,7 +135,7 @@ def create_collector_agent(model_name: str | None = None) -> AgentRunner:
     Note:
         Использует langgraph.prebuilt.create_react_agent — единый API LangGraph.
     """
-    llm = build_llm(temperature=0.1, model_name_override=model_name)
+    llm = build_llm(temperature=0.0, model_name_override=model_name)
     tools = [invoke_peer_agent, collect_tender_documents]
     logger.info(
         "Создание агента Collector (модель=%s)",
