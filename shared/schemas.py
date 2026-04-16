@@ -14,7 +14,7 @@ Usage::
 """
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import Literal
 
 
@@ -32,7 +32,23 @@ class DZOInspectionResult(BaseModel):
 
 class TZInspectionResult(BaseModel):
     """Structured output for TZ inspector agent."""
-    overall_status: Literal["Соответствует", "Принять с замечанием", "Требует доработки", "Вернуть на доработку"] = "Требует доработки"
+    overall_status: str = "Требует доработки"
+
+    @field_validator("overall_status", mode="before")
+    @classmethod
+    def normalize_status(cls, v: str) -> str:
+        if not isinstance(v, str):
+            return str(v)
+        mapping = {
+            "соответствует": "Соответствует",
+            "принять": "Соответствует",
+            "принять с замечанием": "Принять с замечанием",
+            "требует доработки": "Требует доработки",
+            "вернуть на доработку": "Вернуть на доработку",
+            "вернуть": "Вернуть на доработку",
+        }
+        return mapping.get(v.lower().strip(), v)
+
     category: str = ""
     sections: list[dict] = Field(default_factory=list)
     critical_issues: list[str] = Field(default_factory=list)

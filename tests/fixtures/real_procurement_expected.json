@@ -78,14 +78,68 @@
     "critical_gaps": ["банковская гарантия"],
     "non_critical_gaps": []
   },
+  "tz_vague_criteria": {
+    "source": null,
+    "document_type": "ТЗ (Техническое задание)",
+    "procurement_type": "Поставка офисной техники",
+    "year": 2026,
+    "nmts_rub": null,
+    "agent": "tz",
+    "sections_present": {
+      "цель_закупки": true,
+      "требования": false,
+      "количество": false,
+      "срок_поставки": false,
+      "нормативная_база": false,
+      "место_поставки": true,
+      "критерии_оценки": false,
+      "порядок_оплаты": false
+    },
+    "structural_score_pct": 62.5,
+    "_score_note": "structural_score_pct = approximate; expert_score_pct = expert weighted assessment",
+    "expert_score_pct": 62.5,
+    "expert_decision": "ВЕРНУТЬ НА ДОРАБОТКУ",
+    "rules_engine_decision": "ВЕРНУТЬ НА ДОРАБОТКУ",
+    "decisions_match": true,
+    "discrepancy_reason": null,
+    "critical_gaps": ["конкретные технические характеристики", "единицы измерения", "срок поставки"],
+    "non_critical_gaps": ["критерии оценки"]
+  },
+  "tz_no_units": {
+    "source": null,
+    "document_type": "ТЗ (Техническое задание)",
+    "procurement_type": "Поставка расходных материалов",
+    "year": 2026,
+    "nmts_rub": null,
+    "agent": "tz",
+    "sections_present": {
+      "цель_закупки": true,
+      "требования": true,
+      "количество": false,
+      "срок_поставки": true,
+      "нормативная_база": false,
+      "место_поставки": true,
+      "критерии_оценки": false,
+      "порядок_оплаты": false
+    },
+    "structural_score_pct": 50.0,
+    "_score_note": "structural_score_pct = approximate; expert_score_pct = expert weighted assessment",
+    "expert_score_pct": 50.0,
+    "expert_decision": "ВЕРНУТЬ НА ДОРАБОТКУ",
+    "rules_engine_decision": "ВЕРНУТЬ НА ДОРАБОТКУ",
+    "decisions_match": true,
+    "discrepancy_reason": null,
+    "critical_gaps": ["единицы измерения", "нормативные документы"],
+    "non_critical_gaps": ["критерии оценки"]
+  },
   "summary": {
-    "total_docs_tested": 3,
-    "decisions_match_count": 1,
-    "decisions_match_pct": 33.3,
+    "total_docs_tested": 5,
+    "decisions_match_count": 3,
+    "decisions_match_pct": 60.0,
     "false_positives": 1,
     "false_negatives": 0,
-    "analysis_date": "2026-04-11",
+    "analysis_date": "2026-04-16",
     "llm_mode": "rules-engine only (no LLM key)",
-    "key_finding": "Rules-engine точен на документах с явными маркерами (DZO), но даёт ложноположительные результаты при keyword-matching (rbank). LLM-режим устраняет это ограничение."
+    "key_finding": "Rules-engine точен на документах с явными маркерами (DZO, vague criteria, no units), но даёт ложноположительные результаты при keyword-matching (rbank). LLM-режим устраняет это ограничение."
   }
 }

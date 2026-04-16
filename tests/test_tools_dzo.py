@@ -17,28 +17,30 @@ from agent1_dzo_inspector.tools import (
 
 
 class TestGenerateValidationReport:
-    def test_full_report(self):
-        payload = json.dumps({
-            "decision": "Заявка полная",
-            "checklist_attachments": [{"field": "ТЗ", "status": "Да"}],
-            "checklist_required": [{"field": "Наименование", "status": "ОК"}],
-            "checklist_additional": [{"field": "Бюджет", "status": "ОК"}],
-            "missing_fields": [],
+    def test_validates_schema(self):
+        """Valid kwargs -> output passes DZOInspectionResult validation."""
+        from shared.schemas import DZOInspectionResult
+
+        result = generate_validation_report.invoke({
+            "decision": "Требуется доработка",
+            "score_pct": 72.0,
+            "missing_critical": ["банковская гарантия"],
+            "missing_non_critical": [],
+            "recommendation": "Приложить банковскую гарантию",
         })
-        result = json.loads(generate_validation_report.invoke(json.loads(payload)))
-        assert result["decision"] == "Заявка полная"
-        assert result["stats"]["attachments_ok"] == 1
-        assert result["stats"]["required_ok"] == 1
-        assert result["stats"]["additional_ok"] == 1
+        data = json.loads(result)
+        validated = DZOInspectionResult.model_validate(data)
+        assert validated.decision == "Требуется доработка"
+        assert "validation_errors" not in data
 
-    def test_empty_input(self):
-        result = json.loads(generate_validation_report.invoke(json.loads("{}")))
-        assert result["decision"] == "Не определено"
-        assert result["stats"]["attachments_ok"] == 0
-
-    def test_validation_error_on_wrong_types(self):
-        with pytest.raises(ValidationError):
-            generate_validation_report.invoke({"decision": "ok", "checklist_attachments": "not-a-list"})
+    def test_fallback_on_bad_input(self):
+        """Invalid kwargs -> graceful fallback with validation_errors."""
+        result = generate_validation_report.invoke({
+            "decision": "INVALID_DECISION",
+            "score_pct": 999,  # out of range
+        })
+        data = json.loads(result)
+        assert "validation_errors" in data or "raw_input" in data
 
 
 class TestGenerateTezisForm:

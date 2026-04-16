@@ -4,10 +4,11 @@ from datetime import datetime
 from html import escape as html_escape
 
 from langchain.tools import tool
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from shared.agent_tooling import invoke_agent_as_tool
 from shared.logger import setup_logger
+from shared.schemas import DZOInspectionResult
 
 logger = setup_logger("agent_dzo")
 
@@ -195,45 +196,55 @@ class PeerAgentInvokeInput(BaseModel):
 # Инструменты агента
 # ---------------------------------------------------------------------------
 
-@tool(args_schema=ValidationReportInput)
+class _DZOReportInput(BaseModel):
+    """Permissive input schema — validation happens inside the function body."""
+    model_config = ConfigDict(extra="allow")
+
+    decision: str = "Требуется доработка"
+    score_pct: float = 0
+    checklist_1: dict = Field(default_factory=dict)
+    checklist_2: dict = Field(default_factory=dict)
+    checklist_3: dict = Field(default_factory=dict)
+    missing_critical: list = Field(default_factory=list)
+    missing_non_critical: list = Field(default_factory=list)
+    recommendation: str = ""
+
+
+@tool(args_schema=_DZOReportInput)
 def generate_validation_report(
-    decision: str,
-    checklist_attachments: list[ChecklistItem] = None,
-    checklist_required: list[ChecklistItem] = None,
-    checklist_additional: list[ChecklistItem] = None,
-    missing_fields: list[str] = None,
+    decision: str = "Требуется доработка",
+    score_pct: float = 0,
+    checklist_1: dict = None,
+    checklist_2: dict = None,
+    checklist_3: dict = None,
+    missing_critical: list = None,
+    missing_non_critical: list = None,
+    recommendation: str = "",
 ) -> str:
     """
-    Генерирует JSON-отчёт по чек-листам проверки заявки ДЗО.
+    Генерирует структурированный JSON-отчёт о результатах проверки заявки ДЗО.
     Передай только результаты анализа — не полный текст заявки.
     """
-    checklist_attachments = checklist_attachments or []
-    checklist_required = checklist_required or []
-    checklist_additional = checklist_additional or []
-    missing_fields = missing_fields or []
+    kwargs = {
+        "decision": decision,
+        "score_pct": score_pct,
+        "checklist_1": checklist_1 or {},
+        "checklist_2": checklist_2 or {},
+        "checklist_3": checklist_3 or {},
+        "missing_critical": missing_critical or [],
+        "missing_non_critical": missing_non_critical or [],
+        "recommendation": recommendation,
+    }
     try:
-        logger.debug("🔧 generate_validation_report вызван")
-        atts = [c.model_dump() for c in checklist_attachments]
-        reqs = [c.model_dump() for c in checklist_required]
-        adds = [c.model_dump() for c in checklist_additional]
-        report = {
-            "timestamp": datetime.now().isoformat(),
-            "decision":  decision,
-            "checklist_attachments": atts,
-            "checklist_required":    reqs,
-            "checklist_additional":  adds,
-            "missing_fields":        missing_fields,
-            "stats": {
-                "attachments_ok": sum(1 for c in atts if c.get("status") == "Да"),
-                "required_ok":    sum(1 for c in reqs if c.get("status") in ("Да", "ОК")),
-                "additional_ok":  sum(1 for c in adds if c.get("status") in ("Да", "ОК")),
-            },
-        }
-        logger.info("✅ generate_validation_report: отчёт готов (decision=%s)", decision)
-        return json.dumps(report, ensure_ascii=False)
-    except Exception as e:
-        logger.error("❌ generate_validation_report: ошибка %s", e)
-        return json.dumps({"error": str(e)})
+        validated = DZOInspectionResult.model_validate(kwargs)
+        return validated.model_dump_json(ensure_ascii=False, indent=2)
+    except ValidationError as e:
+        # Graceful fallback — return raw JSON with validation warnings
+        return json.dumps({
+            "raw_input": kwargs,
+            "validation_errors": [err["msg"] for err in e.errors()],
+            "decision": kwargs.get("decision", "Требуется доработка"),
+        }, ensure_ascii=False, indent=2)
 
 
 @tool(args_schema=TezisFormInput)
