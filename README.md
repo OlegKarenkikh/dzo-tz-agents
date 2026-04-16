@@ -7,6 +7,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![MCP](https://img.shields.io/badge/MCP-supported-purple)](docs/mcp-a2a.md)
 [![A2A](https://img.shields.io/badge/A2A-agent%20card-blueviolet)](docs/mcp-a2a.md)
+[![Coverage](https://img.shields.io/badge/coverage-68%25-yellow)](TESTING.md)
 
 LLM-агенты на базе **LangGraph + LangChain + GPT-4o** для автоматической проверки заявок ДЗО, технических заданий, тендерной документации и сбора документов тендерного отбора по электронной почте.
 Портировано из n8n-сценариев (`n8n-application-inspector-dzo-v3.1`, `n8n-tz-inspector-v4.1`).
