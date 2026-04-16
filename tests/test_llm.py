@@ -433,3 +433,44 @@ class TestGithubTokenInConfig:
 
             importlib.reload(config)
         assert config.GITHUB_TOKEN is None
+
+
+class TestCircuitBreaker:
+    """Tests for LLM circuit breaker."""
+
+    def test_initially_closed(self):
+        from shared.llm import _CircuitBreaker
+        cb = _CircuitBreaker(threshold=3, window_sec=60)
+        assert not cb.is_open("gpt-4o")
+
+    def test_opens_after_threshold_failures(self):
+        from shared.llm import _CircuitBreaker
+        cb = _CircuitBreaker(threshold=3, window_sec=60)
+        cb.record_failure("gpt-4o")
+        cb.record_failure("gpt-4o")
+        assert not cb.is_open("gpt-4o")  # 2 < 3
+        cb.record_failure("gpt-4o")
+        assert cb.is_open("gpt-4o")  # 3 >= 3
+
+    def test_success_resets_failures(self):
+        from shared.llm import _CircuitBreaker
+        cb = _CircuitBreaker(threshold=2, window_sec=60)
+        cb.record_failure("gpt-4o")
+        cb.record_failure("gpt-4o")
+        assert cb.is_open("gpt-4o")
+        cb.record_success("gpt-4o")
+        assert not cb.is_open("gpt-4o")
+
+    def test_filter_healthy_removes_open_models(self):
+        from shared.llm import _CircuitBreaker
+        cb = _CircuitBreaker(threshold=2, window_sec=60)
+        cb.record_failure("model-a")
+        cb.record_failure("model-a")
+        result = cb.filter_healthy(["model-a", "model-b", "model-c"])
+        assert result == ["model-b", "model-c"]
+
+    def test_filter_healthy_returns_all_if_none_open(self):
+        from shared.llm import _CircuitBreaker
+        cb = _CircuitBreaker(threshold=3, window_sec=60)
+        result = cb.filter_healthy(["model-a", "model-b"])
+        assert result == ["model-a", "model-b"]
