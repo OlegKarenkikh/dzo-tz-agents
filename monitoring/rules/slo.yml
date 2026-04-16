@@ -1,0 +1,72 @@
+groups:
+  - name: slo_sla
+    interval: 30s
+    rules:
+
+      # ─── SLO: Agent Decision Error Rate ──────────────────────
+      # Alert if more than 10% of agent decisions are errors
+      - alert: AgentDecisionErrorRate
+        expr: |
+          (
+            sum(rate(dzo_tz_jobs_total{status="error"}[10m])) by (agent)
+            / (sum(rate(dzo_tz_jobs_total[10m])) by (agent) + 0.001)
+          ) > 0.1
+        for: 10m
+        labels:
+          severity: critical
+          slo: decision_accuracy
+        annotations:
+          summary: "Агент {{ $labels.agent }}: >10% решений с ошибкой"
+          description: "SLO нарушен: доля ошибочных решений агента {{ $labels.agent }} превышает 10% за последние 10 минут."
+
+      # ─── SLO: API p99 Latency < 30s ──────────────────────────
+      - alert: SLOLatencyP99Exceeded
+        expr: |
+          histogram_quantile(0.99, sum(rate(dzo_tz_api_latency_seconds_bucket[5m])) by (le))
+          > 30
+        for: 5m
+        labels:
+          severity: warning
+          slo: latency_p99
+        annotations:
+          summary: "SLO: API p99 latency > 30с"
+          description: "99-й перцентиль задержки API превышает 30 секунд — SLO нарушен."
+
+      # ─── SLO: Uptime > 99.5% ─────────────────────────────────
+      - alert: SLOUptimeViolation
+        expr: |
+          avg_over_time(up{job="dzo-tz-api"}[1h]) < 0.995
+        for: 5m
+        labels:
+          severity: critical
+          slo: uptime
+        annotations:
+          summary: "SLO: Uptime API < 99.5% за последний час"
+          description: "Доступность API за последний час ниже 99.5% — SLO нарушен."
+
+      # ─── SLO: Job Processing Time < 120s ──────────────────────
+      - alert: SLOJobDurationExceeded
+        expr: |
+          histogram_quantile(0.95, sum(rate(dzo_tz_job_duration_seconds_bucket[15m])) by (le, agent))
+          > 120
+        for: 10m
+        labels:
+          severity: warning
+          slo: job_duration
+        annotations:
+          summary: "SLO: p95 обработки {{ $labels.agent }} > 120с"
+          description: "95-й перцентиль времени обработки заданий агента {{ $labels.agent }} превышает 2 минуты."
+
+      # ─── Circuit Breaker: All Models Open ────────────────────
+      - alert: AllModelsUnavailable
+        expr: |
+          sum(rate(dzo_tz_jobs_total{status="error"}[5m]))
+          /
+          (sum(rate(dzo_tz_jobs_total[5m])) + 0.001)
+          > 0.8
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Более 80% всех заданий завершаются ошибкой"
+          description: "Возможно, все LLM-модели недоступны или circuit breaker открыт для всех моделей."

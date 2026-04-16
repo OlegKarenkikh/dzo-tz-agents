@@ -133,5 +133,13 @@ EMAIL_USE_SSL: bool = os.getenv("EMAIL_USE_SSL", "true").lower() == "true"
 # -- File storage (collector) ------------------------------------------------
 STORAGE_BASE_PATH: str = os.getenv("STORAGE_BASE_PATH", "./storage")
 
+# -- Authentication -----------------------------------------------------------
+API_KEYS: list[str] = [
+    k.strip() for k in os.getenv("API_KEYS", os.getenv("API_KEY", "")).split(",")
+    if k.strip()
+]
+JWT_SECRET: str = os.getenv("JWT_SECRET", "")
+JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", "HS256")
+
 # -- MCP async pipeline ------------------------------------------------------
 MCP_AGENT_TIMEOUT_SECONDS: int = _safe_int("MCP_AGENT_TIMEOUT_SECONDS", 300)

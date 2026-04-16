@@ -1,0 +1,61 @@
+# Langfuse self-hosted — подключается поверх основного:
+# docker compose -f docker-compose.yml -f docker-compose.langfuse.yml up -d
+#
+# После запуска:
+# 1. Откройте http://localhost:3001 и создайте проект
+# 2. Скопируйте Public Key и Secret Key
+# 3. Задайте в .env:
+#    LANGFUSE_PUBLIC_KEY=pk-...
+#    LANGFUSE_SECRET_KEY=sk-...
+#    LANGFUSE_HOST=http://langfuse:3000
+
+version: "3.9"
+
+services:
+  langfuse:
+    image: langfuse/langfuse:2
+    container_name: dzo_tz_langfuse
+    restart: unless-stopped
+    ports:
+      - "${LANGFUSE_PORT:-3001}:3000"
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-dzo}:${POSTGRES_PASSWORD}@postgres:5432/langfuse
+      NEXTAUTH_SECRET: "${LANGFUSE_NEXTAUTH_SECRET:-langfuse-secret-change-me}"
+      NEXTAUTH_URL: "http://localhost:${LANGFUSE_PORT:-3001}"
+      SALT: "${LANGFUSE_SALT:-langfuse-salt-change-me}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/public/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # Init: create langfuse DB if it doesn't exist
+  langfuse-init:
+    image: postgres:16-alpine
+    restart: "no"
+    entrypoint: >
+      sh -c "
+        until pg_isready -h postgres -U $${POSTGRES_USER:-dzo}; do sleep 1; done;
+        PGPASSWORD=$${POSTGRES_PASSWORD} psql -h postgres -U $${POSTGRES_USER:-dzo} -tc
+        \"SELECT 1 FROM pg_database WHERE datname='langfuse'\" | grep -q 1 ||
+        PGPASSWORD=$${POSTGRES_PASSWORD} createdb -h postgres -U $${POSTGRES_USER:-dzo} langfuse
+      "
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-dzo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - backend
+
+networks:
+  backend:
+    external: true
+    name: dzo-tz-agents_backend

@@ -620,3 +620,55 @@ class TestUploadEndpoint:
             data={"agent": "nonexistent"},
         )
         assert resp.status_code == 400
+
+
+class TestJWTAuth:
+    """Tests for JWT bearer token authentication."""
+
+    def test_jwt_token_accepted_when_configured(self, client, monkeypatch):
+        """JWT token should be accepted when JWT_SECRET is set."""
+        import jwt as _jwt
+        secret = "test-jwt-secret-key"
+        monkeypatch.setenv("JWT_SECRET", secret)
+        # Clear any cached config values
+        import config
+        monkeypatch.setattr(config, "JWT_SECRET", secret)
+        monkeypatch.setattr(config, "JWT_ALGORITHM", "HS256")
+        monkeypatch.setattr(config, "API_KEYS", [])
+
+        token = _jwt.encode({"sub": "test-user", "exp": 9999999999}, secret, algorithm="HS256")
+        resp = client.get("/api/v1/stats", headers={"X-API-Key": token})
+        assert resp.status_code == 200
+
+    def test_invalid_jwt_returns_401(self, client, monkeypatch):
+        """Invalid JWT should return 401."""
+        import config
+        monkeypatch.setenv("JWT_SECRET", "real-secret")
+        monkeypatch.setattr(config, "JWT_SECRET", "real-secret")
+        monkeypatch.setattr(config, "API_KEYS", [])
+
+        # Token signed with wrong key
+        import jwt as _jwt
+        token = _jwt.encode({"sub": "attacker"}, "wrong-secret", algorithm="HS256")
+        resp = client.get("/api/v1/stats", headers={"X-API-Key": token})
+        assert resp.status_code == 401
+
+    def test_multi_key_support(self, client, monkeypatch):
+        """Multiple API keys should all be accepted."""
+        import config
+        monkeypatch.setattr(config, "API_KEYS", ["key-alpha", "key-beta", "test-secret"])
+        monkeypatch.setattr(config, "JWT_SECRET", "")
+
+        resp1 = client.get("/api/v1/stats", headers={"X-API-Key": "key-alpha"})
+        assert resp1.status_code == 200
+
+        resp2 = client.get("/api/v1/stats", headers={"X-API-Key": "key-beta"})
+        assert resp2.status_code == 200
+
+    def test_unknown_key_returns_401_with_multi_key(self, client, monkeypatch):
+        import config
+        monkeypatch.setattr(config, "API_KEYS", ["key-alpha", "key-beta"])
+        monkeypatch.setattr(config, "JWT_SECRET", "")
+
+        resp = client.get("/api/v1/stats", headers={"X-API-Key": "key-gamma"})
+        assert resp.status_code == 401
