@@ -407,6 +407,27 @@ def collect_tender_documents(query: str) -> str:
         received_count = sum(1 for pr in participant_results.values() if pr["status"] == "received")
         missing_count = sum(1 for pr in participant_results.values() if pr["status"] == "missing")
 
+        # Determine decision based on completeness threshold
+        total_participants = len(participants_list)
+        critical_discrepancies = [d for d in discrepancies if d.get("field") == "inn"]
+        missing_with_docs = sum(
+            1 for pr in participant_results.values()
+            if pr["status"] == "missing"
+        )
+
+        if total_participants == 0:
+            decision = "ТРЕБУЕТСЯ ПРОВЕРКА"
+        elif (
+            received_count / max(total_participants, 1) >= 0.9
+            and len(critical_discrepancies) == 0
+            and missing_with_docs <= 1
+        ):
+            decision = "СБОР ЗАВЕРШЁН"
+        elif len(critical_discrepancies) > 0:
+            decision = "ТРЕБУЕТСЯ ПРОВЕРКА"
+        else:
+            decision = "СБОР НЕ ЗАВЕРШЁН"
+
         report_lines = [
             f"Отчёт о сборе документов по ТО {tender_id}",
             f"Дата: {datetime.now(UTC).strftime('%Y-%m-%d %H:%M UTC')}",
@@ -434,6 +455,7 @@ def collect_tender_documents(query: str) -> str:
 
         result = {
             "tender_id": tender_id,
+            "decision": decision,
             "total_expected_participants": len(participants_list),
             "received_count": received_count,
             "missing_count": missing_count,

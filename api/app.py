@@ -547,6 +547,13 @@ def _normalize_decision(current_decision: str, output: str) -> tuple[str, str | 
         if val.upper() in _KNOWN_DECISIONS:
             return _apply_synonyms(val), current_decision
 
+    # 5. Ищем markdown: **Статус:** **РЕШЕНИЕ** (для collector)
+    md_status_match = _re_mod.search(r'\*\*(?:Статус|Решение|Итог)\s*:?\*\*\s*\*?\*?([^*\n]+)', output)
+    if md_status_match:
+        val = md_status_match.group(1).strip()
+        if val.upper() in _KNOWN_DECISIONS:
+            return _apply_synonyms(val), current_decision
+
     return current_decision, None
 
 
