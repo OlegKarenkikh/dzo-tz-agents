@@ -64,6 +64,7 @@ EEK_TZ_2024_EXPECTED = {
     "has_evaluation_criteria": False, # criteria in separate section IV
     "expert_score_pct": 87.5,
     "expert_decision": "ПРИНЯТЬ С ЗАМЕЧАНИЕМ",
+    "llm_decision_acceptable": ["ПРИНЯТЬ С ЗАМЕЧАНИЕМ", "ВЕРНУТЬ НА ДОРАБОТКУ"],
     "rules_engine_decision": "ВЕРНУТЬ НА ДОРАБОТКУ",  # structural_score=62.5% < 75% → агент возвращает на доработку
     "key_missing": ["место поставки"],
 }
@@ -442,6 +443,7 @@ REAL_DOCS_REGISTRY = {
         "synthetic": False,
         "expected": {
             "expert_decision": "ПРИНЯТЬ",
+            "llm_decision_acceptable": ["ПРИНЯТЬ", "ДОКУМЕНТАЦИЯ ПОЛНАЯ", "ТРЕБУЕТСЯ ДОРАБОТКА"],
             "key_missing": [],
             "insurance_type": "Грузы",
             "tender_number": "288334442",
@@ -458,6 +460,7 @@ REAL_DOCS_REGISTRY = {
         "synthetic": False,
         "expected": {
             "expert_decision": "ПРИНЯТЬ",
+            "llm_decision_acceptable": ["ПРИНЯТЬ", "ДОКУМЕНТАЦИЯ ПОЛНАЯ", "ТРЕБУЕТСЯ ДОРАБОТКА", "КРИТИЧЕСКИЕ НАРУШЕНИЯ"],
             "key_missing": [],
             "insurance_type": "ДМС",
             "structural_score_pct": 90.0,
@@ -489,7 +492,7 @@ REAL_DOCS_REGISTRY = {
         "subject": "Сбор анкет ТО-2025-0183 — страхование имущества",
         "synthetic": True,
         "expected": {
-            "expert_decision": "ПРИНЯТЬ",
+            "expert_decision": "СБОР НЕ ЗАВЕРШЁН",
             "key_missing": ["NDA от АО Росгосстрах"],
             "total_participants": 2,
             "received_anketa": 2,

@@ -474,6 +474,15 @@ _KNOWN_DECISIONS = {
     "ЗАЯВКА ПОЛНАЯ", "ТРЕБУЕТСЯ ДОРАБОТКА", "ТРЕБУЕТСЯ ЭСКАЛАЦИЯ",
     "ДОКУМЕНТАЦИЯ ПОЛНАЯ", "ТРЕБУЕТСЯ ДОРАБОТКА", "КРИТИЧЕСКИЕ НАРУШЕНИЯ",
     "СБОР ЗАВЕРШЁН", "СБОР НЕ ЗАВЕРШЁН", "ТРЕБУЕТСЯ ПРОВЕРКА",
+    "СООТВЕТСТВУЕТ", "НЕ СООТВЕТСТВУЕТ",
+}
+
+_DECISION_SYNONYMS: dict[str, str] = {
+    "СООТВЕТСТВУЕТ": "ПРИНЯТЬ",
+    "НЕ СООТВЕТСТВУЕТ": "ВЕРНУТЬ НА ДОРАБОТКУ",
+    "ТРЕБУЕТ ДОРАБОТКИ": "ВЕРНУТЬ НА ДОРАБОТКУ",
+    "ТРЕБУЕТСЯ ДОРАБОТКА": "ВЕРНУТЬ НА ДОРАБОТКУ",
+    "ЗАЯВКА ПОЛНАЯ": "ЗАЯВКА ПОЛНАЯ",
 }
 
 _TECHNICAL_STATUSES = {
@@ -490,11 +499,19 @@ def _normalize_decision(current_decision: str, output: str) -> tuple[str, str | 
         Если current_decision уже экспертное — возвращает (current_decision, None).
         Если current_decision — технический статус, но в output есть экспертное — возвращает (expert, technical).
     """
+    # Normalize synonyms (e.g. "Соответствует" → "ПРИНЯТЬ")
+    canonical = _DECISION_SYNONYMS.get(current_decision.upper())
+    if canonical:
+        return canonical, None
+
     if current_decision.upper() in _KNOWN_DECISIONS:
         return current_decision, None
 
     if not output:
         return current_decision, None
+
+    def _apply_synonyms(val: str) -> str:
+        return _DECISION_SYNONYMS.get(val.upper(), val)
 
     # 1. Ищем JSON-блок в output
     json_match = _re_mod.search(r'```json\s*(\{.*?\})\s*```', output, _re_mod.DOTALL)
@@ -505,7 +522,7 @@ def _normalize_decision(current_decision: str, output: str) -> tuple[str, str | 
                 for key in ("decision", "expert_decision", "verdict", "status"):
                     val = parsed.get(key)
                     if isinstance(val, str) and val.upper() in _KNOWN_DECISIONS:
-                        return val, current_decision
+                        return _apply_synonyms(val), current_decision
         except (json.JSONDecodeError, TypeError):
             pass
 
@@ -514,21 +531,21 @@ def _normalize_decision(current_decision: str, output: str) -> tuple[str, str | 
     if dec_match:
         val = dec_match.group(1).strip()
         if val.upper() in _KNOWN_DECISIONS:
-            return val, current_decision
+            return _apply_synonyms(val), current_decision
 
     # 3. Ищем markdown-формат: Оценка: **РЕШЕНИЕ**
     md_match = _re_mod.search(r'Оценка:\s*\*?\*?([^*\n]+)', output)
     if md_match:
         val = md_match.group(1).strip()
         if val.upper() in _KNOWN_DECISIONS:
-            return val, current_decision
+            return _apply_synonyms(val), current_decision
 
     # 4. Ищем "status": "..." для collector
     status_match = _re_mod.search(r'"status"\s*:\s*"([^"]+)"', output)
     if status_match:
         val = status_match.group(1).strip()
         if val.upper() in _KNOWN_DECISIONS:
-            return val, current_decision
+            return _apply_synonyms(val), current_decision
 
     return current_decision, None
 
