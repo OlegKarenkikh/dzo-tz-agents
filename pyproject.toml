@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dzo-tz-agents"
-version = "1.7.1"
+version = "1.8.0"
 description = "LLM-агенты для автоматической проверки заявок ДЗО, ТЗ и tender с поддержкой MCP/A2A интеграции"
 readme = "README.md"
 license = { text = "MIT" }

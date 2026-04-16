@@ -548,3 +548,23 @@ class TestDeduplicate:
         data = r_tz.json()
         assert data["duplicate"] is False
         assert data["job"]["agent"] == "tz"
+
+
+class TestJobStream:
+    def test_stream_nonexistent_job_returns_404(self, client):
+        resp = client.get("/api/v1/jobs/no-such-id/stream", headers=HEADERS)
+        assert resp.status_code == 404
+
+    def test_stream_without_api_key_returns_401(self, client):
+        resp = client.get("/api/v1/jobs/some-id/stream")
+        assert resp.status_code == 401
+
+    def test_stream_completed_job_sends_events(self, client):
+        """Create a job via the store, then stream it — should get SSE content type."""
+        from shared.database import create_job, update_job
+        job_id = create_job("dzo")
+        update_job(job_id, status="done", decision="Заявка полная",
+                   result={"decision": "Заявка полная"})
+        resp = client.get(f"/api/v1/jobs/{job_id}/stream", headers=HEADERS)
+        assert resp.status_code == 200
+        assert "text/event-stream" in resp.headers.get("content-type", "")

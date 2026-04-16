@@ -11,6 +11,7 @@
 import logging
 import re
 import threading
+import time as _time
 
 import httpx
 from langchain_openai import ChatOpenAI
@@ -337,6 +338,65 @@ def effective_openai_key() -> str | None:
 
 
 _effective_openai_key = effective_openai_key
+
+
+# ---------------------------------------------------------------------------
+# Circuit Breaker — пропуск моделей с последовательными ошибками
+# ---------------------------------------------------------------------------
+
+
+class _CircuitBreaker:
+    """Simple per-model circuit breaker.
+
+    Tracks consecutive failures per model. If a model has failed
+    ``threshold`` times in a row within ``window_sec``, it is considered
+    "open" (unhealthy) and should be skipped in the fallback chain.
+
+    Thread-safe via a lock.
+    """
+
+    def __init__(self, threshold: int = 3, window_sec: float = 120.0):
+        self._threshold = threshold
+        self._window = window_sec
+        self._failures: dict[str, list[float]] = {}  # model → list of failure timestamps
+        self._lock = threading.Lock()
+
+    def record_failure(self, model: str) -> None:
+        """Record a failure for the given model."""
+        with self._lock:
+            now = _time.monotonic()
+            if model not in self._failures:
+                self._failures[model] = []
+            self._failures[model].append(now)
+            # Keep only failures within the window
+            cutoff = now - self._window
+            self._failures[model] = [t for t in self._failures[model] if t > cutoff]
+
+    def record_success(self, model: str) -> None:
+        """Reset failure count on success."""
+        with self._lock:
+            self._failures.pop(model, None)
+
+    def is_open(self, model: str) -> bool:
+        """Check if the circuit is open (model should be skipped)."""
+        with self._lock:
+            failures = self._failures.get(model, [])
+            if len(failures) < self._threshold:
+                return False
+            cutoff = _time.monotonic() - self._window
+            recent = [t for t in failures if t > cutoff]
+            return len(recent) >= self._threshold
+
+    def filter_healthy(self, models: list[str]) -> list[str]:
+        """Return only models whose circuit is closed (healthy)."""
+        return [m for m in models if not self.is_open(m)]
+
+
+# Global circuit breaker instance
+llm_circuit_breaker = _CircuitBreaker(
+    threshold=3,
+    window_sec=120.0,
+)
 
 
 def build_fallback_chain(primary: str) -> list[str]:

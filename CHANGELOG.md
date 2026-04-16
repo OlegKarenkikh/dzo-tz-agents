@@ -4,6 +4,20 @@
 Формат соответствует [Keep a Changelog](https://keepachangelog.com/ru/1.0.0/).
 Проект использует [Semantic Versioning](https://semver.org/lang/ru/).
 
+## [1.8.0] — 2026-04-16
+
+### Added
+- `GET /api/v1/jobs/{job_id}/stream` — SSE (Server-Sent Events) endpoint for real-time
+  job progress streaming. Events: `status`, `log`, `result`, `error`, `done`
+- `shared/llm.py`: `_CircuitBreaker` class — per-model circuit breaker that skips
+  models with 3+ consecutive failures within 2-minute window
+- Tests for SSE endpoint (3 tests) and circuit breaker (5 tests)
+
+### Changed
+- Job processing pipeline now integrates circuit breaker: failing models are automatically
+  skipped in the fallback chain, successful calls reset the failure counter
+- Clients can now use SSE instead of polling for job status updates
+
 ## [1.7.1] — 2026-04-16
 
 ### Added

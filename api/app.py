@@ -41,6 +41,7 @@ from dotenv import load_dotenv
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Path, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sse_starlette.sse import EventSourceResponse
 from fastapi.security import APIKeyHeader
 from pydantic import BaseModel, Field, model_validator
 from slowapi import _rate_limit_exceeded_handler
@@ -536,7 +537,7 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
 
             if agent_type not in AGENT_REGISTRY:
                 raise ValueError("Неизвестный агент: " + agent_type)
-            from shared.llm import LOCAL_BACKENDS, build_fallback_chain, effective_openai_key, estimate_tokens, probe_local_max_context, probe_max_input_tokens, resolve_local_base_url
+            from shared.llm import LOCAL_BACKENDS, build_fallback_chain, effective_openai_key, estimate_tokens, llm_circuit_breaker, probe_local_max_context, probe_max_input_tokens, resolve_local_base_url
             fallback_chain = build_fallback_chain(MODEL_NAME)
             if LLM_BACKEND == "github_models":
                 _api_key = GITHUB_TOKEN or effective_openai_key() or "not-needed"
@@ -621,6 +622,14 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                         logger.warning("[%s] Финальная обрезка: %d → %d симв.", job_id, len(chat_input), _max_input_chars)
                         chat_input = chat_input[:_max_input_chars]
                     fallback_chain = [_best] + [m for m in fallback_chain if m != _best]
+            # Circuit breaker: skip models with consecutive failures
+            _healthy_chain = llm_circuit_breaker.filter_healthy(fallback_chain)
+            if _healthy_chain:
+                if len(_healthy_chain) < len(fallback_chain):
+                    _skipped_cb = [m for m in fallback_chain if m not in _healthy_chain]
+                    logger.info("[%s] Circuit breaker: пропущены модели %s", job_id, _skipped_cb)
+                fallback_chain = _healthy_chain
+            # If ALL models are open, use original chain as last resort
             logger.info("[%s] Fallback-цепочка: %s", job_id, " → ".join(fallback_chain))
             _log_event(
                 "routing",
@@ -743,6 +752,7 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                             model=model_name,
                             intermediate_steps=len(result.get("intermediate_steps", []) or []),
                         )
+                        llm_circuit_breaker.record_success(model_name)
                         last_exc = None
                         break
                     except TimeoutError:
@@ -793,6 +803,7 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                                 model=model_name,
                                 error=str(exc),
                             )
+                            llm_circuit_breaker.record_failure(model_name)
                             last_exc = exc
                             break  # немедленно перейти к следующей модели в fallback_chain
                         if is_upstream_error:
@@ -807,6 +818,7 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                                 model=model_name,
                                 error=str(exc),
                             )
+                            llm_circuit_breaker.record_failure(model_name)
                             last_exc = exc
                             break  # немедленно перейти к следующей модели в fallback_chain
                         if not is_rate_limit and not is_token_limit:
@@ -819,6 +831,7 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                             raise
                         last_exc = exc
                         reason = "429 RateLimit" if is_rate_limit else "413 TokenLimit"
+                        llm_circuit_breaker.record_failure(model_name)
                         logger.warning("[%s] %s на %s (попытка %d/%d)",
                                        job_id, reason, model_name, retry + 1, max(1, AGENT_MAX_RETRIES))
                         _log_event(
@@ -1393,6 +1406,90 @@ def get_job(job_id: str, request: Request, _: str = Depends(_require_api_key)):
     if not job:
         raise HTTPException(status_code=404, detail="Задание " + repr(job_id) + " не найдено")
     return JobResponse(**job)
+
+
+@app.get("/api/v1/jobs/{job_id}/stream", summary="Стрим статуса задания (SSE)")
+async def stream_job(job_id: str, request: Request, _: str = Depends(_require_api_key)):
+    """Server-Sent Events stream для отслеживания прогресса задания в реальном времени.
+
+    Клиент получает события:
+    - event: status   — изменение статуса задания (pending → running → done/error)
+    - event: log      — промежуточные события обработки (модель, ретраи, прогресс)
+    - event: result   — финальный результат (при завершении)
+    - event: error    — ошибка обработки
+    - event: done     — закрывающее событие (после result или error)
+    """
+    import asyncio as _asyncio
+    import json as _json
+
+    job = db_get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Задание {job_id!r} не найдено")
+
+    async def event_generator():
+        last_event_count = 0
+        last_status = None
+
+        while True:
+            if await request.is_disconnected():
+                break
+
+            job_data = db_get_job(job_id)
+            if not job_data:
+                yield {"event": "error", "data": _json.dumps({"error": "Задание не найдено"}, ensure_ascii=False)}
+                yield {"event": "done", "data": ""}
+                break
+
+            current_status = job_data.get("status", "unknown")
+
+            if current_status != last_status:
+                last_status = current_status
+                yield {
+                    "event": "status",
+                    "data": _json.dumps({
+                        "job_id": job_id,
+                        "status": current_status,
+                    }, ensure_ascii=False),
+                }
+
+            trace = job_data.get("trace")
+            events = []
+            if isinstance(trace, dict):
+                events = trace.get("events", [])
+            elif isinstance(trace, str):
+                try:
+                    parsed = _json.loads(trace)
+                    events = parsed.get("events", []) if isinstance(parsed, dict) else []
+                except (ValueError, TypeError):
+                    pass
+
+            if len(events) > last_event_count:
+                for evt in events[last_event_count:]:
+                    yield {
+                        "event": "log",
+                        "data": _json.dumps(evt, ensure_ascii=False),
+                    }
+                last_event_count = len(events)
+
+            if current_status in ("done", "error", "failed"):
+                result_data = {
+                    "job_id": job_id,
+                    "status": current_status,
+                    "decision": job_data.get("decision"),
+                }
+                if current_status == "done":
+                    result_data["result"] = job_data.get("result")
+                    yield {"event": "result", "data": _json.dumps(result_data, ensure_ascii=False)}
+                else:
+                    result_data["error"] = job_data.get("result") or job_data.get("decision")
+                    yield {"event": "error", "data": _json.dumps(result_data, ensure_ascii=False)}
+
+                yield {"event": "done", "data": ""}
+                break
+
+            await _asyncio.sleep(1)
+
+    return EventSourceResponse(event_generator())
 
 
 @app.delete("/api/v1/jobs/{job_id}", summary="Удалить задание")
