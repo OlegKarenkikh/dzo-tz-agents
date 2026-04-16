@@ -204,3 +204,26 @@ class TestNormalizeDecision:
         assert _DECISION_SYNONYMS["НЕ СООТВЕТСТВУЕТ"] == "ВЕРНУТЬ НА ДОРАБОТКУ"
         assert _DECISION_SYNONYMS["ТРЕБУЕТ ДОРАБОТКИ"] == "ВЕРНУТЬ НА ДОРАБОТКУ"
         assert _DECISION_SYNONYMS["ТРЕБУЕТСЯ ДОРАБОТКА"] == "ВЕРНУТЬ НА ДОРАБОТКУ"
+
+    # ── Markdown **Статус:**/**Решение:** patterns (v2.1.0) ──
+
+    def test_normalize_collector_markdown_status(self):
+        """_normalize_decision extracts СБОР НЕ ЗАВЕРШЁН from collector markdown output."""
+        output = "### 📊 Итоги сбора:\n*   **Статус:** **СБОР НЕ ЗАВЕРШЁН** (недостаточная комплектность)"
+        decision, technical = _normalize_decision("Неизвестно", output)
+        assert decision == "СБОР НЕ ЗАВЕРШЁН"
+        assert technical == "Неизвестно"
+
+    def test_normalize_collector_markdown_completed(self):
+        """_normalize_decision extracts СБОР ЗАВЕРШЁН from collector markdown output."""
+        output = "**Статус:** **СБОР ЗАВЕРШЁН**"
+        decision, technical = _normalize_decision("Неизвестно", output)
+        assert decision == "СБОР ЗАВЕРШЁН"
+        assert technical == "Неизвестно"
+
+    def test_normalize_markdown_решение(self):
+        """_normalize_decision extracts decision from **Решение:** pattern."""
+        output = "**Решение:** **ПРИНЯТЬ**\n\nОтчёт завершён."
+        decision, technical = _normalize_decision("documents_found", output)
+        assert decision == "ПРИНЯТЬ"
+        assert technical == "documents_found"

@@ -856,3 +856,45 @@ class TestCollectorEdgeCases:
         for p in result["participants"]:
             assert p["folder_path"] != ""
             assert "Документы участника ТО" in p["folder_path"]
+
+
+# ============================================================================
+# Decision Field Tests (v2.1.0)
+# ============================================================================
+
+class TestCollectTenderDocumentsDecision:
+    def test_collect_tender_documents_returns_decision_field(self):
+        """collect_tender_documents returns decision field in result."""
+        query = json.dumps({
+            "tender_id": "TEST-001",
+            "emails": [],
+            "participants_list": [
+                {"name": "ООО Тест", "inn": "1234567890", "contact_email": "test@test.ru"}
+            ]
+        })
+        result = json.loads(collect_tender_documents.invoke(query))
+        assert "decision" in result
+        assert result["decision"] == "СБОР НЕ ЗАВЕРШЁН"  # No emails received → not complete
+
+    def test_collect_tender_documents_decision_completed(self):
+        """collect_tender_documents returns СБОР ЗАВЕРШЁН when all docs received."""
+        query = json.dumps({
+            "tender_id": "TEST-002",
+            "emails": [
+                {
+                    "from_email": "test@test.ru",
+                    "from_name": "Тест",
+                    "subject": "Re: TEST-002 документы",
+                    "attachments": [
+                        {"filename": "Анкета.pdf", "content_hint": "АНКЕТА УЧАСТНИКА ТО TEST-002 ИНН: 1234567890"},
+                        {"filename": "NDA.pdf", "content_hint": "Соглашение о неразглашении"}
+                    ]
+                }
+            ],
+            "participants_list": [
+                {"name": "ООО Тест", "inn": "1234567890", "contact_email": "test@test.ru"}
+            ]
+        })
+        result = json.loads(collect_tender_documents.invoke(query))
+        assert "decision" in result
+        assert result["decision"] == "СБОР ЗАВЕРШЁН"
