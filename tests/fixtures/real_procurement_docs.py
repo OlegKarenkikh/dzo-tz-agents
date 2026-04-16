@@ -16,6 +16,9 @@ Expected expert decisions (without LLM — rules-engine only):
 """
 from __future__ import annotations
 
+import json
+import pathlib as _pathlib
+
 # ── Document 1: ЕЭК ТЗ на закупку лицензий ПО ИИС ЕАЭС (2024) ───────────────
 # п. 2.3 опущен — выдержка из оригинального документа (раздел отсутствует в исходном PDF)
 
@@ -245,6 +248,108 @@ TZ_NO_UNITS_EXPECTED = {
 }
 
 
+# ── Document 6: Полное ТЗ без дефектов (синтетический, по ГОСТ 34.602-2020) ──
+
+TZ_COMPLETE_GOOD = """
+ТЕХНИЧЕСКОЕ ЗАДАНИЕ
+на поставку серверного оборудования для ЦОД
+
+1. НАЗНАЧЕНИЕ И ЦЕЛЬ ЗАКУПКИ
+Модернизация серверной инфраструктуры центра обработки данных (ЦОД)
+в рамках программы цифровой трансформации 2025 г.
+
+2. ТРЕБОВАНИЯ К ТОВАРУ
+2.1. Серверы: Dell PowerEdge R760, 2× Intel Xeon Gold 6438Y (32 ядра),
+     512 GB DDR5 ECC, 4× SSD NVMe 1.92 TB, 2× БП 1400W (1+1)
+2.2. Сетевое оборудование: Cisco Catalyst 9300-48T, 48 портов 10GbE,
+     StackWise-480, SNMP v3, поддержка VXLAN
+2.3. СХД: NetApp FAS2820, 24× SAS 10K 1.8TB, dual controller, NFS/CIFS/iSCSI
+
+3. КОЛИЧЕСТВО
+Серверы: 4 шт.
+Коммутаторы: 2 шт.
+СХД: 1 шт.
+
+4. СРОКИ ПОСТАВКИ
+45 (сорок пять) рабочих дней с даты подписания договора.
+Штрафные санкции: 0.1% от стоимости за каждый день просрочки.
+
+5. МЕСТО ПОСТАВКИ
+127015, г. Москва, ул. Бутырская, д. 76, стр. 1, серверная комната ЦОД-2.
+
+6. ГАРАНТИЯ
+36 месяцев с даты поставки. Время реакции на обращение: 4 часа (NBD).
+Замена неисправного оборудования: в течение следующего рабочего дня.
+
+7. НОРМАТИВНЫЕ ДОКУМЕНТЫ
+— ГОСТ 34.602-2020 «Техническое задание на создание автоматизированной системы»
+— ГОСТ Р 56939-2016 «Защита информации. Требования к СУБД»
+— ФЗ-149 «Об информации, информационных технологиях и о защите информации»
+
+8. КРИТЕРИИ ОЦЕНКИ ЗАЯВОК
+Цена контракта: 60%
+Срок поставки: 20%
+Гарантийные условия: 20%
+"""
+
+
+# ── Тендерные документы — из существующих фикстур, основанных на реальных закупках ──
+
+_TENDERS_DIR = _pathlib.Path(__file__).parent / "tenders"
+
+
+def _read_tender(name: str) -> str:
+    return (_TENDERS_DIR / name).read_text(encoding="utf-8")
+
+
+TENDER_CARGO_RZD = _read_tender("tender_cargo_1.md")
+TENDER_DMS_SMAK = _read_tender("tender_dms_1.md")
+TENDER_OSAGO_FSSP = _read_tender("tender_osago_1.md")
+
+
+# ── Collector — синтетический тестовый кейс сбора документов ──
+
+COLLECTOR_TENDER_SELECTION = json.dumps({
+    "tender_id": "ТО-2025-0183",
+    "tender_subject": "Страхование имущества юридических лиц",
+    "participants_list": [
+        {
+            "name": "ООО «СК Гарант»",
+            "inn": "7722851537",
+            "contact_email": "tender@garant-insurance.ru",
+            "contact_person": "Козлова Мария Ивановна",
+        },
+        {
+            "name": "АО «Росгосстрах»",
+            "inn": "7702073683",
+            "contact_email": "tender@rgs.ru",
+            "contact_person": "Петров Алексей Сергеевич",
+        },
+    ],
+    "emails": [
+        {
+            "from_email": "tender@garant-insurance.ru",
+            "from_name": "Козлова Мария",
+            "subject": "Re: ТО-2025-0183 Анкета и NDA",
+            "body": "Добрый день! Направляю заполненную анкету участника и подписанный NDA.",
+            "attachments": [
+                {"filename": "Анкета_ООО_СК_Гарант.pdf", "content_type": "application/pdf", "size_bytes": 45000, "content_hint": "АНКЕТА УЧАСТНИКА ТЕНДЕРНОГО ОТБОРА ООО «СК Гарант» ИНН 7722851537 КПП 772201001 ОГРН 1157746123456"},
+                {"filename": "NDA_подписанный.pdf", "content_type": "application/pdf", "size_bytes": 12000, "content_hint": "СОГЛАШЕНИЕ О НЕРАЗГЛАШЕНИИ Сторона 2: ООО «СК Гарант»"},
+            ],
+        },
+        {
+            "from_email": "tender@rgs.ru",
+            "from_name": "Петров Алексей",
+            "subject": "Re: ТО-2025-0183 Документы",
+            "body": "Высылаю анкету. NDA будет направлен позже.",
+            "attachments": [
+                {"filename": "Anketa_RGS.pdf", "content_type": "application/pdf", "size_bytes": 52000, "content_hint": "АНКЕТА УЧАСТНИКА ТО АО «Росгосстрах» ИНН 7702073683"},
+            ],
+        },
+    ],
+}, ensure_ascii=False)
+
+
 # ── Combined registry ─────────────────────────────────────────────────────────
 
 REAL_DOCS_REGISTRY = {
@@ -312,5 +417,86 @@ REAL_DOCS_REGISTRY = {
             "structural_score_pct": 50.0,
         },
         "source_url": None,
+    },
+    # ── Полное ТЗ без дефектов ─────────────────────────────
+    "tz_complete_good": {
+        "agent": "tz",
+        "text": TZ_COMPLETE_GOOD,
+        "filename": "tz_server_equipment_2025.md",
+        "subject": "ТЗ на серверное оборудование для ЦОД — полный документ без дефектов",
+        "synthetic": True,
+        "expected": {
+            "expert_decision": "ПРИНЯТЬ",
+            "key_missing": [],
+            "structural_score_pct": 100.0,
+        },
+        "source_url": None,
+        "source_note": "Синтетический полный ТЗ по ГОСТ 34.602-2020. Все 8 разделов присутствуют. Ожидаемое решение: ПРИНЯТЬ.",
+    },
+    # ── Тендерные документы (agent21) ───────────────────────
+    "tender_cargo_rzd": {
+        "agent": "tender",
+        "text": TENDER_CARGO_RZD,
+        "filename": "tender_cargo_1.md",
+        "subject": "Страхование грузов — АО «РЖД Логистика» (223-ФЗ)",
+        "synthetic": False,
+        "expected": {
+            "expert_decision": "ПРИНЯТЬ",
+            "key_missing": [],
+            "insurance_type": "Грузы",
+            "tender_number": "288334442",
+            "structural_score_pct": 95.0,
+        },
+        "source_url": "https://zakupki.gov.ru",
+        "source_note": "Реестровая запись №288334442, АО «РЖД Логистика», 223-ФЗ",
+    },
+    "tender_dms_smak": {
+        "agent": "tender",
+        "text": TENDER_DMS_SMAK,
+        "filename": "tender_dms_1.md",
+        "subject": "ДМС работников АО «СМАК» (223-ФЗ)",
+        "synthetic": False,
+        "expected": {
+            "expert_decision": "ПРИНЯТЬ",
+            "key_missing": [],
+            "insurance_type": "ДМС",
+            "structural_score_pct": 90.0,
+        },
+        "source_url": "https://zakupki.gov.ru",
+        "source_note": "АО «СМАК», ИНН 6659003692, запрос предложений 223-ФЗ",
+    },
+    "tender_osago_fssp": {
+        "agent": "tender",
+        "text": TENDER_OSAGO_FSSP,
+        "filename": "tender_osago_1.md",
+        "subject": "ОСАГО — УФССП по Калужской области (44-ФЗ)",
+        "synthetic": False,
+        "expected": {
+            "expert_decision": "ПРИНЯТЬ",
+            "key_missing": [],
+            "insurance_type": "ОСАГО",
+            "tender_number": "0137100001126000002",
+            "structural_score_pct": 95.0,
+        },
+        "source_url": "https://zakupki.gov.ru/epz/order/notice/ea20/view/common-info.html?regNumber=0137100001126000002",
+        "source_note": "ЕИС запись №0137100001126000002, УФССП Калужской обл., 44-ФЗ",
+    },
+    # ── Collector (agent3) ──────────────────────────────────
+    "collector_to_2025_0183": {
+        "agent": "collector",
+        "text": COLLECTOR_TENDER_SELECTION,
+        "filename": "collector_to_2025_0183.json",
+        "subject": "Сбор анкет ТО-2025-0183 — страхование имущества",
+        "synthetic": True,
+        "expected": {
+            "expert_decision": "ПРИНЯТЬ",
+            "key_missing": ["NDA от АО Росгосстрах"],
+            "total_participants": 2,
+            "received_anketa": 2,
+            "received_nda": 1,
+            "completeness_pct": 75.0,
+        },
+        "source_url": None,
+        "source_note": "Синтетический кейс: 2 участника, один прислал анкету+NDA, второй только анкету",
     },
 }
