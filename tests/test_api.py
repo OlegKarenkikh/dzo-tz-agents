@@ -568,3 +568,55 @@ class TestJobStream:
         resp = client.get(f"/api/v1/jobs/{job_id}/stream", headers=HEADERS)
         assert resp.status_code == 200
         assert "text/event-stream" in resp.headers.get("content-type", "")
+
+
+class TestUploadEndpoint:
+    def test_upload_txt_file(self, client):
+        """Upload a plain text file via multipart."""
+        import io
+        content = "ТЕХНИЧЕСКОЕ ЗАДАНИЕ\n1. Цель: тест\n2. Требования: тест"
+        resp = client.post(
+            "/api/v1/upload",
+            headers={"X-API-Key": "test-secret"},
+            files={"file": ("test.txt", io.BytesIO(content.encode()), "text/plain")},
+            data={"agent": "tz", "subject": "Upload test"},
+        )
+        assert resp.status_code == 200
+        assert "job" in resp.json()
+
+    def test_upload_without_file_returns_422(self, client):
+        resp = client.post(
+            "/api/v1/upload",
+            headers={"X-API-Key": "test-secret"},
+            data={"agent": "dzo"},
+        )
+        assert resp.status_code == 422
+
+    def test_upload_auto_detect(self, client):
+        import io
+        content = "ТЕХНИЧЕСКОЕ ЗАДАНИЕ на закупку серверов"
+        resp = client.post(
+            "/api/v1/upload",
+            headers={"X-API-Key": "test-secret"},
+            files={"file": ("spec.txt", io.BytesIO(content.encode()), "text/plain")},
+            data={"agent": "auto"},
+        )
+        assert resp.status_code == 200
+
+    def test_upload_without_api_key_returns_401(self, client):
+        import io
+        resp = client.post(
+            "/api/v1/upload",
+            files={"file": ("test.txt", io.BytesIO(b"test"), "text/plain")},
+        )
+        assert resp.status_code == 401
+
+    def test_upload_invalid_agent_returns_400(self, client):
+        import io
+        resp = client.post(
+            "/api/v1/upload",
+            headers={"X-API-Key": "test-secret"},
+            files={"file": ("test.txt", io.BytesIO(b"test"), "text/plain")},
+            data={"agent": "nonexistent"},
+        )
+        assert resp.status_code == 400

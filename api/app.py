@@ -38,7 +38,7 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 
 from dotenv import load_dotenv
-from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Path, Query, Request
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Path, Query, Request, UploadFile, File as FastAPIFile, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sse_starlette.sse import EventSourceResponse
@@ -1365,6 +1365,91 @@ def process_tender(body: ProcessRequest, background_tasks: BackgroundTasks, requ
 @limiter.limit(PROCESS_RATE_LIMIT)
 def process_collector(body: ProcessRequest, background_tasks: BackgroundTasks, request: Request, _: str = Depends(_require_api_key)):
     return _check_and_process("collector", body, background_tasks)
+
+
+@app.post("/api/v1/upload", summary="Загрузка и обработка файла (multipart/form-data)")
+async def upload_and_process(
+    background_tasks: BackgroundTasks,
+    request: Request,
+    file: UploadFile = FastAPIFile(..., description="PDF, DOCX, XLSX, TXT или MD файл"),
+    agent: str = Form(default="auto", description="Тип агента: dzo, tz, tender, collector, auto"),
+    subject: str = Form(default="", description="Тема/описание документа"),
+    sender_email: str = Form(default="", description="Email отправителя"),
+    force: bool = Form(default=False, description="Обработать повторно"),
+    _: str = Depends(_require_api_key),
+):
+    """Загрузка файла через multipart/form-data.
+
+    Принимает файл напрямую (без base64-кодирования). Поддерживаемые форматы:
+    PDF, DOCX, XLSX, XLS, TXT, MD, CSV, JPG, PNG, TIFF.
+
+    Пример curl:
+        curl -X POST http://localhost:8000/api/v1/upload \\
+          -H "X-API-Key: $TOKEN" \\
+          -F "file=@document.pdf" \\
+          -F "agent=tz" \\
+          -F "subject=ТЗ на серверы"
+    """
+    import base64 as _b64
+
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Имя файла не указано")
+
+    content = await file.read()
+    if len(content) > 20 * 1024 * 1024:  # 20 MB limit
+        raise HTTPException(status_code=413, detail="Файл слишком большой (макс. 20 МБ)")
+
+    content_b64 = _b64.b64encode(content).decode("ascii")
+    mime = file.content_type or "application/octet-stream"
+
+    # Extract text from the file
+    ext = (file.filename.rsplit(".", 1)[-1] if "." in file.filename else "").lower()
+
+    # For text-based files, use content directly as text
+    text = ""
+    if ext in ("txt", "md", "csv"):
+        try:
+            text = content.decode("utf-8")
+        except UnicodeDecodeError:
+            text = content.decode("latin-1", errors="replace")
+    else:
+        # Use file_extractor for binary formats
+        try:
+            from shared.file_extractor import extract_text_from_attachment
+            text = extract_text_from_attachment({
+                "filename": file.filename,
+                "ext": ext,
+                "data": content,
+                "b64": content_b64,
+                "mime": mime,
+            })
+        except Exception as e:
+            logger.warning("Ошибка извлечения текста из %s: %s", file.filename, e)
+            text = f"[Не удалось извлечь текст из {file.filename}: {e}]"
+
+    # Build ProcessRequest and delegate to existing pipeline
+    proc_request = ProcessRequest(
+        text=text,
+        filename=file.filename,
+        sender_email=sender_email,
+        subject=subject or file.filename,
+        attachments=[AttachmentData(
+            filename=file.filename,
+            content_base64=content_b64,
+            mime_type=mime,
+        )],
+        force=force,
+    )
+
+    # Resolve agent type
+    if agent == "auto":
+        agent = _detect_agent_type(proc_request)
+
+    valid_agents = [a["id"] for a in list_agents()["agents"]]
+    if agent not in valid_agents:
+        raise HTTPException(status_code=400, detail=f"Неизвестный агент: {agent}. Доступные: {valid_agents}")
+
+    return _check_and_process(agent, proc_request, background_tasks)
 
 
 @app.post("/api/v1/process/auto", summary="Автоопределение типа")
