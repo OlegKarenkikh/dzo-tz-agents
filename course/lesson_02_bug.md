@@ -87,6 +87,16 @@ curl http://localhost:8000/health
 
 После этого `docker logs` будет работать:
 
+> 💡 **Как узнать имя контейнера (`agent_dzo`)?**
+> Имя берётся из файла `docker-compose.yml` → поле `container_name`.
+> Чтобы не гадать — используйте `docker ps` для списка запущенных контейнеров:
+> ```bash
+> docker ps --format "table {{.Names}}\t{{.Status}}"
+> # NAMES          STATUS
+> # agent_dzo      Up 2 hours
+> # postgres       Up 2 hours
+> ```
+
 ```bash
 docker logs agent_dzo --tail 50
 ```
@@ -176,6 +186,7 @@ OPENAI_API_KEY=sk-proj-ВАШ_НАСТОЯЩИЙ_КЛЮЧ
 | `ValueError` | Правильный тип, недопустимое значение | Проверьте значение |
 | `KeyError` | Нет ключа в словаре | Используйте `dict.get(key)` |
 | `ConnectionRefused` | Сервис не запущен | Запустите Docker/сервер |
+| `RecursionError` | Цикл агентов (A вызывает B вызывает A) | Проверьте `AGENT_TOOL_PERMISSIONS` |
 
 > 💡 **Как включить подробные логи (DEBUG)?**
 > По умолчанию сервер показывает только INFO и выше.
@@ -204,6 +215,7 @@ OPENAI_API_KEY=sk-proj-ВАШ_НАСТОЯЩИЙ_КЛЮЧ
 ## ➡️ Следующий урок
 
 [🌐 Урок 3: curl — разговариваем с агентом](lesson_03_curl.md)
+
 
 
 
