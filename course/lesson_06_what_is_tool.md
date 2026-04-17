@@ -141,6 +141,29 @@ def count_words(text: str) -> dict:
 
 Добавьте его в список `tools` при создании агента — и LLM сможет его вызывать!
 
+> 💡 **Где находится список `tools`?**
+> Откройте файл `agent1_dzo_inspector/agent.py`:
+> ```python
+> from agent1_dzo_inspector.tools import (
+>     analyze_tz_with_agent,
+>     generate_validation_report,
+>     generate_tezis_form,
+>     generate_info_request,
+>     count_words,        # ← ваш новый инструмент добавьте сюда
+> )
+>
+> tools = [
+>     analyze_tz_with_agent,
+>     generate_validation_report,
+>     generate_tezis_form,
+>     generate_info_request,
+>     count_words,        # ← и сюда
+> ]
+>
+> agent = create_react_agent(model=llm, tools=tools, prompt=PROMPT)
+> ```
+> Два шага: 1) импорт функции, 2) добавить в список `tools`.
+
 ---
 
 ## 📍 Что запомнить
@@ -159,4 +182,5 @@ def count_words(text: str) -> dict:
 ## ➡️ Следующий урок
 
 [🤝 Урок 7: Агент как инструмент](lesson_07_agent_as_tool.md)
+
 
