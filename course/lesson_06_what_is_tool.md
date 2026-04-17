@@ -239,9 +239,23 @@ def count_words(text: str) -> dict:
 
 ---
 
+## 📝 Задание уровня 2: инструмент с несколькими параметрами
+
+Создайте инструмент `format_decision_letter` который принимает:
+- `dzo_name: str` — название ДЗО
+- `decision: str` — решение («Принята» / «Отклонена»)
+- `reason: str` — причина
+
+> 💡 **Где найти инструменты всех агентов:**
+> - Агент ДЗО: `agent1_dzo_inspector/tools.py`
+> - Агент ТЗ: `agent2_tz_inspector/tools.py`
+> - Агент Тендер: `agent3_tender_inspector/tools.py`
+> - Агент Collector: `agent4_collector/tools.py`
+
 ## ➡️ Следующий урок
 
 [🤝 Урок 7: Агент как инструмент](lesson_07_agent_as_tool.md)
+
 
 
 
