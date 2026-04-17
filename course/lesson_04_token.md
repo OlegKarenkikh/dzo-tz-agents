@@ -170,6 +170,23 @@ curl -X POST http://localhost:8000/api/v1/dzo/inspect \
 
 ---
 
+> 💡 **Как проверить что .env прочитался правильно?**
+> ```bash
+> # Показать все переменные из .env (без секретов не выводить в публичные логи!)
+> grep -v "^#" .env | grep -v "^$"
+>
+> # Проверить конкретную переменную:
+> python3 -c "import os; from dotenv import load_dotenv; load_dotenv(); print(os.getenv('API_KEY','НЕ НАЙДЕН'))"
+> ```
+> Если выводит `НЕ НАЙДЕН` — dotenv не видит `.env`. Убедитесь что вы в корне проекта.
+
+> 💡 **Где получить OPENAI_API_KEY?**
+> 1. Зарегистрируйтесь на [platform.openai.com](https://platform.openai.com)
+> 2. Перейдите: API Keys → Create new secret key
+> 3. Скопируйте ключ — он показывается **только один раз**
+> 4. Вставьте в `.env`: `OPENAI_API_KEY=sk-proj-ваш_ключ`
+> Минимальный баланс для тестирования: $5 (хватит на сотни запросов с gpt-4o-mini).
+
 ## 📍 Что запомнить
 
 | Понятие | Значение |
@@ -191,6 +208,7 @@ curl -X POST http://localhost:8000/api/v1/dzo/inspect \
 ## ➡️ Следующий урок
 
 [🧠 Урок 5: LLM — мозг агента](lesson_05_llm.md)
+
 
 
 
