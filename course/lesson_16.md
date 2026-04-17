@@ -94,6 +94,8 @@ dzo-tz-agents/
 
 ---
 
+![7 обязательных секций промпта агента](images/lesson_16_7sections.png)
+
 ## 🔍 Как читать существующий промпт
 
 ```bash
@@ -169,6 +171,8 @@ curl -s -X POST http://localhost:8000/api/v1/dzo/inspect \
 ```
 
 ---
+
+![Версионирование промптов — git история и откат](images/lesson_16_versioning.png)
 
 ## 📊 Сравнение версий промптов агентов
 
