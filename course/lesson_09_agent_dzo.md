@@ -117,6 +117,11 @@ agent1_dzo_inspector/
 | `generate_response_email` | Всегда | Итоговое письмо отправителю |
 | `generate_corrected_application` | При доработке | Проект исправленной заявки |
 
+> 💡 **Куда сохраняется `corrected_application`?**
+> Функция возвращает DOCX-документ в виде base64 строки.
+> `generate_response_email` вставляет его как вложение к ответному письму.
+> В API-режиме — ищите поле `attachments[].content` (base64).
+
 > 💡 **Когда вызывается `generate_corrected_application`?**
 > Этот инструмент вызывается **дополнительно** к `generate_response_email` — не вместо него.
 > Порядок при решении «Требуется доработка»:
@@ -199,6 +204,7 @@ curl -s http://localhost:8000/api/v1/jobs/JOB_ID \
 ## ➡️ Следующий урок
 
 [📄 Урок 10: Агент ТЗ — специалист по техническим заданиям](lesson_10_agent_tz.md)
+
 
 
 
