@@ -99,7 +99,11 @@ source .venv/bin/activate
 
 > 💡 **Как выйти из окружения?**
 > Введите `deactivate` — `(.venv)` исчезнет. Вы вернулись к системному Python.
-> Чтобы войти снова — повторите команду activate.
+> Чтобы войти снова:
+> ```bash
+> source .venv/bin/activate        # macOS/Linux
+> .venv\Scripts\Activate.ps1    # Windows PowerShell
+> ```
 
 ```
 ```
@@ -162,6 +166,11 @@ make api
 
 Если видите `INFO: Application startup complete.` — всё заработало! 🎉
 
+> 💡 **Откройте браузер: `http://localhost:8000/docs`**
+> Там находится **Swagger UI** — интерактивная документация API.
+> Видны все эндпоинты агентов со списком параметров и кнопкой «Try it out».
+> Самый простой способ попробовать API без curl — прямо в браузере.
+
 > 💡 **`make` не работает на Windows?**
 > Альтернатива без make — запустить напрямую:
 > ```bash
@@ -204,6 +213,7 @@ http://localhost:8000/docs
 ## ➡️ Следующий урок
 
 [🐛 Урок 2: Баг — что это и как искать](lesson_02_bug.md)
+
 
 
 
