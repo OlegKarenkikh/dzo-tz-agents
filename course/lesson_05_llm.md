@@ -23,6 +23,15 @@
 
 В проекте модель создаётся в `shared/llm.py`:
 
+> 💡 **Нет доступа к GPT-4o? Хотите сменить модель?**
+> Откройте файл `config.py` в корне проекта:
+> ```python
+> LLM_MODEL = "gpt-4o"      # ← замените на "gpt-3.5-turbo" или "gpt-4o-mini"
+> LLM_PROVIDER = "openai"   # ← или "qwen" для Alibaba Qwen
+> ```
+> После смены — перезапустите сервер (`make api`).
+> `gpt-4o-mini` — дешевле и быстрее, достаточно для обучения. Один вызов ~$0.001.
+
 ```python
 from shared.llm import build_llm
 
@@ -130,5 +139,6 @@ agent = create_react_agent(
 ## ➡️ Следующий урок
 
 [🔧 Урок 6: Инструмент — как его создать](lesson_06_what_is_tool.md)
+
 
 
