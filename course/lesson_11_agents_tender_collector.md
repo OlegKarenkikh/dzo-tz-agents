@@ -1,6 +1,6 @@
 # 📊 Урок 11: Агент Тендер и Агент Collector — независимые специалисты
 
-![Агент Тендер — независимый аналитик](images/lesson_14_agent21_tender.png)
+![Агент Тендер — независимый аналитик](images/lesson_14_agent21_tender.jpg)
 
 ---
 
@@ -61,7 +61,7 @@ curl -s -X POST http://localhost:8000/api/v1/tender/inspect \
 
 ## 📦 Агент Collector (agent3) — сборщик анкет тендерного отбора
 
-![Агент Collector — сбор и валидация анкет](images/lesson_15_agent3_collector.png)
+![Агент Collector — сбор и валидация анкет](images/lesson_15_agent3_collector.jpg)
 
 ### Назначение
 
