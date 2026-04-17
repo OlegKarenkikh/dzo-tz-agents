@@ -101,7 +101,20 @@ curl \
 | `-H "X-API-Key: ..."` | Передаём токен авторизации |
 | `-d '{...}'` | Тело запроса с данными |
 | `-s` | Silent — не показывает прогресс |
-| `\| python3 -m json.tool` | Красиво форматировать JSON-ответ |
+| `\| python3 -m json.tool` | Форматировать JSON с отступами для удобного чтения |
+
+> 💡 **Зачем `| python3 -m json.tool`?**
+> Без него ответ выглядит так: `{"job_id":"abc123","status":"accepted"}`
+> С ним — красиво, с отступами и переносами. Символ `|` (пайп) передаёт вывод одной команды в другую.
+>
+> **Как узнать реальный job_id?** Первый запрос к `/inspect` возвращает `job_id` в ответе.
+> Удобный способ — сохранить в переменную:
+> ```bash
+> JOB=$(curl -s -X POST http://localhost:8000/api/v1/dzo/inspect \
+>   -H "Content-Type: application/json" -H "X-API-Key: ваш_ключ" \
+>   -d '{"document":"тест"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['job_id'])")
+> curl -s http://localhost:8000/api/v1/jobs/$JOB -H "X-API-Key: ваш_ключ" | python3 -m json.tool
+> ```
 
 ### Шаг 4: Отправьте документ ДЗО на проверку
 
@@ -150,3 +163,4 @@ curl -s http://localhost:8000/api/v1/jobs/abc123 \
 ## ➡️ Следующий урок
 
 [🔑 Урок 4: Токен — ваш ключ к агентам](lesson_04_token.md)
+
