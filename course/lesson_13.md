@@ -1,6 +1,6 @@
 # 🛡️ Урок 13: Защита LLM — галлюцинации, контекст, дубли
 
-![Защита от галлюцинаций и болей LLM](images/lesson_13_llm_protection.jpg)
+![Защита от галлюцинаций и болей LLM](images/lesson_13_llm_protection.png)
 
 ---
 
