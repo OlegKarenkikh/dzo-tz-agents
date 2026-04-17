@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
+  <rect width="1600" height="900" fill="#f8fbff"/>
+  <rect x="60" y="60" width="1480" height="780" rx="28" fill="#ffffff" stroke="#dbeafe" stroke-width="4"/>
+  <text x="110" y="140" font-family="Arial, sans-serif" font-size="42" font-weight="700" fill="#0f172a">Терминал: как перемещаться по проекту</text>
+  <text x="110" y="190" font-family="Arial, sans-serif" font-size="24" fill="#334155">Базовая карта для новичка: где вы находитесь, что делает каждая команда и какой результат ожидать.</text>
+
+  <rect x="110" y="250" width="610" height="470" rx="24" fill="#0f172a"/>
+  <circle cx="150" cy="285" r="8" fill="#ef4444"/>
+  <circle cx="178" cy="285" r="8" fill="#f59e0b"/>
+  <circle cx="206" cy="285" r="8" fill="#22c55e"/>
+  <text x="240" y="292" font-family="Consolas, monospace" font-size="22" fill="#cbd5e1">~/dzo-tz-agents</text>
+  <text x="140" y="350" font-family="Consolas, monospace" font-size="28" fill="#93c5fd">pwd</text>
+  <text x="140" y="392" font-family="Consolas, monospace" font-size="24" fill="#e2e8f0">/Users/student/dzo-tz-agents</text>
+  <text x="140" y="458" font-family="Consolas, monospace" font-size="28" fill="#93c5fd">ls</text>
+  <text x="140" y="500" font-family="Consolas, monospace" font-size="24" fill="#e2e8f0">api/  shared/  prompts/  course/  README.md</text>
+  <text x="140" y="566" font-family="Consolas, monospace" font-size="28" fill="#93c5fd">cd course</text>
+  <text x="140" y="608" font-family="Consolas, monospace" font-size="24" fill="#e2e8f0">→ переход в папку с уроками</text>
+  <text x="140" y="674" font-family="Consolas, monospace" font-size="28" fill="#93c5fd">cd ..</text>
+  <text x="140" y="716" font-family="Consolas, monospace" font-size="24" fill="#e2e8f0">→ на уровень выше</text>
+
+  <rect x="820" y="250" width="650" height="470" rx="24" fill="#eff6ff" stroke="#93c5fd" stroke-width="3"/>
+  <text x="860" y="320" font-family="Arial, sans-serif" font-size="34" font-weight="700" fill="#1d4ed8">Мысленная модель</text>
+  <rect x="870" y="365" width="240" height="80" rx="18" fill="#dbeafe"/>
+  <text x="920" y="414" font-family="Arial, sans-serif" font-size="28" font-weight="700" fill="#1e3a8a">Компьютер</text>
+  <rect x="1170" y="365" width="240" height="80" rx="18" fill="#dbeafe"/>
+  <text x="1238" y="414" font-family="Arial, sans-serif" font-size="28" font-weight="700" fill="#1e3a8a">Проект</text>
+  <line x1="1110" y1="405" x2="1170" y2="405" stroke="#60a5fa" stroke-width="6"/>
+  <polygon points="1170,405 1148,392 1148,418" fill="#60a5fa"/>
+
+  <rect x="890" y="500" width="500" height="165" rx="18" fill="#ffffff" stroke="#bfdbfe" stroke-width="2"/>
+  <text x="920" y="548" font-family="Arial, sans-serif" font-size="26" font-weight="700" fill="#0f172a">Что запомнить</text>
+  <text x="920" y="592" font-family="Arial, sans-serif" font-size="24" fill="#334155">• pwd — показать текущую папку</text>
+  <text x="920" y="628" font-family="Arial, sans-serif" font-size="24" fill="#334155">• ls — посмотреть содержимое</text>
+  <text x="920" y="664" font-family="Arial, sans-serif" font-size="24" fill="#334155">• cd папка — перейти внутрь</text>
+
+  <text x="110" y="800" font-family="Arial, sans-serif" font-size="22" fill="#64748b">Стиль курса: белый фон, синий акцент, простые блоки, без перегруза.</text>
+</svg>
