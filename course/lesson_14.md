@@ -131,7 +131,7 @@ def invoke_tender_agent(job_id: str) -> dict:
     """
     return invoke_peer_agent(
         agent_name="tender",
-        payload={"job_id": job_id}
+        payload={"job_id": job_id}  # payload — данные которые отправляем
     )
 ```
 
