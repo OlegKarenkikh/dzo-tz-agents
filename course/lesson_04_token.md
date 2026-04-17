@@ -170,6 +170,11 @@ curl -X POST http://localhost:8000/api/v1/dzo/inspect \
 
 ---
 
+> ⚠️ **`.env` защищён от git-пуша!**
+> Файл `.env` есть в `.gitignore` — он никогда не попадёт в GitHub.
+> Проверка: `git status` не должен показывать `.env` как изменённый файл.
+> Если видите `.env` в `git status` — добавьте его в .gitignore вручную: `echo .env >> .gitignore`
+
 > 💡 **Что такое `SECRET_KEY` в `.env`?**
 > Случайная строка для подписи JWT-токенов. Генерация:
 > `python3 -c "import secrets; print(secrets.token_hex(32))"`
@@ -187,6 +192,12 @@ curl -X POST http://localhost:8000/api/v1/dzo/inspect \
 > python3 -c "import os; from dotenv import load_dotenv; load_dotenv(); print(os.getenv('API_KEY','НЕ НАЙДЕН'))"
 > ```
 > Если выводит `НЕ НАЙДЕН` — dotenv не видит `.env`. Убедитесь что вы в корне проекта.
+
+> 💡 **Где получить QWEN_API_KEY (альтернатива)?**
+> 1. Зарегистрируйтесь на [dashscope.aliyuncs.com](https://dashscope.aliyuncs.com)
+> 2. API Keys → Create API Key
+> 3. В `.env`: `QWEN_API_KEY=sk-ваш_ключ` и `LLM_PROVIDER=qwen`
+> Qwen бесплатный лимит — хорошо для обучения без бюджета.
 
 > 💡 **Где получить OPENAI_API_KEY?**
 > 1. Зарегистрируйтесь на [platform.openai.com](https://platform.openai.com)
@@ -216,6 +227,7 @@ curl -X POST http://localhost:8000/api/v1/dzo/inspect \
 ## ➡️ Следующий урок
 
 [🧠 Урок 5: LLM — мозг агента](lesson_05_llm.md)
+
 
 
 
