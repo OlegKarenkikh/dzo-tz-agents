@@ -21,6 +21,9 @@
 
 Когда что-то идёт не так, агент пишет в лог. Вот два реальных примера:
 
+![Анатомия Traceback — читай снизу вверх](images/lesson_02_traceback_anatomy.jpg)
+
+
 **Пример 1 — PostgreSQL недоступен:**
 ```
 ERROR: connection to server at "localhost" (127.0.0.1), port 5432 failed:
