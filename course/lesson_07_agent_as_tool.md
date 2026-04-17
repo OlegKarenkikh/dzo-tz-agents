@@ -1,6 +1,6 @@
 # 🤝 Урок 7: Агент как инструмент
 
-![Агент ДЗО вызывает Агент ТЗ](images/lesson_07_agent_as_tool.png)
+![Агент ДЗО вызывает Агент ТЗ](images/lesson_07_agent_as_tool.jpg)
 
 ---
 
