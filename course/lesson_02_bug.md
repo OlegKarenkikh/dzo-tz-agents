@@ -82,7 +82,10 @@ curl http://localhost:8000/health
 > ```bash
 > make db-up   # или: docker compose up -d postgres
 > ```
-> После этого `docker logs` будет работать:
+> > Остановить базу: `make db-down` (или `docker compose down`)
+> Удалить данные: `docker compose down -v` — осторожно, удаляет все данные!
+
+После этого `docker logs` будет работать:
 
 ```bash
 docker logs agent_dzo --tail 50
@@ -163,6 +166,17 @@ OPENAI_API_KEY=sk-proj-ВАШ_НАСТОЯЩИЙ_КЛЮЧ
 
 ---
 
+## 🔴 Справочник частых ошибок Python
+
+| Ошибка | Причина | Как исправить |
+|---|---|---|
+| `ModuleNotFoundError` | Библиотека не установлена | `pip install <название>` |
+| `AttributeError` | У объекта нет такого атрибута | Проверьте тип объекта: `type(obj)` |
+| `TypeError` | Неверный тип аргумента | Проверьте что передаёте |
+| `ValueError` | Правильный тип, недопустимое значение | Проверьте значение |
+| `KeyError` | Нет ключа в словаре | Используйте `dict.get(key)` |
+| `ConnectionRefused` | Сервис не запущен | Запустите Docker/сервер |
+
 ## 📍 Что запомнить
 
 | Термин | Значение |
@@ -178,6 +192,7 @@ OPENAI_API_KEY=sk-proj-ВАШ_НАСТОЯЩИЙ_КЛЮЧ
 ## ➡️ Следующий урок
 
 [🌐 Урок 3: curl — разговариваем с агентом](lesson_03_curl.md)
+
 
 
 
