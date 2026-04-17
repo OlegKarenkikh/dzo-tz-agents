@@ -13,7 +13,7 @@
 
 ## 4 workflow файла в проекте
 
-![CI/CD пайплайн](images/lesson_18_ci_pipeline.png)
+![CI/CD пайплайн](images/lesson_18_ci_pipeline.jpg)
 
 | Файл | Когда | Что делает |
 |------|-------|----------|
@@ -26,7 +26,7 @@
 
 ## Что происходит внутри ci.yml
 
-![Шаги job test](images/lesson_18_ci_jobs.png)
+![Шаги job test](images/lesson_18_ci_jobs.jpg)
 
 `ci.yml` запускает **3 job-а** последовательно: `lint → test → e2e`
 
@@ -62,7 +62,7 @@ strategy:
 
 ## Zero-downtime деплой
 
-![Deploy flow](images/lesson_18_deploy_flow.png)
+![Deploy flow](images/lesson_18_deploy_flow.jpg)
 
 ```bash
 # Rolling update — по одному контейнеру:
