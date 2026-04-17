@@ -27,7 +27,7 @@
 > **BaseModel** — базовый класс Pydantic. Когда вы создаёте класс на его основе, Python автоматически проверяет типы данных.
 
 ```python
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field  # Pydantic — валидация типов данных
 
 class InfoRequestInput(BaseModel):
     dzo_name: str = Field(description="Название ДЗО (компании)")
