@@ -72,6 +72,18 @@ echo "Привет, мир!"
 
 ## ✅ Практика: скачиваем проект
 
+### Шаг 0: Проверьте Python
+
+> 💡 **Python нужен перед всем остальным!**
+> В Windows может быть `python`, в macOS/Linux — `python3`:
+> ```bash
+> python --version      # Windows
+> python3 --version     # macOS / Linux
+> # → Python 3.11.x  (нужна версия 3.10+)
+> ```
+> Если Python не установлен: скачайте с [python.org](https://python.org/downloads) и установите.
+> **Важно для Windows:** при установке отметьте галочку «Add Python to PATH».
+
 ### Шаг 1: Установите Git (если нет)
 
 > 💡 **Что такое Homebrew?**
@@ -109,6 +121,11 @@ remote: Counting objects: ...
 Receiving objects: 100% — Done!
 ```
 
+> 💡 **Вывод `Cloning into...` — это нормально!**
+> Вы увидите несколько строк с прогрессом — это Git скачивает проект.
+> Последняя строка `Receiving objects: 100%` означает успех.
+> Если видите `fatal: repository not found` — проверьте URL.
+
 ### Шаг 3: Войдите в папку проекта
 
 ```bash
@@ -143,5 +160,6 @@ ls
 ## ➡️ Следующий урок
 
 [🖥️ Урок 1: Виртуальное окружение (venv)](lesson_01_venv.md)
+
 
 
