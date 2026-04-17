@@ -84,6 +84,15 @@ curl -s -X POST http://localhost:8000/api/v1/tender/inspect \
 
 ### Назначение
 
+> 💡 **Curl пример: проверка тендерной документации по 44-ФЗ:**
+> ```bash
+> curl -s -X POST http://localhost:8000/api/v1/tender/inspect \
+>   -H "Content-Type: application/json" \
+>   -H "X-API-Key: ваш_ключ" \
+>   -d '{"document": "ТЕНДЕРНАЯ ДОКУМЕНТАЦИЯ (44-ФЗ)\n\nПредмет: серверы\nНМЦ: 5 000 000 руб.\nТребования: лицензия ИТ, опыт 3 года"}'  \
+>   | python3 -m json.tool
+> ```
+
 > 💡 **Откуда агент Tender берёт список участников?**
 > Три источника (настраивается в промпте):
 > 1. **Email** — участник отвечает на приглашение письмом с анкетой во вложении
@@ -135,6 +144,19 @@ curl -s -X POST http://localhost:8000/api/v1/tender/inspect \
   ]
 }
 ```
+
+> 💡 **Пример SQL-запроса идентификации через БД:**
+> ```sql
+> SELECT * FROM participants
+> WHERE tender_id = '3115-ДИТ-Сервер'
+>   AND (
+>     inn = :inn_from_document
+>     OR contact_email = :sender_email
+>     OR company_name ILIKE :company_name
+>   )
+> LIMIT 1;
+> ```
+> Последовательность: ИНН → email → название (стратегии 1, 2, 3).
 
 ### Алгоритм идентификации участника (3 стратегии)
 
@@ -223,6 +245,7 @@ curl -s -X POST http://localhost:8000/api/v1/collector/inspect \
 ## ➡️ Следующий урок
 
 [📝 Урок 12: Промпты — анатомия и правила составления](lesson_12_prompts.md)
+
 
 
 
