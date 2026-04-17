@@ -199,6 +199,8 @@ curl -s --max-time 5 https://egrul.nalog.ru/search.json || echo "FNS недос�
 
 ---
 
+![Алгоритм проверки ИНН — Агент Collector](images/lesson_15_inn_check.png)
+
 ## 🔍 Мониторинг работы Collector
 
 ```bash
