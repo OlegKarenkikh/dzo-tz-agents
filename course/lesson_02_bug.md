@@ -1,6 +1,6 @@
 # 🐛 Урок 2: Баг — что это и как искать
 
-![Как читать Traceback — снизу вверх](images/lesson_02_bug.jpg)
+![Как читать Traceback — снизу вверх](images/lesson_02_bug.png)
 
 ---
 
