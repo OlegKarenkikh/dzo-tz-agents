@@ -52,7 +52,7 @@ dzo-tz-agents/
     └── tender/
         ├── agent.py        ← основной агент (ReAct + LangGraph)
         ├── tools.py        ← инструменты агента
-        ├── router.py       ← FastAPI маршруты /api/v1/tender/...
+        ├── router.py       ← FastAPI (веб-фреймворк) маршруты /api/v1/tender/...
         └── __init__.py
 ```
 
