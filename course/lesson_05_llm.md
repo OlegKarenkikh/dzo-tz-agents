@@ -85,6 +85,21 @@ llm = build_llm(temperature=0.0)
 >
 > Аналогия: GPT-4o — хирург. LangGraph — операционная со всем оборудованием.
 
+> 💡 **Что такое «состояние разговора» (state) в LangGraph?**
+> State — это «память» агента внутри одного запроса: история сообщений, результаты инструментов.
+> Пример для Агента ДЗО:
+> ```
+> state = {
+>   "messages": [
+>     {"role": "user",      "content": "Заявка: ООО Ромашка..."},
+>     {"role": "assistant", "content": "Вызываю analyze_tz_with_agent..."},
+>     {"role": "tool",      "content": '{"overall_status": "Соответствует"}'},
+>     {"role": "assistant", "content": "ТЗ проверено. Проверяю реквизиты..."},
+>   ]
+> }
+> ```
+> Каждый шаг ReAct добавляет сообщение в state. Агент «помнит» всё что происходило в рамках одного запроса.
+
 ```python
 from langgraph.prebuilt import create_react_agent
 from shared.llm import build_llm
@@ -115,4 +130,5 @@ agent = create_react_agent(
 ## ➡️ Следующий урок
 
 [🔧 Урок 6: Инструмент — как его создать](lesson_06_what_is_tool.md)
+
 
