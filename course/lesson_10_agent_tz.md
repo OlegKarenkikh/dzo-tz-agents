@@ -149,6 +149,16 @@ curl -s -X POST http://localhost:8000/api/v1/tz/inspect \
 
 ---
 
+> 💡 **Curl для получения исправленного ТЗ (через прямой вызов):**
+> ```bash
+> curl -s -X POST http://localhost:8000/api/v1/tz/inspect \
+>   -H "Content-Type: application/json" \
+>   -H "X-API-Key: ваш_ключ" \
+>   -d '{"document": "ТЗ на закупку...", "return_corrected": true}' \
+>   | python3 -m json.tool
+> ```
+> В ответе будет поле `corrected_tz_html` — готовый HTML-документ с исправлениями.
+
 ## 📍 Что запомнить
 
 | Понятие | Значение |
@@ -164,6 +174,7 @@ curl -s -X POST http://localhost:8000/api/v1/tz/inspect \
 ## ➡️ Следующий урок
 
 [📊 Урок 11: Агент Тендер и Агент Collector](lesson_11_agents_tender_collector.md)
+
 
 
 
