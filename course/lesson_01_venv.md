@@ -57,6 +57,13 @@ cd dzo-tz-agents
 
 ### Шаг 2: Создать виртуальное окружение
 
+> 💡 **`python` или `python3`?**
+> На macOS/Linux команда называется `python3`. На Windows обычно `python`.
+> Если `python -m venv .venv` выдаёт ошибку — попробуйте:
+> ```bash
+> python3 -m venv .venv
+> ```
+
 ```bash
 python -m venv .venv
 ```
@@ -133,6 +140,13 @@ make api
 
 Если видите `INFO: Application startup complete.` — всё заработало! 🎉
 
+> 💡 **`make` не работает на Windows?**
+> Альтернатива без make — запустить напрямую:
+> ```bash
+> .venv/Scripts/python.exe -m uvicorn api.app:app --reload --host 0.0.0.0 --port 8000
+> ```
+> Или установите make через Git Bash (входит в Git for Windows) — тогда `make api` заработает.
+
 Откройте в браузере: **http://localhost:8000/docs**
 
 Вы увидите **Swagger UI** — это интерактивная документация API.
@@ -168,5 +182,6 @@ http://localhost:8000/docs
 ## ➡️ Следующий урок
 
 [🐛 Урок 2: Баг — что это и как искать](lesson_02_bug.md)
+
 
 
