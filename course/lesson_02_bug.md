@@ -188,6 +188,7 @@ OPENAI_API_KEY=sk-proj-ВАШ_НАСТОЯЩИЙ_КЛЮЧ
 | `KeyError` | Нет ключа в словаре | Используйте `dict.get(key)` |
 | `ConnectionRefused` | Сервис не запущен | Запустите Docker/сервер |
 | `RecursionError` | Цикл агентов (A вызывает B вызывает A) | Проверьте `AGENT_TOOL_PERMISSIONS` |
+| `Port 8000 already in use` | Другой процесс занял порт | `lsof -i:8000` (найти) → `kill -9 PID` (завершить) |
 
 > 💡 **Как включить подробные логи (DEBUG)?**
 > По умолчанию сервер показывает только INFO и выше.
@@ -209,6 +210,13 @@ OPENAI_API_KEY=sk-proj-ВАШ_НАСТОЯЩИЙ_КЛЮЧ
 > ```
 > Основные: `make api`, `make email`, `make db-up`, `make db-down`, `make test`.
 
+> 💡 **Health check: как быстро проверить что агент работает?**
+> ```bash
+> curl -s http://localhost:8000/health | python3 -m json.tool
+> # Ожидаемый ответ: {"status": "ok", "version": "1.0"}
+> ```
+> Если получаете `ok` — сервер запущен. Если `Connection refused` — запустите `make api`.
+
 ## 📍 Что запомнить
 
 | Термин | Значение |
@@ -224,6 +232,7 @@ OPENAI_API_KEY=sk-proj-ВАШ_НАСТОЯЩИЙ_КЛЮЧ
 ## ➡️ Следующий урок
 
 [🌐 Урок 3: curl — разговариваем с агентом](lesson_03_curl.md)
+
 
 
 
