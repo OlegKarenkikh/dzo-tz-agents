@@ -28,6 +28,9 @@
 
 ## 📁 Файлы агента
 
+
+![Маршрут задания через агента ТЗ до результата](images/lesson_10_tz_route.jpg)
+
 ```
 agent2_tz_inspector/
 ├── agent.py      ← создание ReAct-агента
