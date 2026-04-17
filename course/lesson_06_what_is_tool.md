@@ -141,6 +141,22 @@ def count_words(text: str) -> dict:
 
 Добавьте его в список `tools` при создании агента — и LLM сможет его вызывать!
 
+
+> 💡 **Как проверить, что агент вызвал новый инструмент?**
+> Отправьте запрос с текстом, где явно нужен подсчёт слов:
+> ```bash
+> curl -s -X POST http://localhost:8000/api/v1/dzo/inspect \
+>   -H "Content-Type: application/json" \
+>   -H "X-API-Key: ваш_ключ" \
+>   -d '{"document": "Определи объём этого документа в словах."}' \
+>   | python3 -m json.tool
+> ```
+> В логах терминала (make api) увидите строку Tool called: count_words.
+
+> 💡 **`args_schema` обязателен?**
+> Нет! Для простых инструментов можно обойтись без Pydantic — просто добавьте тип аргумента:
+> `args_schema` рекомендуется когда параметров несколько или нужны подробные описания для LLM.
+
 > 💡 **Где находится список `tools`?**
 > Откройте файл `agent1_dzo_inspector/agent.py`:
 > ```python
@@ -182,5 +198,6 @@ def count_words(text: str) -> dict:
 ## ➡️ Следующий урок
 
 [🤝 Урок 7: Агент как инструмент](lesson_07_agent_as_tool.md)
+
 
 
