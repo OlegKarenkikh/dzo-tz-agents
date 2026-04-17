@@ -123,7 +123,7 @@ def request_inn_verification(inn: str, job_id: str) -> dict:
     """
     return invoke_peer_agent(
         agent_name="collector",
-        payload={
+        payload={  # payload — тело запроса с данными
             "action": "verify_inn",
             "inn": inn,
             "job_id": job_id
