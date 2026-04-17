@@ -113,7 +113,7 @@ LLM читает docstring, чтобы решить: нужен ли этот и
 Вот реальный инструмент из `agent1_dzo_inspector/tools.py`:
 
 ```python
-from langchain.tools import tool
+from langchain.tools import tool  # LangChain — библиотека для работы с LLM
 from pydantic import BaseModel, Field
 
 class InfoRequestInput(BaseModel):
