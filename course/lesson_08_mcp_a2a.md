@@ -9,6 +9,10 @@
 По умолчанию агенты доступны через REST API (`/api/v1/dzo/inspect`).
 Но что если вы хотите вызвать агента прямо из **Claude Desktop** или **Cursor**?
 
+> 💡 **Подключение к Cursor:**
+> В Cursor откройте Settings → MCP → Add MCP Server → введите URL: `http://localhost:8000/mcp`
+> Cursor автоматически обнаружит все инструменты агента. Конфиг аналогичен Claude Desktop.
+
 Для этого существуют два стандартных протокола:
 
 | Протокол | Расшифровка | Зачем |
@@ -173,6 +177,7 @@ PUBLIC_BASE_URL=https://agents.company.ru
 ## ➡️ Следующий урок
 
 [🤖 Урок 9: Агент ДЗО — разбираем изнутри](lesson_09_agent_dzo.md)
+
 
 
 
