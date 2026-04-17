@@ -80,6 +80,10 @@ cp .env.example .env
 
 ### Шаг 2: Сгенерируйте API_KEY
 
+> 💡 **`python3 -c` — запуск Python прямо в терминале!**
+> Флаг `-c` означает «выполни эту строку как Python-код» — не нужно создавать файл.
+> Это удобно для быстрых однострочных команд.
+
 ```bash
 python3 -c "import secrets; print(secrets.token_hex(32))"
 # → 8f4a2b1c9d7e6f3a5b8c2d1e4f7a9b6c...
@@ -137,3 +141,4 @@ curl -X POST http://localhost:8000/api/v1/dzo/inspect \
 ## ➡️ Следующий урок
 
 [🧠 Урок 5: LLM — мозг агента](lesson_05_llm.md)
+
