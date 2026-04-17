@@ -327,10 +327,23 @@ curl -X POST http://localhost:8000/api/v1/dzo/inspect \
 
 ---
 
+> 💡 **Как узнать какая версия промпта сейчас активна?**
+> Три способа:
+> 1. Проверить `config.py`: `grep PROMPT_VERSION config.py`
+> 2. Вызвать `/health` — ответ содержит поле `prompt_versions`
+> 3. Посмотреть логи запущенного сервера: `Using prompt: dzo_v2.md`
+>
+> **Версионирование через git:**
+> ```bash
+> git commit -m "[prompt] dzo_v3: правила для крупных закупок"
+> git log --oneline | grep prompt   # история всех изменений промптов
+> ```
+
 ## 🎓 Курс завершён!
 
 Вы изучили весь проект от основ до промптов. Следующий шаг:
 [📖 Как добавить нового агента](../docs/adding_new_agent.md)
+
 
 
 
