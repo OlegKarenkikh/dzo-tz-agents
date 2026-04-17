@@ -153,7 +153,7 @@ def generate_info_request(dzo_name: str, missing_fields: list[str]) -> dict:
 3. LLM решает: "Нужен generate_info_request — нет места поставки"
 4. LLM формирует JSON:
    {"dzo_name": "ООО Ромашка", "missing_fields": ["адрес поставки"]}
-5. LangGraph вызывает Python-функцию с этими аргументами
+5. LangGraph (фреймворк агентов) вызывает Python-функцию с этими аргументами
 6. Функция выполняется → возвращает результат
 7. Результат возвращается в LLM как "наблюдение"
 8. LLM продолжает рассуждение
