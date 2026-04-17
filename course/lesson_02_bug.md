@@ -82,7 +82,8 @@ curl http://localhost:8000/health
 > ```bash
 > make db-up   # или: docker compose up -d postgres
 > ```
-> > Остановить базу: `make db-down` (или `docker compose down`)
+> > Перезапустить один контейнер: `docker restart agent_dzo` (остальные не трогает)
+> Остановить базу: `make db-down` (или `docker compose down`)
 > Удалить данные: `docker compose down -v` — осторожно, удаляет все данные!
 
 После этого `docker logs` будет работать:
@@ -200,6 +201,14 @@ OPENAI_API_KEY=sk-proj-ВАШ_НАСТОЯЩИЙ_КЛЮЧ
 > ```
 > В режиме DEBUG видны все шаги агента, вызовы инструментов и ответы LLM.
 
+> 💡 **Как посмотреть все make-команды?**
+> ```bash
+> make help          # если в Makefile есть цель help
+> cat Makefile       # посмотреть весь файл
+> grep '^[a-z]' Makefile  # только имена целей
+> ```
+> Основные: `make api`, `make email`, `make db-up`, `make db-down`, `make test`.
+
 ## 📍 Что запомнить
 
 | Термин | Значение |
@@ -215,6 +224,7 @@ OPENAI_API_KEY=sk-proj-ВАШ_НАСТОЯЩИЙ_КЛЮЧ
 ## ➡️ Следующий урок
 
 [🌐 Урок 3: curl — разговариваем с агентом](lesson_03_curl.md)
+
 
 
 
