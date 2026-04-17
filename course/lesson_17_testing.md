@@ -11,9 +11,9 @@
 
 В проекте `dzo-tz-agents` используется **пирамида тестирования**:
 
-![Пирамида тестирования](images/lesson_17_test_pyramid.png)
+![Пирамида тестирования](images/lesson_17_test_pyramid.jpg)
 
-![Что проверяет каждый тип теста](images/lesson_17_test_types.png)
+![Что проверяет каждый тип теста](images/lesson_17_test_types.jpg)
 
 | Уровень | Файлы | Когда запускать |
 |---------|-------|----------------|
@@ -28,9 +28,9 @@
 Большинство тестов запускаются **без реального вызова LLM**.
 Вместо этого `conftest.py` подставляет заглушку — это быстро, бесплатно, детерминировано.
 
-![Mock vs Real LLM](images/lesson_17_mock_vs_real.png)
+![Mock vs Real LLM](images/lesson_17_mock_vs_real.jpg)
 
-![Анатомия теста — Arrange, Act, Assert](images/lesson_17_test_anatomy.png)
+![Анатомия теста — Arrange, Act, Assert](images/lesson_17_test_anatomy.jpg)
 
 ### Как работает mock в conftest.py
 
@@ -61,9 +61,9 @@ E2E-тесты используют **минимальный input** (7–8 ст
 
 ## Маркеры pytest
 
-![Маркеры pytest](images/lesson_17_pytest_markers.png)
+![Маркеры pytest](images/lesson_17_pytest_markers.jpg)
 
-![Что тестировать в агентах проекта](images/lesson_17_what_to_test.png)
+![Что тестировать в агентах проекта](images/lesson_17_what_to_test.jpg)
 
 ```python
 @pytest.mark.e2e
