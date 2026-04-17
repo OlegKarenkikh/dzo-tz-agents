@@ -29,6 +29,15 @@ OPENAI_API_KEY=sk-proj-...ваш_ключ_openai...
 
 POSTGRES_PASSWORD=пароль_базы_данных
 IMAP_PASSWORD=пароль_почты_агента
+
+> 💡 **Минимальный .env для запуска без email:**
+> Для учебного запуска через curl вам нужны только два поля:
+> ```
+> API_KEY=любая_случайная_строка
+> OPENAI_API_KEY=sk-proj-ВАШ_КЛЮЧ
+> ```
+> `POSTGRES_PASSWORD` нужен только если запускаете базу через `make db-up`.
+> `IMAP_PASSWORD` нужен только для email-runner (production-режим). При обучении — не нужен.
 ```
 
 ---
@@ -74,8 +83,11 @@ git push не загружает .env на GitHub
 
 ### Шаг 1: Создайте .env
 
+> 💡 Как скопировать `.env.example` → подробно в [Уроке 1, Шаг 5](lesson_01_venv.md)
+
 ```bash
-cp .env.example .env
+cp .env.example .env    # macOS/Linux/Git Bash
+copy .env.example .env  # Windows cmd
 ```
 
 > 💡 **Что такое `X-API-Key` в заголовке curl?**
@@ -147,5 +159,6 @@ curl -X POST http://localhost:8000/api/v1/dzo/inspect \
 ## ➡️ Следующий урок
 
 [🧠 Урок 5: LLM — мозг агента](lesson_05_llm.md)
+
 
 
