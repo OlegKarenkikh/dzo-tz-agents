@@ -67,6 +67,23 @@ agent1_dzo_inspector/
 | `invoke_peer_agent` | По необходимости | Вызывает любой другой агент |
 | `generate_validation_report` | Всегда | Формирует JSON-отчёт по чек-листам |
 | `generate_tezis_form` | Заявка полная | Создаёт HTML-форму для системы «Тезис» |
+
+> 💡 **Как выглядит HTML-форма `generate_tezis_form`?**
+> Функция возвращает готовый HTML-шаблон для загрузки в систему Тезис:
+> ```html
+> <form id="tezis-application">
+>   <field name="dzo_name">ООО Ромашка</field>
+>   <field name="subject">Страхование КАСКО</field>
+>   <field name="decision">Заявка полная</field>
+>   <field name="status">Принята</field>
+> </form>
+> ```
+> Тезис читает этот HTML и создаёт карточку документа автоматически.
+
+> 💡 **Что такое `job_id`? Как выглядит?**
+> `job_id` — уникальный идентификатор задания формата UUID:
+> `"job_id": "550e8400-e29b-41d4-a716-446655440000"`
+> Используйте его в запросе: `GET /api/v1/jobs/{job_id}`
 | `generate_info_request` | Нужна доработка | Письмо с запросом недостающих данных |
 | `generate_escalation` | Критические проблемы | Уведомление руководителю |
 | `generate_response_email` | Всегда | Итоговое письмо отправителю |
@@ -141,6 +158,7 @@ curl -s http://localhost:8000/api/v1/jobs/JOB_ID \
 ## ➡️ Следующий урок
 
 [📄 Урок 10: Агент ТЗ — специалист по техническим заданиям](lesson_10_agent_tz.md)
+
 
 
 
