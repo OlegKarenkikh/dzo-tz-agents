@@ -12,7 +12,7 @@
 
 | № | Тема | Файл |
 |---|------|------|
-| 0 | 🖥️ Терминал и Git — с чего начать | [lesson_00_terminal.md](lesson_00_terminal.md) |
+| 0 | 🖥️ Терминал и Git — с чего начать | [lesson_00_terminal.md](lesson_00_terminal.md) · `lesson_00_terminal.png` |
 
 ### 🧱 Часть 1: Основы
 
@@ -42,7 +42,7 @@
 |---|------|------------|
 | 9 | 🤖 Агент ДЗО — инспектор заявок | `lesson_09_agent_dzo.png` |
 | 10 | 📄 Агент ТЗ — инспектор технических заданий | `lesson_10_agent_tz.png` |
-| 11 | 📊 Агент Тендер и Collector | `lesson_14_agent21_tender.png`, `lesson_15_agent3_collector.png` |
+| 11 | 📊 Агент Тендер и Collector | `lesson_11_agents_tender_collector.png`, `lesson_14_agent21_tender.png`, `lesson_15_agent3_collector.png` |
 
 👉 Файлы: [lesson_09](lesson_09_agent_dzo.md) · [lesson_10](lesson_10_agent_tz.md) · [lesson_11](lesson_11_agents_tender_collector.md)
 
@@ -71,7 +71,7 @@
 
 ## 📖 Справочник
 
-- [Глоссарий всех терминов](glossary.md) — ДЗО, ТЗ, НМЦ, СРО, IMAP, LLM и другие
+- [Глоссарий всех терминов](glossary.md) — ДЗО, ТЗ, НМЦ, СРО, IMAP, LLM и другие · `glossary_terms.png`
 - [Все иллюстрации курса](images/) — 30+ картинок в едином стиле
 
 ---
