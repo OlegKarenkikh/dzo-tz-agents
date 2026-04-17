@@ -16,8 +16,8 @@
 
 ### 🧱 Часть 1: Основы
 
-| № | Тема | Новые иллюстрации |
-|---|------|------|
+| № | Тема | Иллюстрации |
+|---|------|------------|
 | 1 | 🖥️ Изолированное окружение (venv) | `lesson_01_venv.png`, `lesson_01_git.png` |
 | 2 | 🐛 Баг — что это и как искать | `lesson_02_bug.png` |
 | 3 | 🌐 curl — разговариваем с агентом | `lesson_03_http.png` |
@@ -27,8 +27,8 @@
 
 ### 🤖 Часть 2: Агенты и инструменты
 
-| № | Тема | Новые иллюстрации |
-|---|------|------|
+| № | Тема | Иллюстрации |
+|---|------|------------|
 | 5 | 🧠 LLM — мозг агента, паттерн ReAct | `lesson_05_llm_tools.png`, `lesson_05_temperature.png` |
 | 6 | 🔧 Инструмент — что это и как создать | `lesson_06_what_is_tool.png`, `lesson_06_docstring.png` |
 | 7 | 🤝 Агент как инструмент — межагентные вызовы | `lesson_07_agent_as_tool.png` |
@@ -39,27 +39,40 @@
 ### 🔬 Часть 3: Агенты проекта
 
 | № | Тема | Иллюстрации |
-|---|------|------|
+|---|------|------------|
 | 9 | 🤖 Агент ДЗО — инспектор заявок | `lesson_09_agent_dzo.png` |
 | 10 | 📄 Агент ТЗ — инспектор технических заданий | `lesson_10_agent_tz.png` |
-| 11 | 📊 Агент Тендер и Collector — независимые специалисты | `lesson_14_agent21_tender.png`, `lesson_15_agent3_collector.png` |
+| 11 | 📊 Агент Тендер и Collector | `lesson_14_agent21_tender.png`, `lesson_15_agent3_collector.png` |
 
 👉 Файлы: [lesson_09](lesson_09_agent_dzo.md) · [lesson_10](lesson_10_agent_tz.md) · [lesson_11](lesson_11_agents_tender_collector.md)
 
 ### 🧬 Часть 4: Промпты и качество
 
 | № | Тема | Иллюстрации |
-|---|------|------|
-| 12 | 📝 Промпты — анатомия, правила и защита от болей LLM | `lesson_12_prompt_dzo.png`, `lesson_13_llm_protection.png`, `lesson_16_prompt_template.png` |
+|---|------|------------|
+| 12 | 📝 Промпты — анатомия и правила | `lesson_12_prompt_dzo.png` |
+| 13 | 🛡️ Безопасность LLM и защита промптов | `lesson_13_llm_protection.png`, `lesson_13_defense_levels.png` |
+| 14 | 🤝 Межагентные вызовы: peer и Тендер | `lesson_14_peer_call.png`, `lesson_14_tender_lifecycle.png` |
+| 15 | 🔍 Агент Collector: сбор и проверка ИНН | `lesson_15_inn_check.png` |
+| 16 | ✍️ Шаблоны промптов и версионирование | `lesson_16_prompt_template.png`, `lesson_16_versioning.png`, `lesson_16_7sections.png` |
 
-👉 Файлы: [lesson_12](lesson_12_prompts.md)
+👉 Файлы: [lesson_12](lesson_12_prompts.md) · [lesson_13](lesson_13.md) · [lesson_14](lesson_14.md) · [lesson_15](lesson_15.md) · [lesson_16](lesson_16.md)
+
+### 🧪 Часть 5: Тестирование и CI/CD
+
+| № | Тема | Иллюстрации |
+|---|------|------------|
+| 17 | 🧪 Тестирование агентов: unit, mock, e2e | `lesson_17_test_pyramid.png`, `lesson_17_mock_vs_real.png`, `lesson_17_pytest_markers.png` |
+| 18 | 🚀 CI/CD: GitHub Actions и деплой | `lesson_18_ci_pipeline.png`, `lesson_18_ci_jobs.png`, `lesson_18_deploy_flow.png` |
+
+👉 Файлы: [lesson_17](lesson_17_testing.md) · [lesson_18](lesson_18_ci.md)
 
 ---
 
 ## 📖 Справочник
 
 - [Глоссарий всех терминов](glossary.md) — ДЗО, ТЗ, НМЦ, СРО, IMAP, LLM и другие
-- [Все иллюстрации курса](images/) — 21 картинка в едином стиле
+- [Все иллюстрации курса](images/) — 30+ картинок в едином стиле
 
 ---
 
