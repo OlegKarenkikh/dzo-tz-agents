@@ -1,6 +1,6 @@
 # 📡 Урок 15: Агент Collector — сбор данных из внешних систем
 
-![Агент Collector — третий агент системы](images/lesson_15_agent3_collector.jpg)
+![Агент Collector — третий агент системы](images/lesson_15_agent3_collector.png)
 
 ---
 
