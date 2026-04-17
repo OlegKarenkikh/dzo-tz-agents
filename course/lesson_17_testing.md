@@ -13,6 +13,8 @@
 
 ![Пирамида тестирования](images/lesson_17_test_pyramid.png)
 
+![Что проверяет каждый тип теста](images/lesson_17_test_types.png)
+
 | Уровень | Файлы | Когда запускать |
 |---------|-------|----------------|
 | **Unit** | ~35 файлов `test_*.py` | При каждом push — автоматически в CI |
@@ -27,6 +29,8 @@
 Вместо этого `conftest.py` подставляет заглушку — это быстро, бесплатно, детерминировано.
 
 ![Mock vs Real LLM](images/lesson_17_mock_vs_real.png)
+
+![Анатомия теста — Arrange, Act, Assert](images/lesson_17_test_anatomy.png)
 
 ### Как работает mock в conftest.py
 
@@ -58,6 +62,8 @@ E2E-тесты используют **минимальный input** (7–8 ст
 ## Маркеры pytest
 
 ![Маркеры pytest](images/lesson_17_pytest_markers.png)
+
+![Что тестировать в агентах проекта](images/lesson_17_what_to_test.png)
 
 ```python
 @pytest.mark.e2e
