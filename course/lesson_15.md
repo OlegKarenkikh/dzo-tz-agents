@@ -173,7 +173,7 @@ curl -s -X POST http://localhost:8000/api/v1/collector/verify \
 
 ### Timeout от внешнего API
 ```
-{"error": "external_api_timeout", "source": "fns_registry"}
+{"error": "external_api_timeout", "source": "fns_registry"  # fns_registry — реестр ФНС}
 ```
 **Решение:**
 ```bash
