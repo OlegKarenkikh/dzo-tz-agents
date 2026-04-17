@@ -1,6 +1,6 @@
 # 🌐 Урок 8: MCP и A2A — агенты для внешнего мира
 
-![MCP и A2A архитектура](images/lesson_08_mcp_a2a.png)
+![MCP и A2A архитектура](images/lesson_08_mcp_a2a.jpg)
 
 ---
 
