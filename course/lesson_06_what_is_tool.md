@@ -1,6 +1,6 @@
 # 🔧 Урок 6: Инструмент — что это и как создать
 
-![Что такое инструмент для LLM](images/lesson_06_what_is_tool.png)
+![Что такое инструмент для LLM](images/lesson_06_what_is_tool.jpg)
 
 ---
 
@@ -70,7 +70,7 @@ def generate_info_request(dzo_name: str, missing_fields: list[str]) -> dict:
 
 ## 🖊️ Хороший vs Плохой docstring
 
-![Хороший vs плохой docstring](images/lesson_06_docstring.png)
+![Хороший vs плохой docstring](images/lesson_06_docstring.jpg)
 
 LLM читает docstring, чтобы решить: нужен ли этот инструмент прямо сейчас?
 
