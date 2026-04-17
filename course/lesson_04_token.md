@@ -21,6 +21,9 @@
 
 Токены хранятся в файле `.env` в корне проекта:
 
+![Путь токена: .env → python-dotenv → os.environ → агент](images/lesson_04_env_path.jpg)
+
+
 ```bash
 # Файл .env (НИКОГДА не публикуйте его!)
 
