@@ -180,3 +180,4 @@ OPENAI_API_KEY=sk-proj-ВАШ_НАСТОЯЩИЙ_КЛЮЧ
 [🌐 Урок 3: curl — разговариваем с агентом](lesson_03_curl.md)
 
 
+
