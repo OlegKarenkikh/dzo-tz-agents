@@ -213,7 +213,7 @@ curl -s http://localhost:8000/api/v1/jobs/JOB_ID \
 | `create_dzo_agent()` | Фабрика — создаёт и возвращает агента |
 | `AgentRunner.invoke()` | Запустить агента с входными данными |
 | `prompts/dzo_v1.md` | Системный промпт агента ДЗО |
-| `/api/v1/dzo/inspect` | REST-эндпоинт для вызова агента |
+| `/api/v1/dzo/inspect` | REST-эндпоинт (HTTP-адрес для вызова) для вызова агента |
 
 ---
 
