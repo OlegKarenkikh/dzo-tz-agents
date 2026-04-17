@@ -139,7 +139,7 @@ llm = build_llm(temperature=0.0)
 > Каждый шаг ReAct добавляет сообщение в state. Агент «помнит» всё что происходило в рамках одного запроса.
 
 ```python
-from langgraph.prebuilt import create_react_agent
+from langgraph.prebuilt import create_react_agent  # LangGraph — фреймворк для агентов
 from shared.llm import build_llm
 
 llm = build_llm(temperature=0.0)
