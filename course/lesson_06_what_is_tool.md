@@ -45,6 +45,11 @@ class InfoRequestInput(BaseModel):
 
 **Декоратор** — это специальный синтаксис Python `@что-то`, который «оборачивает» функцию дополнительной логикой.
 
+> 💡 **Что значит `-> dict` и `list[str]`?**
+> `-> dict` — это **аннотация типа возврата**: функция обещает вернуть словарь (dict).
+> Это не обязательно для работы, но помогает IDE и LLM понять структуру данных.
+> `list[str]` — список строк. В JSON выглядит так: `["адрес поставки", "срок"]`
+
 ```python
 @tool("generate_info_request", args_schema=InfoRequestInput)
 def generate_info_request(dzo_name: str, missing_fields: list[str]) -> dict:
@@ -154,3 +159,4 @@ def count_words(text: str) -> dict:
 ## ➡️ Следующий урок
 
 [🤝 Урок 7: Агент как инструмент](lesson_07_agent_as_tool.md)
+
