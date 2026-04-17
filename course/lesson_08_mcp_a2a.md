@@ -167,6 +167,20 @@ PUBLIC_BASE_URL=https://agents.company.ru
 
 ---
 
+> 💡 **Как происходит A2A discovery (обнаружение агента)?**
+> Система A2A основана на стандарте: агент публикует карточку по адресу `/.well-known/agent.json`.
+> Другая система делает GET-запрос на этот адрес и получает описание агента.
+> В нашем проекте: `http://localhost:8000/.well-known/agent.json`
+> ```bash
+> curl http://localhost:8000/.well-known/agent.json | python3 -m json.tool
+> ```
+> Это автоматически — никакой ручной регистрации не нужно. Сервер отдаёт карточку по умолчанию.
+
+> 💡 **Откуда взялось `/.well-known/`?**
+> Это веб-стандарт RFC 8615: зарезервированный путь для метаданных сервиса.
+> `/.well-known/robots.txt`, `/.well-known/security.txt` — вы видели похожие.
+> Google A2A Protocol использует `/.well-known/agent.json` как стандартное место для карточки агента.
+
 ## 📍 Что запомнить
 
 | Понятие | Значение |
@@ -182,6 +196,7 @@ PUBLIC_BASE_URL=https://agents.company.ru
 ## ➡️ Следующий урок
 
 [🤖 Урок 9: Агент ДЗО — разбираем изнутри](lesson_09_agent_dzo.md)
+
 
 
 
