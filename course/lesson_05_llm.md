@@ -133,6 +133,17 @@ agent = create_react_agent(
 
 ---
 
+> 💡 **Как видеть шаги агента в реальном времени (streaming)?**
+> При запуске через `make api` — шаги агента видны в логах терминала.
+> Через MCP (Claude Desktop) — шаги стримятся автоматически через SSE.
+> Через curl — добавьте параметр `stream=true` в запрос:
+> ```bash
+> curl -s -X POST http://localhost:8000/api/v1/dzo/inspect?stream=true \
+>   -H "X-API-Key: ваш_ключ" -H "Content-Type: application/json" \
+>   -d '{"document":"тест"}'
+> ```
+> Ответ придёт построчно: каждая строка = один шаг агента (мысль, вызов инструмента, результат).
+
 ## 📍 Что запомнить
 
 | Понятие | Значение |
@@ -148,6 +159,7 @@ agent = create_react_agent(
 ## ➡️ Следующий урок
 
 [🔧 Урок 6: Инструмент — как его создать](lesson_06_what_is_tool.md)
+
 
 
 
