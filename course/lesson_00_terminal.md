@@ -69,11 +69,18 @@ echo "Привет, мир!"
 
 ### Шаг 1: Установите Git (если нет)
 
+> 💡 **Что такое Homebrew?**
+> **Homebrew** — это менеджер пакетов для macOS (аналог App Store, но для программ через терминал).
+> Установите его один раз: перейдите на [brew.sh](https://brew.sh) и выполните команду с главной страницы.
+> После этого `brew install <название>` устанавливает любую программу.
+
 ```bash
 # macOS (через Homebrew):
 brew install git
 
 # Windows: скачайте git-scm.com и установите
+# При установке: оставьте все настройки по умолчанию → просто жмите Next → Finish
+# Важно: выберите «Git from the command line and also from 3rd-party software» (обычно уже выбрано)
 # Linux:
 sudo apt install git
 ```
@@ -125,3 +132,4 @@ ls
 ## ➡️ Следующий урок
 
 [🖥️ Урок 1: Виртуальное окружение (venv)](lesson_01_venv.md)
+
