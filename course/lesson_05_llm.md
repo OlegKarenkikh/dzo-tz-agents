@@ -1,6 +1,6 @@
 # 🧠 Урок 5: LLM — мозг агента
 
-![LLM с инструментами — паттерн ReAct](images/lesson_05_llm_tools.png)
+![LLM с инструментами — паттерн ReAct](images/lesson_05_llm_tools.jpg)
 
 ---
 
@@ -51,7 +51,7 @@ llm = build_llm(temperature=0.0)
 
 ## 🌡️ Что такое temperature?
 
-![Temperature LLM — регулятор творчества](images/lesson_05_temperature.png)
+![Temperature LLM — регулятор творчества](images/lesson_05_temperature.jpg)
 
 **Temperature** — это параметр «творчества» модели от 0.0 до 1.0.
 
