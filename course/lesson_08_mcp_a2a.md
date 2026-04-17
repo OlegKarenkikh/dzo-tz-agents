@@ -1,0 +1,137 @@
+# 🌐 Урок 8: MCP и A2A — агенты для внешнего мира
+
+![MCP и A2A архитектура](images/lesson_08_mcp_a2a.png)
+
+---
+
+## 🤔 Зачем нужны MCP и A2A?
+
+По умолчанию агенты доступны через REST API (`/api/v1/dzo/inspect`).
+Но что если вы хотите вызвать агента прямо из **Claude Desktop** или **Cursor**?
+
+Для этого существуют два стандартных протокола:
+
+| Протокол | Расшифровка | Зачем |
+|---|---|---|
+| **MCP** | Model Context Protocol | Подключить агентов к AI-клиентам (Claude, Cursor, VS Code) |
+| **A2A** | Agent-to-Agent | Описать агента для других AI-систем (Google ADK, N8N) |
+
+---
+
+## 🔌 MCP — подключение к AI-клиентам
+
+MCP-сервер монтируется автоматически при запуске FastAPI по адресу `/mcp`.
+
+### Доступные инструменты через MCP
+
+| Инструмент MCP | Что делает |
+|---|---|
+| `inspect_dzo` | Проверяет заявку ДЗО |
+| `inspect_tz` | Анализирует техническое задание |
+| `inspect_tender` | Парсит тендерную документацию |
+| `collect_documents` | Собирает анкеты участников |
+| `list_agents` | Список доступных агентов |
+
+### Подключение Claude Desktop
+
+Добавьте в `~/.config/claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "dzo-tz-agents": {
+      "url": "http://localhost:8000/mcp",
+      "transport": "streamable-http"
+    }
+  }
+}
+```
+
+После этого Claude Desktop видит агентов как встроенные инструменты!
+
+### Проверка MCP через curl
+
+```bash
+# Список инструментов MCP
+curl -s -X POST http://localhost:8000/mcp \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","method":"tools/list","id":1}' | python3 -m json.tool
+
+# Вызов inspect_dzo через MCP
+curl -s -X POST http://localhost:8000/mcp \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+      "name": "inspect_dzo",
+      "arguments": {"document": "Заявка на закупку серверов..."}
+    },
+    "id": 2
+  }'
+```
+
+---
+
+## 🤖 A2A — карточка агента
+
+A2A-карточка — это стандартный JSON-файл, который описывает возможности сервиса.
+Другие AI-системы читают его и узнают, как взаимодействовать с агентами.
+
+```bash
+# Получить карточку агента
+curl http://localhost:8000/.well-known/agent.json
+```
+
+Ответ:
+```json
+{
+  "name": "DZO/TZ Inspector",
+  "version": "1.5.0",
+  "skills": [
+    {"id": "inspect_dzo", "name": "Проверка заявок ДЗО"},
+    {"id": "inspect_tz", "name": "Проверка технических заданий"}
+  ]
+}
+```
+
+### Использование с Google ADK
+
+```python
+from google.adk.agents import RemoteAgent
+
+dzo_inspector = RemoteAgent(
+    agent_card_url="http://localhost:8000/.well-known/agent.json"
+)
+result = await dzo_inspector.run("Проверь заявку: ...")
+```
+
+---
+
+## 🔐 Безопасность A2A
+
+Обязательно задайте в `.env`:
+
+```bash
+PUBLIC_BASE_URL=https://agents.company.ru
+```
+
+Без этого поле `url` в карточке формируется из Host-заголовка запроса — риск подмены!
+
+---
+
+## 📍 Что запомнить
+
+| Понятие | Значение |
+|---|---|
+| MCP | Протокол для подключения агентов к AI-клиентам |
+| A2A | Стандарт описания возможностей агента (карточка) |
+| `/mcp` | Адрес MCP-сервера в нашем проекте |
+| `/.well-known/agent.json` | Адрес A2A-карточки агента |
+| `PUBLIC_BASE_URL` | Обязательная переменная для безопасного A2A |
+
+---
+
+## ➡️ Следующий урок
+
+[🤖 Урок 9: Агент ДЗО — разбираем изнутри](lesson_09_agent_dzo.md)
