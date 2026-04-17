@@ -224,7 +224,7 @@ curl -s -X POST http://localhost:8000/api/v1/collector/inspect \
 Независимые агенты (каждый принимает запросы напрямую):
 
 ┌─────────────────────────────────────────────────────┐
-│              REST API / MCP / A2A                   │
+│         REST API (HTTP-интерфейс) / MCP / A2A                   │
 └──────┬─────────────┬──────────────┬────────┬────────┘
        │             │              │        │
   /dzo/inspect  /tz/inspect  /tender/inspect /collector/inspect
