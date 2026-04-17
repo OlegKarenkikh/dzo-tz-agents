@@ -78,6 +78,12 @@ git push не загружает .env на GitHub
 cp .env.example .env
 ```
 
+> 💡 **Что такое `X-API-Key` в заголовке curl?**
+> Это НЕ ключ OpenAI — это ключ для доступа к **самому серверу** FastAPI.
+> Значение берётся из вашего `.env` файла: поле `API_KEY`.
+> **Вы сами придумываете это значение** при заполнении `.env` — любая случайная строка.
+> Сгенерировать надёжное значение: `python3 -c "import secrets; print(secrets.token_hex(32))"`
+
 ### Шаг 2: Сгенерируйте API_KEY
 
 > 💡 **`python3 -c` — запуск Python прямо в терминале!**
@@ -141,4 +147,5 @@ curl -X POST http://localhost:8000/api/v1/dzo/inspect \
 ## ➡️ Следующий урок
 
 [🧠 Урок 5: LLM — мозг агента](lesson_05_llm.md)
+
 
