@@ -52,7 +52,7 @@ def analyze_tz_with_agent(tz_text: str, email_subject: str, source_sender: str) 
 Файл `shared/agent_tooling.py` — это универсальный мост между агентами:
 
 ```
-AGENT_TOOL_REGISTRY = {
+AGENT_TOOL_REGISTRY = {  # registry — словарь зарегистрированных агентов-инструментов
     "dzo":       "agent1_dzo_inspector.agent:create_dzo_agent",
     "tz":        "agent2_tz_inspector.agent:create_tz_agent",
     "tender":    "agent21_tender_inspector.agent:create_tender_agent",
