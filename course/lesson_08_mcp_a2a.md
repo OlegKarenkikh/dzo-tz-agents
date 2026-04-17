@@ -34,6 +34,19 @@ MCP-сервер монтируется автоматически при зап
 
 ### Подключение Claude Desktop
 
+Добавьте в файл конфигурации Claude Desktop:
+
+> 💡 **Где найти этот файл?**
+> - **macOS:** `~/.config/claude/claude_desktop_config.json`
+> - **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
+>   (введите `%APPDATA%` в адресной строке проводника — откроется нужная папка)
+> - Если файл не существует — создайте его вручную.
+>
+> **Что такое `transport: streamable-http`?**
+> Transport — это способ передачи данных между Claude и агентом.
+> `streamable-http` = HTTP-соединение с поддержкой потоковой передачи (SSE).
+> Это позволяет Claude получать промежуточные шаги агента в реальном времени.
+
 Добавьте в `~/.config/claude/claude_desktop_config.json`:
 
 ```json
@@ -145,4 +158,5 @@ PUBLIC_BASE_URL=https://agents.company.ru
 ## ➡️ Следующий урок
 
 [🤖 Урок 9: Агент ДЗО — разбираем изнутри](lesson_09_agent_dzo.md)
+
 
