@@ -2,6 +2,7 @@
 from __future__ import annotations
 import json
 from typing import Any
+
 import config
 from shared.email_sender import send_email
 from shared.logger import setup_logger
