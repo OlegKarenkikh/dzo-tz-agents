@@ -458,12 +458,17 @@ def collect_tender_documents(query: str) -> str:
                 report_lines.append("  Документы не получены")
             report_lines.append("")
 
+        # completeness_pct = доля участников, приславших ВСЕ обязательные документы (анкета + NDA)
+        completeness_pct = round(fully_complete / max(total_participants, 1) * 100, 1)
+
         result = {
             "tender_id": tender_id,
             "decision": decision,
             "total_expected_participants": len(participants_list),
             "received_count": received_count,
             "missing_count": missing_count,
+            "fully_complete": fully_complete,
+            "completeness_pct": completeness_pct,
             "participants": list(participant_results.values()),
             "discrepancies": discrepancies,
             "folder_structure": folders,

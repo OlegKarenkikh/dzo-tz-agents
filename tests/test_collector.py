@@ -898,3 +898,271 @@ class TestCollectTenderDocumentsDecision:
         result = json.loads(collect_tender_documents.invoke(query))
         assert "decision" in result
         assert result["decision"] == "СБОР ЗАВЕРШЁН"
+
+
+# ============================================================================
+# collector_to_2025_0183: 2 участника, 1 NDA отсутствует → СБОР НЕ ЗАВЕРШЁН
+# Ref: tests/fixtures/real_procurement_expected.json#collector_to_2025_0183
+# ============================================================================
+
+class TestCollectorTO2025_0183:
+    """
+    Реальный кейс: Страхование имущества ЮЛ — ТО-2025-0183
+    2 участника: ООО «СК Гарант» (анкета+NDA), АО «Росгосстрах» (только анкета).
+    Ожидаемый результат: СБОР НЕ ЗАВЕРШЁН (NDA от Росгосстрах отсутствует).
+    """
+
+    TENDER_ID = "ТО-2025-0183"
+
+    PARTICIPANTS = [
+        {
+            "name": 'ООО "СК Гарант"',
+            "inn": "7710100956",
+            "contact_email": "tender@skg.ru",
+        },
+        {
+            "name": 'АО "Росгосстрах"',
+            "inn": "7706169564",
+            "contact_email": "tender@rgs.ru",
+        },
+    ]
+
+    EMAILS_BOTH_COMPLETE = [
+        {
+            "from_email": "tender@skg.ru",
+            "from_name": 'ООО "СК Гарант"',
+            "subject": f"Re: {TENDER_ID} — анкета и NDA",
+            "body": "Направляем анкету и NDA на ТО-2025-0183.",
+            "attachments": [
+                {
+                    "filename": "СК Гарант - Анкета ТО-2025-0183.pdf",
+                    "content_hint": f"АНКЕТА УЧАСТНИКА ТО {TENDER_ID} ИНН: 7710100956",
+                },
+                {
+                    "filename": "СК Гарант - NDA ТО-2025-0183.pdf",
+                    "content_hint": "Соглашение о неразглашении конфиденциальной информации",
+                },
+            ],
+        },
+        {
+            "from_email": "tender@rgs.ru",
+            "from_name": 'АО "Росгосстрах"',
+            "subject": f"Re: {TENDER_ID} — анкета участника",
+            "body": "Направляем анкету участника.",
+            "attachments": [
+                {
+                    "filename": "Росгосстрах - Анкета ТО-2025-0183.pdf",
+                    "content_hint": f"АНКЕТА УЧАСТНИКА ТО {TENDER_ID} ИНН: 7706169564",
+                },
+                # NDA отсутствует намеренно
+            ],
+        },
+    ]
+
+    EMAILS_MISSING_ALL = [
+        {
+            "from_email": "tender@rgs.ru",
+            "from_name": 'АО "Росгосстрах"',
+            "subject": f"Re: {TENDER_ID} — анкета участника",
+            "body": "Направляем анкету участника.",
+            "attachments": [
+                {
+                    "filename": "Росгосстрах - Анкета ТО-2025-0183.pdf",
+                    "content_hint": f"АНКЕТА УЧАСТНИКА ТО {TENDER_ID} ИНН: 7706169564",
+                },
+            ],
+        },
+    ]
+
+    def _invoke(self, emails: list) -> dict:
+        payload = json.dumps({
+            "tender_id": self.TENDER_ID,
+            "emails": emails,
+            "participants_list": self.PARTICIPANTS,
+        })
+        return json.loads(collect_tender_documents.invoke(payload))
+
+    def test_missing_nda_returns_not_complete(self):
+        """NDA от одного участника отсутствует → СБОР НЕ ЗАВЕРШЁН."""
+        result = self._invoke(self.EMAILS_BOTH_COMPLETE)
+        assert "decision" in result
+        assert result["decision"] == "СБОР НЕ ЗАВЕРШЁН"
+
+    def test_all_docs_present_returns_complete(self):
+        """Когда оба участника прислали все документы → СБОР ЗАВЕРШЁН."""
+        full_emails = [
+            self.EMAILS_BOTH_COMPLETE[0],
+            {
+                **self.EMAILS_BOTH_COMPLETE[1],
+                "attachments": [
+                    *self.EMAILS_BOTH_COMPLETE[1]["attachments"],
+                    {
+                        "filename": "Росгосстрах - NDA ТО-2025-0183.pdf",
+                        "content_hint": "Соглашение о неразглашении конфиденциальной информации",
+                    },
+                ],
+            },
+        ]
+        result = self._invoke(full_emails)
+        assert "decision" in result
+        assert result["decision"] == "СБОР ЗАВЕРШЁН"
+
+    def test_only_one_participant_sent_docs(self):
+        """Только один участник прислал документы → СБОР НЕ ЗАВЕРШЁН."""
+        result = self._invoke(self.EMAILS_MISSING_ALL)
+        assert result["decision"] == "СБОР НЕ ЗАВЕРШЁН"
+
+    def test_participant_count(self):
+        """В результате 2 участника."""
+        result = self._invoke(self.EMAILS_BOTH_COMPLETE)
+        participants_result = result.get("participants", [])
+        assert len(participants_result) == 2
+
+    def test_rossgosstrakh_matched_by_email(self):
+        """АО Росгосстрах сопоставлен по email."""
+        result = self._invoke(self.EMAILS_BOTH_COMPLETE)
+        rgs = next(
+            (p for p in result.get("participants", []) if "7706169564" in str(p)),
+            None,
+        )
+        assert rgs is not None, "АО Росгосстрах (ИНН 7706169564) не найден в результатах"
+
+    def test_sk_garant_has_both_docs(self):
+        """ООО СК Гарант подал анкету и NDA."""
+        result = self._invoke(self.EMAILS_BOTH_COMPLETE)
+        garant = next(
+            (p for p in result.get("participants", []) if "7710100956" in str(p)),
+            None,
+        )
+        assert garant is not None, "ООО СК Гарант (ИНН 7710100956) не найден"
+        docs = garant.get("documents", [])
+        doc_types = {d.get("doc_type") for d in docs}
+        assert "anketa" in doc_types or any("анкет" in str(d).lower() for d in docs), \
+            f"Анкета не найдена у СК Гарант, документы: {docs}"
+
+    def test_completeness_below_100_when_nda_missing(self):
+        """completeness_pct < 100 когда NDA отсутствует."""
+        result = self._invoke(self.EMAILS_BOTH_COMPLETE)
+        pct = result.get("completeness_pct", 100)
+        assert pct < 100, f"completeness_pct должен быть < 100, получено: {pct}"
+
+    def test_fixture_matches_expected_json(self):
+        """Решение соответствует real_procurement_expected.json."""
+        import os, json as _json
+        fixture_path = os.path.join(
+            os.path.dirname(__file__),
+            "fixtures", "real_procurement_expected.json",
+        )
+        with open(fixture_path) as f:
+            gt = _json.load(f)
+        expected = gt["collector_to_2025_0183"]["expert_decision"]
+        result = self._invoke(self.EMAILS_BOTH_COMPLETE)
+        assert result["decision"] == expected, (
+            f"GT ожидает '{expected}', агент вернул '{result['decision']}'"
+        )
+
+
+# ============================================================================
+# collector_to_2025_0183: 2 участника, 1 NDA отсутствует → СБОР НЕ ЗАВЕРШЁН
+# Ref: tests/fixtures/real_procurement_expected.json#collector_to_2025_0183
+# ============================================================================
+
+class TestCollectorTO2025_0183:
+    """
+    Реальный кейс: Страхование имущества ЮЛ — ТО-2025-0183
+    2 участника: ООО «СК Гарант» (анкета+NDA), АО «Росгосстрах» (только анкета).
+    Ожидаемый результат: СБОР НЕ ЗАВЕРШЁН (NDA от Росгосстрах отсутствует).
+    """
+
+    TENDER_ID = "ТО-2025-0183"
+
+    PARTICIPANTS = [
+        {"name": 'ООО "СК Гарант"', "inn": "7710100956", "contact_email": "tender@skg.ru"},
+        {"name": 'АО "Росгосстрах"', "inn": "7706169564", "contact_email": "tender@rgs.ru"},
+    ]
+
+    EMAILS_PARTIAL = [
+        {
+            "from_email": "tender@skg.ru",
+            "from_name": 'ООО "СК Гарант"',
+            "subject": "Re: ТО-2025-0183 — анкета и NDA",
+            "body": "Направляем анкету и NDA.",
+            "attachments": [
+                {"filename": "СК Гарант - Анкета ТО-2025-0183.pdf",
+                 "content_hint": "АНКЕТА УЧАСТНИКА ТО ТО-2025-0183 ИНН: 7710100956"},
+                {"filename": "СК Гарант - NDA ТО-2025-0183.pdf",
+                 "content_hint": "Соглашение о неразглашении конфиденциальной информации"},
+            ],
+        },
+        {
+            "from_email": "tender@rgs.ru",
+            "from_name": 'АО "Росгосстрах"',
+            "subject": "Re: ТО-2025-0183 — анкета участника",
+            "body": "Направляем анкету участника.",
+            "attachments": [
+                {"filename": "Росгосстрах - Анкета ТО-2025-0183.pdf",
+                 "content_hint": "АНКЕТА УЧАСТНИКА ТО ТО-2025-0183 ИНН: 7706169564"},
+                # NDA намеренно отсутствует
+            ],
+        },
+    ]
+
+    EMAILS_FULL = [
+        EMAILS_PARTIAL[0],
+        {
+            **EMAILS_PARTIAL[1],
+            "attachments": [
+                *EMAILS_PARTIAL[1]["attachments"],
+                {"filename": "Росгосстрах - NDA ТО-2025-0183.pdf",
+                 "content_hint": "Соглашение о неразглашении конфиденциальной информации"},
+            ],
+        },
+    ]
+
+    def _invoke(self, emails):
+        import json as _json
+        payload = _json.dumps({
+            "tender_id": self.TENDER_ID,
+            "emails": emails,
+            "participants_list": self.PARTICIPANTS,
+        })
+        return _json.loads(collect_tender_documents.invoke(payload))
+
+    def test_missing_nda_returns_not_complete(self):
+        """NDA от одного участника отсутствует → СБОР НЕ ЗАВЕРШЁН."""
+        result = self._invoke(self.EMAILS_PARTIAL)
+        assert "decision" in result
+        assert result["decision"] == "СБОР НЕ ЗАВЕРШЁН"
+
+    def test_all_docs_present_returns_complete(self):
+        """Оба участника прислали все документы → СБОР ЗАВЕРШЁН."""
+        result = self._invoke(self.EMAILS_FULL)
+        assert result["decision"] == "СБОР ЗАВЕРШЁН"
+
+    def test_participant_count(self):
+        """В результате 2 участника."""
+        result = self._invoke(self.EMAILS_PARTIAL)
+        assert len(result.get("participants", [])) == 2
+
+    def test_rgs_matched_by_email(self):
+        """АО Росгосстрах сопоставлен по email."""
+        result = self._invoke(self.EMAILS_PARTIAL)
+        rgs = next((p for p in result.get("participants", []) if "7706169564" in str(p)), None)
+        assert rgs is not None, "АО Росгосстрах (ИНН 7706169564) не найден в результатах"
+
+    def test_completeness_below_100_when_nda_missing(self):
+        """completeness_pct < 100 когда NDA отсутствует."""
+        result = self._invoke(self.EMAILS_PARTIAL)
+        assert result.get("completeness_pct", 100) < 100
+
+    def test_fixture_matches_expected_json(self):
+        """Решение совпадает с real_procurement_expected.json."""
+        import os, json as _json
+        path = os.path.join(os.path.dirname(__file__), "fixtures", "real_procurement_expected.json")
+        with open(path) as f:
+            gt = _json.load(f)
+        expected = gt["collector_to_2025_0183"]["expert_decision"]
+        result = self._invoke(self.EMAILS_PARTIAL)
+        assert result["decision"] == expected, (
+            f"GT ожидает {expected!r}, агент вернул {result['decision']!r}"
+        )
