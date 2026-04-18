@@ -275,3 +275,91 @@ def test_insurance_with_procurement():
     """Insurance + procurement keywords → True."""
     text = "Добровольное медицинское страхование ДМС тендер 223-ФЗ НМЦК"
     assert is_insurance_tender(text)
+
+
+# ── CBR License Requirement validation (False-Positive Guard) ─────────
+
+def test_property_1_has_cbr_license_requirement():
+    """Тендер на имущественное страхование Роснефти содержит требование лицензии ЦБ РФ."""
+    from shared.insurance_domain import has_cbr_license_requirement
+    text = _read_tender("tender_property_1.md")
+    assert has_cbr_license_requirement(text), (
+        "tender_property_1 должен содержать требование лицензии ЦБ РФ"
+    )
+
+
+def test_no_cbr_license_fixture_returns_false():
+    """Фикстура без требования лицензии ЦБ РФ → has_cbr_license_requirement = False."""
+    from shared.insurance_domain import has_cbr_license_requirement
+    text = _read_tender("tender_property_no_cbr_license.md")
+    # This fixture deliberately omits CBR license requirement
+    assert not has_cbr_license_requirement(text), (
+        "tender_property_no_cbr_license не должен содержать требование лицензии ЦБ РФ"
+    )
+
+
+def test_validate_insurance_tender_with_cbr_license():
+    """Тендер с лицензией ЦБ РФ → ПРИНЯТЬ."""
+    from shared.insurance_domain import validate_insurance_tender_requirements
+    text = _read_tender("tender_property_1.md")
+    result = validate_insurance_tender_requirements(text)
+    assert result["has_cbr_license"] is True
+    assert result["is_valid"] is True
+    assert result["decision"] == "ПРИНЯТЬ"
+    assert result["missing_requirements"] == []
+
+
+def test_validate_insurance_tender_missing_cbr_license():
+    """Тендер БЕЗ лицензии ЦБ РФ → ВЕРНУТЬ НА ДОРАБОТКУ (ложноположительный результат)."""
+    from shared.insurance_domain import validate_insurance_tender_requirements
+    text = _read_tender("tender_property_no_cbr_license.md")
+    result = validate_insurance_tender_requirements(text)
+    assert result["has_cbr_license"] is False
+    assert result["is_valid"] is False
+    assert result["decision"] == "ВЕРНУТЬ НА ДОРАБОТКУ"
+    assert len(result["missing_requirements"]) >= 1
+    assert any("4015" in req or "ЦБ" in req or "лицензи" in req.lower()
+               for req in result["missing_requirements"])
+
+
+def test_osago_fixture_has_cbr_license():
+    """ОСАГО тендер содержит обязательное требование лицензии ЦБ РФ."""
+    from shared.insurance_domain import has_cbr_license_requirement
+    text = _read_tender("tender_osago_1.md")
+    # ОСАГО — обязательное страхование, CBR license is always required
+    assert has_cbr_license_requirement(text), (
+        "tender_osago_1 должен содержать требование лицензии ЦБ РФ"
+    )
+
+
+def test_dms_fixture_has_cbr_license():
+    """ДМС тендер содержит требование лицензии ЦБ РФ."""
+    from shared.insurance_domain import has_cbr_license_requirement
+    text = _read_tender("tender_dms_1.md")
+    assert has_cbr_license_requirement(text), (
+        "tender_dms_1 должен содержать требование лицензии ЦБ РФ"
+    )
+
+
+def test_cbr_license_keyword_variations():
+    """has_cbr_license_requirement распознаёт различные формулировки."""
+    from shared.insurance_domain import has_cbr_license_requirement
+    variants = [
+        "Наличие действующей лицензии ЦБ РФ на страховую деятельность",
+        "Лицензия Банка России на добровольное имущественное страхование",
+        "лицензия цб на страхование",
+        "Наличие лицензии Центрального банка Российской Федерации",
+    ]
+    for text in variants:
+        assert has_cbr_license_requirement(text), f"Не распознано: {text!r}"
+
+
+def test_false_positive_no_cbr_full_report():
+    """validate_insurance_tender_requirements возвращает полный отчёт об отсутствии лицензии ЦБ РФ."""
+    from shared.insurance_domain import validate_insurance_tender_requirements
+    text = "Страхование имущества юридического лица. Требования: опыт работы от 3 лет."
+    # Minimal insurance text without CBR license
+    result = validate_insurance_tender_requirements(text)
+    assert result["decision"] == "ВЕРНУТЬ НА ДОРАБОТКУ"
+    assert "missing_requirements" in result
+    assert len(result["missing_requirements"]) > 0

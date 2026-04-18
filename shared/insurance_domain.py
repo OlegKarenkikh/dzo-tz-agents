@@ -707,3 +707,70 @@ def classify_tender(text: str) -> dict[str, Any]:
             "regulatory_base": type_info.regulatory_base,
         }
     return result
+
+# ---------------------------------------------------------------------------
+# CBR license requirement validation
+# ---------------------------------------------------------------------------
+
+_CBR_LICENSE_PATTERNS = [
+    r"лицензи[яи].*(?:цб|банк.*росс|центральн.*банк)",
+    r"(?:цб|банк.*росс|центральн.*банк).*лицензи",
+    r"лицензи[яи].*страхов",
+    r"страхов.*лицензи[яи]",
+    r"лицензи[яи] на.*страховую деятельность",
+    r"лицензи[яи].*4015",
+    r"наличие.*лицензи[яи]",
+]
+
+_CBR_LICENSE_KEYWORDS = [
+    "лицензия цб", "лицензия банка", "лицензии цб", "лицензии банка",
+    "лицензия на страхов", "лицензию на страхов",
+    "наличие лицензи", "действующей лицензи",
+    "банка россии на", "цб рф на",
+]
+
+
+def has_cbr_license_requirement(text: str) -> bool:
+    """Return True if tender text explicitly requires a CBR (ЦБ РФ) insurance license.
+
+    According to Law 4015-1, all insurance tenders MUST require a valid CBR license.
+    Absence of this requirement is a critical defect → decision should be ВЕРНУТЬ НА ДОРАБОТКУ.
+    """
+    if not text:
+        return False
+    text_lower = text.lower()
+    # Fast keyword scan
+    if any(kw in text_lower for kw in _CBR_LICENSE_KEYWORDS):
+        return True
+    # Regex patterns for more complex matches
+    for pattern in _CBR_LICENSE_PATTERNS:
+        if re.search(pattern, text_lower):
+            return True
+    return False
+
+
+def validate_insurance_tender_requirements(text: str) -> dict:
+    """Validate mandatory requirements for an insurance tender.
+
+    Returns:
+        dict with keys:
+          - has_cbr_license: bool — лицензия ЦБ РФ
+          - is_valid: bool — all mandatory requirements present
+          - missing_requirements: list[str] — list of critical gaps
+          - decision: str — ПРИНЯТЬ / ВЕРНУТЬ НА ДОРАБОТКУ
+    """
+    missing = []
+    has_cbr = has_cbr_license_requirement(text)
+    if not has_cbr:
+        missing.append("Требование лицензии ЦБ РФ на страховую деятельность (Закон 4015-1)")
+
+    is_valid = len(missing) == 0
+    decision = "ПРИНЯТЬ" if is_valid else "ВЕРНУТЬ НА ДОРАБОТКУ"
+
+    return {
+        "has_cbr_license": has_cbr,
+        "is_valid": is_valid,
+        "missing_requirements": missing,
+        "decision": decision,
+    }
+
