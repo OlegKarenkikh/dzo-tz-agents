@@ -464,7 +464,7 @@ class TestAuthEdgeCases:
         assert r.status_code == 200
 
     def test_valid_api_key_passes(self, client):
-        r = client.get("/api/v1/jobs", headers={"X-API-Key": "test-secret"})
+        r = client.get("/api/v1/jobs", headers={"X-API-Key": os.environ.get("API_KEY", "sandbox-test-api-key-12345")})
         assert r.status_code == 200
 
     def test_missing_key_returns_401(self, client):
