@@ -199,3 +199,89 @@ class TestNDAData:
         data = NDAData()
         assert data.signatory_name == ""
         assert data.company_name == ""
+
+
+# ── parse_anketa: .doc content_type fallback path ────────────────────────────
+
+class TestParseAnketaDocFallbacks:
+    def test_doc_ct_uses_docx(self):
+        from shared.document_parser import parse_anketa, AnketaData
+        from unittest.mock import patch
+        mock_result = AnketaData()
+        mock_result.company_name = "Test"
+        with patch("shared.document_parser._parse_docx", return_value=mock_result):
+            result = parse_anketa(b"fake", content_type="application/vnd.ms-doc")
+        assert result.company_name == "Test"
+
+    def test_doc_ct_falls_back_to_pdf_on_docx_fail(self):
+        from shared.document_parser import parse_anketa, AnketaData
+        from unittest.mock import patch
+        mock_pdf = AnketaData()
+        with patch("shared.document_parser._parse_docx", side_effect=Exception("bad")):
+            with patch("shared.document_parser._parse_pdf", return_value=mock_pdf):
+                result = parse_anketa(b"", content_type="application/vnd.ms-doc")
+        assert isinstance(result, AnketaData)
+
+    def test_unknown_ct_docx_success(self):
+        from shared.document_parser import parse_anketa, AnketaData
+        from unittest.mock import patch
+        mock = AnketaData(); mock.company_name = "Corp"
+        with patch("shared.document_parser._parse_docx", return_value=mock):
+            result = parse_anketa(b"x", content_type="")
+        assert result.company_name == "Corp"
+
+    def test_unknown_ct_falls_back_to_pdf(self):
+        from shared.document_parser import parse_anketa, AnketaData
+        from unittest.mock import patch
+        mock = AnketaData()
+        with patch("shared.document_parser._parse_docx", side_effect=Exception("e")):
+            with patch("shared.document_parser._parse_pdf", return_value=mock):
+                result = parse_anketa(b"", content_type="application/octet-stream")
+        assert isinstance(result, AnketaData)
+
+
+# ── parse_nda: all content_type branches ─────────────────────────────────────
+
+class TestParseNDABranches:
+    def test_pdf_path(self):
+        from shared.document_parser import parse_nda, NDAData
+        from unittest.mock import patch
+        with patch("shared.document_parser._extract_pdf_text", return_value="ООО подписала"):
+            result = parse_nda(b"x", content_type="application/pdf")
+        assert isinstance(result, NDAData)
+
+    def test_docx_path(self):
+        from shared.document_parser import parse_nda, NDAData
+        from unittest.mock import patch
+        with patch("shared.document_parser._extract_docx_text", return_value="Подписант"):
+            result = parse_nda(b"x", content_type="application/vnd.openxmlformats")
+        assert isinstance(result, NDAData)
+
+    def test_word_mime_path(self):
+        from shared.document_parser import parse_nda, NDAData
+        from unittest.mock import patch
+        with patch("shared.document_parser._extract_docx_text", return_value="NDA text"):
+            result = parse_nda(b"x", content_type="application/vnd.ms-word")
+        assert isinstance(result, NDAData)
+
+    def test_unknown_ct_tries_docx(self):
+        from shared.document_parser import parse_nda, NDAData
+        from unittest.mock import patch
+        with patch("shared.document_parser._extract_docx_text", return_value=""):
+            result = parse_nda(b"x", content_type="application/octet-stream")
+        assert isinstance(result, NDAData)
+
+    def test_unknown_ct_falls_back_to_pdf(self):
+        from shared.document_parser import parse_nda, NDAData
+        from unittest.mock import patch
+        with patch("shared.document_parser._extract_docx_text", side_effect=Exception("e")):
+            with patch("shared.document_parser._extract_pdf_text", return_value=""):
+                result = parse_nda(b"x", content_type="")
+        assert isinstance(result, NDAData)
+
+    def test_returns_nda_data(self):
+        from shared.document_parser import parse_nda, NDAData
+        from unittest.mock import patch
+        with patch("shared.document_parser._extract_pdf_text", return_value=""):
+            result = parse_nda(b"", content_type="application/pdf")
+        assert isinstance(result, NDAData)
