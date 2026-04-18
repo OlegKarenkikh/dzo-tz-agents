@@ -48,12 +48,11 @@
 
 ```
 dzo-tz-agents/
-└── agents/
-    └── tender/
-        ├── agent.py        ← основной агент (ReAct + LangGraph)
-        ├── tools.py        ← инструменты агента
-        ├── router.py       ← FastAPI (веб-фреймворк) маршруты /api/v1/tender/...
-        └── __init__.py
+└── agent21_tender_inspector/
+    ├── agent.py        ← основной агент (ReAct + LangGraph)
+    ├── tools.py        ← инструменты агента
+    ├── runner.py       ← FastAPI маршруты /api/v1/tender/...
+    └── __init__.py
 ```
 
 > 💡 **Как запустить только Агент Тендер для теста?**
@@ -82,7 +81,7 @@ dzo-tz-agents/
 Получает список потенциальных поставщиков из справочника.
 
 ```python
-# agents/tender/tools.py
+# agent21_tender_inspector/tools.py
 @tool
 def fetch_participant_list(purchase_category: str) -> dict:
     """
@@ -122,7 +121,7 @@ def check_sla_compliance(deadline: str, purchase_type: str) -> dict:
 ## 🔗 Peer-вызов: как ДЗО передаёт задание Тендеру
 
 ```python
-# agents/dzo/tools.py
+# agent1_dzo_inspector/tools.py
 @tool
 def invoke_tender_agent(job_id: str) -> dict:
     """
@@ -217,7 +216,7 @@ sqlite3 data/jobs.db "SELECT * FROM jobs WHERE job_id='abc123';"
 
 ---
 
-➡️ **Следующий урок:** [Урок 15 — Агент Collector: сбор данных](lesson_15_agent3_collector.md)
+➡️ **Следующий урок:** [Урок 15 — Агент Collector: сбор данных](lesson_15.md)
 
 ---
 
