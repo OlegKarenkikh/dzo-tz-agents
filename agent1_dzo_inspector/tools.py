@@ -237,7 +237,7 @@ def generate_validation_report(
     }
     try:
         validated = DZOInspectionResult.model_validate(kwargs)
-        return validated.model_dump_json(ensure_ascii=False, indent=2)
+        return json.dumps(validated.model_dump(), ensure_ascii=False, indent=2)
     except ValidationError as e:
         # Graceful fallback — return raw JSON with validation warnings
         return json.dumps({
