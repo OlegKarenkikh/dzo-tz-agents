@@ -44,7 +44,7 @@ quote = ДОСЛОВНЫЙ ТЕКСТ из документа.
 
 **Защита в коде** — `temperature=0.0`:
 ```python
-# agents/dzo/agent.py
+# agent1_dzo_inspector/agent.py
 llm = ChatOpenAI(
     model="gpt-4o",
     temperature=0.0   # ← детерминированный режим, без «творчества»
@@ -128,10 +128,10 @@ However, your messages resulted in 142567 tokens.
 >   -H "X-API-Key: $API_KEY" \
 >   -H "Content-Type: application/json" \
 >   -d '{"document": "тест"}' | python3 -c "
-> import sys, json
-> r = json.load(sys.stdin)
-> print('Токенов использовано:', r.get('usage', {}).get('total_tokens', 'нет данных'))
-> "
+import sys, json
+r = json.load(sys.stdin)
+print('Токенов использовано:', r.get('usage', {}).get('total_tokens', 'нет данных'))
+"
 > ```
 
 ---
@@ -215,7 +215,7 @@ grep "Creating agent\|Cache hit" logs/agent.log | head -20
 
 ---
 
-➡️ **Следующий урок:** [Урок 14 — Агент Тендер: второй уровень](lesson_14_agent21_tender.md)
+➡️ **Следующий урок:** [Урок 14 — Агент Тендер: второй уровень](lesson_14.md)
 
 ---
 
