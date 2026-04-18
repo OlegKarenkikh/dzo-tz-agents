@@ -783,7 +783,7 @@ class TestCollectorAPI:
         resp = client.post(
             "/api/v1/process/collector",
             json={"text": "Сбор анкет участников тендерного отбора"},
-            headers={f"X-API-Key": os.environ.get("API_KEY", "sandbox-test-api-key-12345")},
+            headers={"X-API-Key": os.environ.get("API_KEY", "sandbox-test-api-key-12345")},
         )
         # Should return 200 with job_id (background processing)
         assert resp.status_code == 200
