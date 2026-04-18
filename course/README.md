@@ -72,6 +72,7 @@
 | № | Тема | Иллюстрации |
 |---|------|------------|
 | 19 | 🔧 Навыки агента — инструменты, схемы и docstring | `lesson_19_tool_anatomy.jpg`, `lesson_19_tools_registry.jpg`, `lesson_19_docstring_rules.jpg` |
+| 20 | [Страховые тендеры: лицензия ЦБ РФ и CBR Post-Check](lesson_20_insurance_cbr.md) | Закон 4015-1, False-Positive, CBR post-check в pipeline |
 
 👉 Файл: [lesson_19](lesson_19_skills.md)
 
