@@ -47,11 +47,14 @@ class TransportationParserRunner(BaseEmailRunner):
 
     def build_chat_input(self, mail: dict, attachment_texts: list[str]) -> str:
         body = "\n".join(attachment_texts) or mail.get("body", "")
+        sep = "=" * 60
+        sender = mail.get("from", "")
+        subject = mail.get("subject", "")
         return (
             f"ВХОДЯЩАЯ ЗАЯВКА НА СТРАХОВАНИЕ ПЕРЕВОЗКИ\n"
-            f"От: {mail.get(\'from\', \'\')}\n"
-            f"Тема: {mail.get(\'subject\', \'\')}\n"
-            f"{\'=\' * 60}\n"
+            f"От: {sender}\n"
+            f"Тема: {subject}\n"
+            f"{sep}\n"
             f"{body}"
         )
 
@@ -106,25 +109,26 @@ class TransportationParserRunner(BaseEmailRunner):
         errors = artifacts.get("validation_errors", [])
         error_msg = artifacts.get("error", "")
 
+        div_style = "font-family:Arial;font-size:14px"
         if error_msg:
             html = (
-                f"<div style=\'font-family:Arial;font-size:14px\'>"
+                f'<div style="{div_style}">'
                 f"<p><strong>Ошибка разбора: {error_msg}</strong></p></div>"
             )
         elif errors:
             error_block = "\n".join(f"  - {e}" for e in errors)
             html = (
-                f"<div style=\'font-family:Arial;font-size:14px\'>"
+                f'<div style="{div_style}">'
                 f"<p><strong>Решение: {decision}</strong></p>"
                 f"<p>Обнаружены ошибки валидации:</p>"
-                f"<pre style=\'background:#fff3cd;padding:10px\'>{error_block}</pre>"
+                f'<pre style="background:#fff3cd;padding:10px">{error_block}</pre>'
                 f"<p>Данные для ручной проверки:</p>"
                 f"<pre>{json.dumps(data, ensure_ascii=False, indent=2)}</pre>"
                 f"</div>"
             )
         else:
             html = (
-                f"<div style=\'font-family:Arial;font-size:14px\'>"
+                f'<div style="{div_style}">'
                 f"<p><strong>Разбор успешно завершён.</strong></p>"
                 f"<pre>{json.dumps(data, ensure_ascii=False, indent=2)}</pre>"
                 f"</div>"
