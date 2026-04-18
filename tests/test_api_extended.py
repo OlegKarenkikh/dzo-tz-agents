@@ -42,7 +42,7 @@ def clean():
     db._memory_store.clear()
 
 
-HEADERS = {"X-API-Key": "test-secret"}
+HEADERS = {"X-API-Key": os.environ.get("API_KEY", "sandbox-test-api-key-12345")}
 
 
 # ── _format_created_at ────────────────────────────────────────────────────────
