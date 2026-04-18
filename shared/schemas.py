@@ -14,9 +14,14 @@ Usage::
 """
 from __future__ import annotations
 
-from pydantic import BaseModel, Field, field_validator
-from typing import Literal
+from typing import Any, Literal, Optional
 
+from pydantic import BaseModel, Field, field_validator
+
+
+# ---------------------------------------------------------------------------
+# Существующие схемы (агенты 1-3)
+# ---------------------------------------------------------------------------
 
 class DZOInspectionResult(BaseModel):
     """Structured output for DZO inspector agent."""
@@ -51,7 +56,11 @@ class TZInspectionResult(BaseModel):
             "не соответствует": "ВЕРНУТЬ НА ДОРАБОТКУ",
             "вернуть": "ВЕРНУТЬ НА ДОРАБОТКУ",
         }
-        return canonical.get(v.lower().strip(), v if v in {"ПРИНЯТЬ","ПРИНЯТЬ С ЗАМЕЧАНИЕМ","ВЕРНУТЬ НА ДОРАБОТКУ"} else "ВЕРНУТЬ НА ДОРАБОТКУ")
+        return canonical.get(
+            v.lower().strip(),
+            v if v in {"ПРИНЯТЬ", "ПРИНЯТЬ С ЗАМЕЧАНИЕМ", "ВЕРНУТЬ НА ДОРАБОТКУ"}
+            else "ВЕРНУТЬ НА ДОРАБОТКУ",
+        )
 
     overall_status: str = ""
 
@@ -61,7 +70,6 @@ class TZInspectionResult(BaseModel):
         if not v:
             return ""
         s = str(v).strip()
-        # Нормализуем ALLCAPS → "Первая заглавная, остальные строчные"
         if s.isupper():
             return s[0].upper() + s[1:].lower() if s else s
         return s
@@ -96,3 +104,174 @@ class CollectorResult(BaseModel):
     participants: list[dict] = Field(default_factory=list)
     discrepancies: list[dict] = Field(default_factory=list)
     summary: str = ""
+
+
+# ---------------------------------------------------------------------------
+# Новые схемы для DA-агентов (агенты 4-6)
+# ---------------------------------------------------------------------------
+
+class LeasingAddressSchema(BaseModel):
+    """Territory / address block for leasing contract."""
+    territory_raw: Optional[str] = Field(default=None, max_length=250)
+    country: Optional[str] = Field(default=None, max_length=250)
+    region: Optional[str] = Field(default=None, max_length=250)
+    city: Optional[str] = Field(default=None, max_length=250)
+    street: Optional[str] = Field(default=None, max_length=250)
+    house: Optional[str] = Field(default=None, max_length=20)
+    building: Optional[str] = Field(default=None, max_length=20)
+    cadastre_number: Optional[str] = Field(default=None, max_length=20)
+    postal_code: Optional[str] = None
+
+
+class LeasingBaseSchema(BaseModel):
+    """Base block: policy header fields."""
+    policy_number: Optional[str] = Field(default=None, max_length=250)
+    date_sign: Optional[str] = None  # DD.MM.YYYY
+    date_start: Optional[str] = None  # DD.MM.YYYY
+    date_end: Optional[str] = None    # DD.MM.YYYY
+    currency: Optional[str] = None    # RUR | USD | EUR
+    insurance_rules: Optional[str] = Field(default=None, max_length=250)
+    insurance_rules_list: list[str] = Field(default_factory=list)
+    signer_igs: Optional[str] = Field(default=None, max_length=250)
+    general_contract: Optional[str] = None
+    risks_list: list[str] = Field(default_factory=list)
+    address: Optional[LeasingAddressSchema] = None
+
+    @field_validator("currency", mode="before")
+    @classmethod
+    def normalize_currency(cls, v: Any) -> Optional[str]:
+        if not v:
+            return None
+        return str(v).upper().strip()
+
+
+class LeasingPaymentSchema(BaseModel):
+    """Single payment record in leasing contract."""
+    number: Optional[int] = None
+    date_pay: Optional[str] = None
+    amount: Optional[float] = None
+    date_start: Optional[str] = None
+    date_end: Optional[str] = None
+
+
+class LeasingInsurancePaymentSchema(BaseModel):
+    """Insurance sum payment inside an insurance object."""
+    number: Optional[int] = None
+    premium_rate: Optional[float] = None
+    date_start: Optional[str] = None
+    date_end: Optional[str] = None
+    premium_sum: Optional[float] = None
+    insured_sum: Optional[float] = None
+
+
+class LeasingObjectSchema(BaseModel):
+    """Single insured object in leasing contract."""
+    serial_number: Optional[str] = Field(default=None, max_length=20)
+    object_name: Optional[str] = Field(default=None, max_length=250)
+    insurance_payments: list[LeasingInsurancePaymentSchema] = Field(default_factory=list)
+
+
+class LeasingRoleSchema(BaseModel):
+    """Contract participant (role)."""
+    role: str
+    organization_name: Optional[str] = None
+    inn: Optional[str] = None
+    address: Optional[str] = Field(default=None, max_length=250)
+
+
+class LeasingRiskSchema(BaseModel):
+    """Insured risk."""
+    short_name: Optional[str] = None
+    classisn: Optional[int] = None
+    ruleisn: Optional[int] = None
+
+
+class LeasingAgentSchema(BaseModel):
+    """Agent / recommender block."""
+    agent_name: Optional[str] = None
+    percentage: Optional[float] = None
+    role: Optional[str] = None
+    collection_flag: Optional[int] = None  # 0 or 1
+    contract_id: Optional[str] = None
+    recommender: Optional[str] = None
+    recommender_inn: Optional[str] = None
+
+
+class LeasingParseResult(BaseModel):
+    """Structured output for Leasing parser agent (agent4).
+
+    Mirrors DA LeasingResponse but in a flat agentic-friendly format.
+    Validation ensures:
+    - all string fields respect DA length limits (250 / 20 chars)
+    - dates normalised to DD.MM.YYYY
+    - numeric fields are float/int
+    """
+    file_name: str = ""
+    base: LeasingBaseSchema = Field(default_factory=LeasingBaseSchema)
+    additional: dict[str, Any] = Field(default_factory=dict)
+    roles: list[LeasingRoleSchema] = Field(default_factory=list)
+    insurance_objects: list[LeasingObjectSchema] = Field(default_factory=list)
+    payments: list[LeasingPaymentSchema] = Field(default_factory=list)
+    risks: list[LeasingRiskSchema] = Field(default_factory=list)
+    agents: list[LeasingAgentSchema] = Field(default_factory=list)
+    validation_status: str = "pending"
+    parse_errors: list[str] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# OSAGO схема (агент 5)
+# ---------------------------------------------------------------------------
+
+class OsagoInsurerSchema(BaseModel):
+    """OSAGO insurer block."""
+    name: Optional[str] = None
+    inn: Optional[str] = None
+    address: Optional[str] = None
+
+
+class OsagoParseResult(BaseModel):
+    """Structured output for OSAGO parser agent (agent5)."""
+    file_name: str = ""
+    insurer: Optional[OsagoInsurerSchema] = None
+    ts_owner: Optional[OsagoInsurerSchema] = None
+    vehicle_brand: Optional[str] = None
+    vehicle_model: Optional[str] = None
+    vehicle_number: Optional[str] = None
+    vin: Optional[str] = None
+    ts_type: Optional[str] = None
+    usage_purpose: Optional[str] = None
+    year: Optional[int] = None
+    date_start: Optional[str] = None  # DD.MM.YYYY
+    date_end: Optional[str] = None    # DD.MM.YYYY
+    # Технические характеристики
+    power_hp: Optional[float] = None
+    power_kw: Optional[float] = None
+    max_mass: Optional[float] = None
+    permitted_max_mass: Optional[float] = None
+    seats_count: Optional[int] = None
+    cargo_capacity: Optional[float] = None
+    category: Optional[str] = None
+    parse_errors: list[str] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Transportation схема (агент 6)
+# ---------------------------------------------------------------------------
+
+class TransportParseResult(BaseModel):
+    """Structured output for Transportation parser agent (agent6)."""
+    file_name: str = ""
+    cargo_name: Optional[str] = None
+    cargo_weight: Optional[float] = None
+    cargo_value: Optional[float] = None
+    currency: Optional[str] = None
+    departure_point: Optional[str] = None
+    destination_point: Optional[str] = None
+    transport_type: Optional[str] = None
+    date_start: Optional[str] = None
+    date_end: Optional[str] = None
+    insurer: Optional[str] = None
+    insurer_inn: Optional[str] = None
+    insurance_sum: Optional[float] = None
+    premium: Optional[float] = None
+    parse_errors: list[str] = Field(default_factory=list)
