@@ -92,7 +92,7 @@ def _extract_date_info(text: str) -> str:
 def _extract_objects_info(text: str) -> list[str]:
     pattern = r"(?i)" + r"объект[^:]*:\s*([^\n]+)"
     matches = re.findall(pattern, text)
-    return list(set(m.strip() for m in matches if m.strip()))
+    return list({m.strip() for m in matches if m.strip()})
 
 
 def _extract_payments_section(text: str) -> str:
