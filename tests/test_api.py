@@ -32,7 +32,7 @@ def clear_jobs():
     _memory_store.clear()
 
 
-HEADERS = {"X-API-Key": "test-secret"}
+HEADERS = {f"X-API-Key": os.environ.get("API_KEY", "sandbox-test-api-key-12345")}
 
 
 class TestHealth:
@@ -577,7 +577,7 @@ class TestUploadEndpoint:
         content = "ТЕХНИЧЕСКОЕ ЗАДАНИЕ\n1. Цель: тест\n2. Требования: тест"
         resp = client.post(
             "/api/v1/upload",
-            headers={"X-API-Key": "test-secret"},
+            headers={f"X-API-Key": os.environ.get("API_KEY", "sandbox-test-api-key-12345")},
             files={"file": ("test.txt", io.BytesIO(content.encode()), "text/plain")},
             data={"agent": "tz", "subject": "Upload test"},
         )
@@ -587,7 +587,7 @@ class TestUploadEndpoint:
     def test_upload_without_file_returns_422(self, client):
         resp = client.post(
             "/api/v1/upload",
-            headers={"X-API-Key": "test-secret"},
+            headers={f"X-API-Key": os.environ.get("API_KEY", "sandbox-test-api-key-12345")},
             data={"agent": "dzo"},
         )
         assert resp.status_code == 422
@@ -597,7 +597,7 @@ class TestUploadEndpoint:
         content = "ТЕХНИЧЕСКОЕ ЗАДАНИЕ на закупку серверов"
         resp = client.post(
             "/api/v1/upload",
-            headers={"X-API-Key": "test-secret"},
+            headers={f"X-API-Key": os.environ.get("API_KEY", "sandbox-test-api-key-12345")},
             files={"file": ("spec.txt", io.BytesIO(content.encode()), "text/plain")},
             data={"agent": "auto"},
         )
@@ -615,7 +615,7 @@ class TestUploadEndpoint:
         import io
         resp = client.post(
             "/api/v1/upload",
-            headers={"X-API-Key": "test-secret"},
+            headers={f"X-API-Key": os.environ.get("API_KEY", "sandbox-test-api-key-12345")},
             files={"file": ("test.txt", io.BytesIO(b"test"), "text/plain")},
             data={"agent": "nonexistent"},
         )
@@ -690,7 +690,7 @@ class TestTenderInsuranceCBRPostCheck:
         resp = client.post(
             "/api/v1/process/tender",
             json={"text": "Страхование имущества предприятия 223-ФЗ"},
-            headers={"X-API-Key": "test-secret"},
+            headers={f"X-API-Key": os.environ.get("API_KEY", "sandbox-test-api-key-12345")},
         )
         assert resp.status_code == 200
         data = resp.json()
