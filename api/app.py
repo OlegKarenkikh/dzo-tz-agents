@@ -1210,6 +1210,46 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                     tz_signal_detected=True,
                 )
 
+            # ── Insurance tender: CBR license post-check ─────────────
+            if agent_type == "tender":
+                try:
+                    from shared.insurance_domain import (
+                        is_insurance_tender,
+                        validate_insurance_tender_requirements,
+                    )
+                    _full_text = " ".join(
+                        att.get("content", "") or ""
+                        for att in (request.attachments or [])
+                    )
+                    if not _full_text:
+                        _full_text = result.get("output", "")
+                    if _full_text and is_insurance_tender(_full_text):
+                        _cbr_check = validate_insurance_tender_requirements(_full_text)
+                        artifacts["insurance_cbr_check"] = _cbr_check
+                        if not _cbr_check["has_cbr_license"] and decision not in (
+                            "ВЕРНУТЬ НА ДОРАБОТКУ",
+                            "tool_calls_missing",
+                            "token_limit_exhausted",
+                            "rate_limit_exhausted",
+                        ):
+                            logger.warning(
+                                "[%s] CBR license отсутствует в страховом тендере → переводим в ВЕРНУТЬ НА ДОРАБОТКУ",
+                                job_id,
+                            )
+                            artifacts["decision_override"] = {
+                                "previous_decision": decision,
+                                "override_reason": "Отсутствует требование лицензии ЦБ РФ (Закон 4015-1)",
+                                "missing_requirements": _cbr_check["missing_requirements"],
+                            }
+                            decision = "ВЕРНУТЬ НА ДОРАБОТКУ"
+                            _log_event(
+                                "postcheck_cbr_override",
+                                "CBR license отсутствует — решение изменено на ВЕРНУТЬ НА ДОРАБОТКУ",
+                                previous_decision=artifacts["decision_override"]["previous_decision"],
+                            )
+                except Exception as _cbr_err:
+                    logger.warning("[%s] Ошибка CBR post-check: %s", job_id, _cbr_err)
+
             if artifacts:
                 logger.info("[%s] Артефакты: %s", job_id, ", ".join(artifacts.keys()))
             if decision:

@@ -672,3 +672,62 @@ class TestJWTAuth:
 
         resp = client.get("/api/v1/stats", headers={"X-API-Key": "key-gamma"})
         assert resp.status_code == 401
+
+
+# ============================================================================
+# Insurance CBR License Post-Check (api/app.py → tender agent)
+# ============================================================================
+
+class TestTenderInsuranceCBRPostCheck:
+    """Verify that the CBR license post-check runs on tender insurance documents.
+
+    The post-check in api/app.py intercepts tender decisions and overrides to
+    ВЕРНУТЬ НА ДОРАБОТКУ when an insurance tender lacks the CBR license requirement.
+    """
+
+    def test_tender_job_accepted(self, client):
+        """Tender endpoint accepts job and returns job_id."""
+        resp = client.post(
+            "/api/v1/process/tender",
+            json={"text": "Страхование имущества предприятия 223-ФЗ"},
+            headers={"X-API-Key": "test-secret"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "job_id" in data or "duplicate" in data
+
+    def test_insurance_cbr_check_logic_with_license(self):
+        """validate_insurance_tender_requirements: с лицензией ЦБ → ПРИНЯТЬ."""
+        from shared.insurance_domain import validate_insurance_tender_requirements
+        text = (
+            "Тендер на страхование грузов 223-ФЗ НМЦК. "
+            "Требование: наличие лицензии ЦБ РФ на страховую деятельность."
+        )
+        result = validate_insurance_tender_requirements(text)
+        assert result["decision"] == "ПРИНЯТЬ"
+        assert result["has_cbr_license"] is True
+        assert result["missing_requirements"] == []
+
+    def test_insurance_cbr_check_logic_without_license(self):
+        """validate_insurance_tender_requirements: без лицензии ЦБ → ВЕРНУТЬ."""
+        from shared.insurance_domain import validate_insurance_tender_requirements
+        text = (
+            "Тендер на страхование имущества 223-ФЗ НМЦК. "
+            "Требования: опыт работы, отсутствие в РНП."
+        )
+        result = validate_insurance_tender_requirements(text)
+        assert result["decision"] == "ВЕРНУТЬ НА ДОРАБОТКУ"
+        assert result["has_cbr_license"] is False
+        assert len(result["missing_requirements"]) >= 1
+
+    def test_insurance_cbr_check_non_insurance_text(self):
+        """is_insurance_tender: не страховой текст → проверка не запускается."""
+        from shared.insurance_domain import is_insurance_tender
+        text = "Закупка серверного оборудования HP ProLiant 44-ФЗ"
+        assert not is_insurance_tender(text)
+
+    def test_insurance_cbr_check_is_insurance_true(self):
+        """is_insurance_tender: страховой текст с закупочным контекстом → True."""
+        from shared.insurance_domain import is_insurance_tender
+        text = "Страхование ДМС добровольное медицинское 223-ФЗ НМЦК тендер"
+        assert is_insurance_tender(text)

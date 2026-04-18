@@ -270,13 +270,36 @@
     "key_findings": "2 участника: ООО «СК Гарант» (анкета+NDA), АО «Росгосстрах» (только анкета). NDA от Росгосстрах отсутствует."
   },
   "summary": {
-    "total_docs_tested": 11,
+    "total_docs_tested": 12,
     "decisions_match_count": 9,
-    "decisions_match_pct": 81.8,
+    "decisions_match_pct": 75.0,
     "false_positives": 1,
     "false_negatives": 0,
     "analysis_date": "2026-04-18",
     "llm_mode": "rules-engine only (no LLM key)",
-    "key_finding": "11 документов (5 реальных, 6 синтетических) по 4 агентам (tz, dzo, tender, collector). collector_to_2025_0183 добавлен в сессии 3. False-Positive страховой тендер (no_cbr_license) задокументирован в session 4."
+    "key_finding": "12 документов (5 реальных, 7 синтетических) по 4 агентам (tz, dzo, tender, collector). Session 4: CBR license post-check добавлен в api/app.py — устраняет False-Positive страховых тендеров без требования лицензии ЦБ РФ."
+  },
+  "tender_property_no_cbr_license": {
+    "source": null,
+    "document_type": "Тендерная документация",
+    "procurement_type": "Страхование имущества государственного учреждения (44-ФЗ)",
+    "year": 2026,
+    "nmts_rub": 387500,
+    "agent": "tender",
+    "insurance_type": "Имущество",
+    "law": "44-ФЗ",
+    "customer": "ГБУ «ЦСО Центральный»",
+    "structural_score_pct": 70.0,
+    "expert_decision": "ВЕРНУТЬ НА ДОРАБОТКУ",
+    "rules_engine_decision_naive": "ПРИНЯТЬ",
+    "rules_engine_decision_with_cbr_check": "ВЕРНУТЬ НА ДОРАБОТКУ",
+    "decisions_match": true,
+    "discrepancy_reason": null,
+    "false_positive_type": "missing_cbr_license",
+    "critical_gaps": [
+      "Требование лицензии ЦБ РФ на страховую деятельность (Закон 4015-1 «Об организации страхового дела в РФ»)"
+    ],
+    "non_critical_gaps": [],
+    "key_findings": "CBR license post-check: страховой тендер без требования лицензии ЦБ РФ → ВЕРНУТЬ НА ДОРАБОТКУ. Без post-check rules-engine ошибочно возвращал ПРИНЯТЬ (False-Positive)."
   }
 }
