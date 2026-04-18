@@ -169,3 +169,8 @@ def test_dzo_inn_preserved():
 3. Какую команду запустить, чтобы прогнать только unit-тесты (без E2E)?
 4. Почему E2E-тесты не запускают в CI автоматически?
 5. Напиши шаблон простого unit-теста по схеме Arrange → Act → Assert для функции `validate_inn(inn: str) -> dict`.
+---
+
+➡️ **Следующий урок:** [Урок 18 — CI/CD: GitHub Actions и деплой](lesson_18_ci.md)
+
+📖 [Глоссарий терминов](glossary.md) | 📋 [README курса](README.md)
