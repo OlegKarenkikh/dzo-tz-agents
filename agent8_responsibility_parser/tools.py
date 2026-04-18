@@ -1,55 +1,39 @@
-"""
-agent8_responsibility_parser/tools.py
-Инструменты LangChain для агента разбора договоров ответственности (431/432/433).
-"""
+"""agent8_responsibility_parser/tools.py"""
 from __future__ import annotations
-
 import json
 import re
 from typing import Any, Literal
-
 from langchain.tools import tool
 from pydantic import BaseModel, ConfigDict, Field
-
 from shared.logger import setup_logger
 from shared.schemas import ResponsibilityParseResult
 
 logger = setup_logger("agent_responsibility")
-
 SubType = Literal["431", "432", "433"]
-
-# ---------------------------------------------------------------------------
-# Pydantic-схемы аргументов
-# ---------------------------------------------------------------------------
 
 class DetectTypeInput(BaseModel):
     model_config = ConfigDict(strict=True)
     document_text: str = Field(description="Полный текст договора ответственности")
-
 
 class BaseExtractInput(BaseModel):
     model_config = ConfigDict(strict=True)
     document_text: str = Field(description="Полный текст договора")
     subtype: str = Field(description="Тип договора: 431, 432 или 433")
 
-
 class ObjectsInput(BaseModel):
     model_config = ConfigDict(strict=True)
     document_text: str = Field(description="Полный текст договора")
-    objects_hint: str = Field(default="", description="Подсказка об объектах из preprocessing")
-
+    objects_hint: str = Field(default="", description="Подсказка об объектах")
 
 class FidInput(BaseModel):
     model_config = ConfigDict(strict=True)
     document_text: str = Field(description="Текст основного договора")
-    fid_text: str = Field(default="", description="Текст ФИД-документа (если есть)")
-
+    fid_text: str = Field(default="", description="Текст ФИД-документа")
 
 class ValidateInput(BaseModel):
     model_config = ConfigDict(strict=True)
     result_json: str = Field(description="JSON-строка результата")
     subtype: str = Field(description="Тип: 431, 432 или 433")
-
 
 class FixFieldInput(BaseModel):
     model_config = ConfigDict(strict=True)
@@ -58,10 +42,6 @@ class FixFieldInput(BaseModel):
     field_path: str = Field(description="Путь к полю (точечная нотация)")
     corrected_value: Any = Field(description="Исправленное значение")
 
-
-# ---------------------------------------------------------------------------
-# Вспомогательные функции
-# ---------------------------------------------------------------------------
 
 def _strip_none(d: dict) -> dict:
     result = {}
@@ -73,8 +53,7 @@ def _strip_none(d: dict) -> dict:
             if sub:
                 result[k] = sub
         elif isinstance(v, list):
-            clean = [_strip_none(i) if isinstance(i, dict) else i
-                     for i in v if i not in (None, "")]
+            clean = [_strip_none(i) if isinstance(i, dict) else i for i in v if i not in (None, "")]
             clean = [i for i in clean if i not in ({}, None, "")]
             if clean:
                 result[k] = clean
@@ -97,7 +76,6 @@ def _parse_float(value: Any) -> float | None:
 
 
 def _detect_subtype_heuristic(text: str) -> str:
-    """Эвристика определения типа договора (DA preprocessing.extract_date logic)."""
     upper = text.upper()
     if "432" in upper or "ФИД" in upper or "ФИНАНСОВЫЙ РИСК" in upper:
         return "432"
@@ -107,21 +85,17 @@ def _detect_subtype_heuristic(text: str) -> str:
 
 
 def _extract_date_info(text: str) -> str:
-    """Извлекает строки с датами из текста (DA preprocessing.extract_date)."""
     dates = re.findall(r"\d{2}[./]\d{2}[./]\d{4}", text)
     return ", ".join(set(dates)) if dates else ""
 
 
 def _extract_objects_info(text: str) -> list[str]:
-    """Извлекает упоминания объектов страхования (DA preprocessing.extract_objects_info)."""
-    pattern = r"(?i)объект[^:]*:\s*([^
-]+)"
+    pattern = r"(?i)" + r"объект[^:]*:\s*([^\n]+)"
     matches = re.findall(pattern, text)
     return list(set(m.strip() for m in matches if m.strip()))
 
 
 def _extract_payments_section(text: str) -> str:
-    """Извлекает секцию платежей (DA preprocessing.extract_table_section)."""
     start = text.upper().find("ДАТА ЗАКЛЮЧЕНИЯ")
     end = text.upper().find("ПРОЧИЕ ДАННЫЕ", start) if start != -1 else -1
     if start == -1:
@@ -129,16 +103,9 @@ def _extract_payments_section(text: str) -> str:
     return text[start:end].strip() if end != -1 else text[start:].strip()
 
 
-# ---------------------------------------------------------------------------
-# Инструменты
-# ---------------------------------------------------------------------------
-
 @tool(args_schema=DetectTypeInput)
 def detect_responsibility_type(document_text: str) -> str:
-    """Определяет тип договора страхования ответственности: 431, 432 или 433.
-    Анализирует ключевые слова и маркеры в тексте.
-    Возвращает {subtype, confidence, reasoning}.
-    """
+    """Определяет тип договора страхования ответственности: 431, 432 или 433."""
     try:
         subtype = _detect_subtype_heuristic(document_text)
         markers = {
@@ -151,11 +118,10 @@ def detect_responsibility_type(document_text: str) -> str:
             "subtype": subtype,
             "confidence": "high" if found else "medium",
             "markers_found": found,
-            "reasoning": f"Обнаружены маркеры типа {subtype}: {found}" if found
-                         else f"По умолчанию тип {subtype}",
+            "reasoning": f"Обнаружены маркеры типа {subtype}: {found}" if found else f"По умолчанию тип {subtype}",
             "instruction": f"Используй subtype={subtype} в следующих инструментах.",
         }
-        logger.info("detect_responsibility_type: subtype=%s confidence=%s", subtype, result["confidence"])
+        logger.info("detect_responsibility_type: subtype=%s", subtype)
         return json.dumps(result, ensure_ascii=False, indent=2)
     except Exception as e:
         return json.dumps({"error": str(e)})
@@ -163,18 +129,14 @@ def detect_responsibility_type(document_text: str) -> str:
 
 @tool(args_schema=BaseExtractInput)
 def extract_responsibility_base(document_text: str, subtype: str = "431") -> str:
-    """Извлекает базовые данные договора ответственности:
-    номер, даты, страховые суммы, премия, стороны, риски.
-    Адаптирует извлечение под тип (431/432/433).
+    """Извлекает базовые данные договора ответственности (тип 431/432/433).
     Блок DA: responsibility_431_prompt / responsibility_432_prompt.
     """
     try:
         date_info = _extract_date_info(document_text)
         objects_list = _extract_objects_info(document_text)
-        objects_str = ";
-".join(objects_list)
+        objects_str = ";\n".join(objects_list)
         payments_info = _extract_payments_section(document_text) if subtype == "432" else ""
-
         base_fields: dict[str, Any] = {
             "contract_number": None,
             "date_start": None,
@@ -192,21 +154,14 @@ def extract_responsibility_base(document_text: str, subtype: str = "431") -> str
         if subtype == "432":
             base_fields["payment_schedule"] = []
             base_fields["credit_limit"] = None
-
         schema: dict[str, Any] = {
             "subtype": subtype,
-            "instruction": (
-                f"Извлеки базовые данные договора ответственности типа {subtype}. "
-                "Заполни все поля в 'extracted'. "
-                "Роли: страховщик/страхователь/выгодоприобретатель. "
-                "Риски — список строк."
-            ),
+            "instruction": f"Извлеки базовые данные договора ответственности типа {subtype}.",
             "date_info_hint": date_info,
             "objects_hint": objects_str,
             "payments_hint": payments_info,
             "extracted": base_fields,
         }
-        logger.info("extract_responsibility_base: subtype=%s", subtype)
         return json.dumps(schema, ensure_ascii=False, indent=2)
     except Exception as e:
         return json.dumps({"error": str(e)})
@@ -215,36 +170,16 @@ def extract_responsibility_base(document_text: str, subtype: str = "431") -> str
 @tool(args_schema=ObjectsInput)
 def extract_responsibility_objects(document_text: str, objects_hint: str = "") -> str:
     """Извлекает список объектов страхования из договора ответственности.
-    Каждый объект: наименование, адрес, лимит ответственности, описание.
     Блок DA: objects_prompt (pipeline_431 и pipeline_433).
     """
     try:
         auto_objects = _extract_objects_info(document_text)
-        hint = objects_hint or (";
-".join(auto_objects) if auto_objects else "")
+        hint = objects_hint or (";\n".join(auto_objects) if auto_objects else "")
         schema: dict[str, Any] = {
-            "instruction": (
-                "Извлеки полный список объектов страхования. "
-                "Для каждого объекта укажи: наименование, адрес (если есть), "
-                "лимит ответственности (float), описание/назначение."
-            ),
-            "objects_hint": hint or "(не найдено в тексте)",
-            "extracted": {
-                "objects": [
-                    {
-                        "name": None,
-                        "address": None,
-                        "limit": None,
-                        "description": None,
-                    }
-                ]
-            },
-            "agent_note": (
-                "Верни список объектов в поле 'objects'. "
-                "Если объект один — всё равно список с одним элементом."
-            ),
+            "instruction": "Извлеки список объектов страхования с наименованием, адресом, лимитом, описанием.",
+            "objects_hint": hint or "(не найдено)",
+            "extracted": {"objects": [{"name": None, "address": None, "limit": None, "description": None}]},
         }
-        logger.info("extract_responsibility_objects: подсказок=%d", len(auto_objects))
         return json.dumps(schema, ensure_ascii=False, indent=2)
     except Exception as e:
         return json.dumps({"error": str(e)})
@@ -252,18 +187,14 @@ def extract_responsibility_objects(document_text: str, objects_hint: str = "") -
 
 @tool(args_schema=FidInput)
 def extract_responsibility_fid(document_text: str, fid_text: str = "") -> str:
-    """Извлекает данные ФИД (финансово-имущественный документ) для типа 432.
-    Если fid_text не передан — ищет ФИД-маркеры в основном тексте.
+    """Извлекает данные ФИД для договора ответственности тип 432.
     Блок DA: fid_prompt (pipeline_432).
     """
     try:
-        source = fid_text or document_text
+        source = "fid_document" if fid_text else "main_document"
         schema: dict[str, Any] = {
-            "instruction": (
-                "Извлеки данные ФИД: идентификатор ФИД, статус, "
-                "дата выдачи, сумма (float), описание, связанные договоры."
-            ),
-            "fid_source": "fid_document" if fid_text else "main_document",
+            "instruction": "Извлеки данные ФИД: идентификатор, статус, дата, сумма, описание.",
+            "fid_source": source,
             "extracted": {
                 "fid_id": None,
                 "fid_status": None,
@@ -272,9 +203,7 @@ def extract_responsibility_fid(document_text: str, fid_text: str = "") -> str:
                 "fid_description": None,
                 "related_contracts": [],
             },
-            "agent_note": "Если ФИД не найден — верни все поля null.",
         }
-        logger.info("extract_responsibility_fid: источник=%s", schema["fid_source"])
         return json.dumps(schema, ensure_ascii=False, indent=2)
     except Exception as e:
         return json.dumps({"error": str(e)})
@@ -282,10 +211,7 @@ def extract_responsibility_fid(document_text: str, fid_text: str = "") -> str:
 
 @tool(args_schema=ValidateInput)
 def validate_responsibility_result(result_json: str, subtype: str = "431") -> str:
-    """Валидирует результат разбора договора ответственности через Pydantic.
-    Автоматически нормализует float-поля и даты.
-    Возвращает {valid, subtype, data} или {valid: false, errors, data}.
-    """
+    """Валидирует результат договора ответственности через Pydantic (431/432/433)."""
     try:
         raw = json.loads(result_json) if isinstance(result_json, str) else result_json
         raw["subtype"] = subtype
@@ -301,31 +227,17 @@ def validate_responsibility_result(result_json: str, subtype: str = "431") -> st
             validated = ResponsibilityParseResult.model_validate(raw)
             clean = _strip_none(validated.model_dump(mode="json"))
             logger.info("validate_responsibility_result: OK subtype=%s", subtype)
-            return json.dumps(
-                {"valid": True, "subtype": subtype, "data": clean},
-                ensure_ascii=False, indent=2,
-            )
+            return json.dumps({"valid": True, "subtype": subtype, "data": clean}, ensure_ascii=False, indent=2)
         except ValidationError as ve:
-            errors = [
-                f"{'.'.join(str(x) for x in e['loc'])}: {e['msg']}"
-                for e in ve.errors()
-            ]
-            logger.warning("validate_responsibility_result: ошибки %s", errors)
-            return json.dumps(
-                {"valid": False, "subtype": subtype, "errors": errors, "data": _strip_none(raw)},
-                ensure_ascii=False, indent=2,
-            )
+            errors = [f"{'.'.join(str(x) for x in e['loc'])}: {e['msg']}" for e in ve.errors()]
+            return json.dumps({"valid": False, "subtype": subtype, "errors": errors, "data": _strip_none(raw)}, ensure_ascii=False, indent=2)
     except Exception as e:
         return json.dumps({"error": str(e)})
 
 
 @tool(args_schema=FixFieldInput)
-def fix_responsibility_field(
-    result_json: str, subtype: str, field_path: str, corrected_value: Any
-) -> str:
-    """Точечно исправляет поле в результате и перезапускает валидацию.
-    Поддерживает вложенные пути: 'objects.0.limit', 'base.contract_number'.
-    """
+def fix_responsibility_field(result_json: str, subtype: str, field_path: str, corrected_value: Any) -> str:
+    """Точечно исправляет поле в результате ответственности и перезапускает валидацию."""
     try:
         data = json.loads(result_json) if isinstance(result_json, str) else result_json
         parts = field_path.split(".")
@@ -339,7 +251,6 @@ def fix_responsibility_field(
             node[parts[-1]] = corrected_value
         elif isinstance(node, list):
             node[int(parts[-1])] = corrected_value
-        logger.info("fix_responsibility_field: %s исправлено (subtype=%s)", field_path, subtype)
         return validate_responsibility_result.invoke(
             {"result_json": json.dumps(data, ensure_ascii=False), "subtype": subtype}
         )
