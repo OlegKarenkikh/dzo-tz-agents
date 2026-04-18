@@ -249,6 +249,53 @@ class TestRealDocumentRulesEngine:
         assert self._has_section(DZO_APPLICATION_TEXT, "Козлов", "Начальник отдела снабжения")
 
 
+
+    def test_tender_cargo_has_cbr_license(self):
+        """Тендер страхования грузов РЖД-Логистика содержит требование лицензии ЦБ РФ."""
+        from tests.fixtures.real_procurement_docs import REAL_DOCS_REGISTRY
+        from shared.insurance_domain import has_cbr_license_requirement
+        text = REAL_DOCS_REGISTRY["tender_cargo_rzd"]["text"]
+        assert has_cbr_license_requirement(text), (
+            "tender_cargo_rzd должен содержать требование лицензии ЦБ РФ"
+        )
+
+    def test_tender_no_cbr_license_detected(self):
+        """Фикстура без лицензии ЦБ РФ → has_cbr_license_requirement = False."""
+        from tests.fixtures.real_procurement_docs import REAL_DOCS_REGISTRY
+        from shared.insurance_domain import has_cbr_license_requirement
+        text = REAL_DOCS_REGISTRY["tender_property_no_cbr_license"]["text"]
+        assert not has_cbr_license_requirement(text), (
+            "tender_property_no_cbr_license НЕ должен содержать требование лицензии ЦБ РФ"
+        )
+
+    def test_tender_no_cbr_license_validate_returns_return(self):
+        """validate_insurance_tender_requirements для тендера без ЦБ → ВЕРНУТЬ НА ДОРАБОТКУ."""
+        from tests.fixtures.real_procurement_docs import REAL_DOCS_REGISTRY
+        from shared.insurance_domain import validate_insurance_tender_requirements
+        text = REAL_DOCS_REGISTRY["tender_property_no_cbr_license"]["text"]
+        result = validate_insurance_tender_requirements(text)
+        assert result["decision"] == "ВЕРНУТЬ НА ДОРАБОТКУ"
+        expected_decision = REAL_DOCS_REGISTRY["tender_property_no_cbr_license"]["expected"]["expert_decision"]
+        assert result["decision"] == expected_decision
+
+    def test_tender_dms_smak_has_cbr_license(self):
+        """Тендер ДМС СМАК содержит требование лицензии ЦБ РФ."""
+        from tests.fixtures.real_procurement_docs import REAL_DOCS_REGISTRY
+        from shared.insurance_domain import has_cbr_license_requirement
+        text = REAL_DOCS_REGISTRY["tender_dms_smak"]["text"]
+        assert has_cbr_license_requirement(text), (
+            "tender_dms_smak должен содержать требование лицензии ЦБ РФ"
+        )
+
+    def test_tender_osago_fssp_has_cbr_license(self):
+        """Тендер ОСАГО ФССП содержит требование лицензии ЦБ РФ."""
+        from tests.fixtures.real_procurement_docs import REAL_DOCS_REGISTRY
+        from shared.insurance_domain import has_cbr_license_requirement
+        text = REAL_DOCS_REGISTRY["tender_osago_fssp"]["text"]
+        assert has_cbr_license_requirement(text), (
+            "tender_osago_fssp должен содержать требование лицензии ЦБ РФ"
+        )
+
 @pytest.mark.e2e
 class TestRealDocumentE2E:
     @pytest.fixture(autouse=True)
