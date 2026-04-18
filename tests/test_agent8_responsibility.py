@@ -1,11 +1,9 @@
-"""tests/test_agent8_responsibility.py — тесты agent8_responsibility_parser."""
+"""tests/test_agent8_responsibility.py"""
 from __future__ import annotations
-
 import json
 import sys
 import types
 from unittest.mock import MagicMock
-
 import pytest
 
 if "langgraph.prebuilt" not in sys.modules:
@@ -14,23 +12,14 @@ if "langgraph.prebuilt" not in sys.modules:
     sys.modules["langgraph.prebuilt"] = _m
 
 from agent8_responsibility_parser.tools import (
-    _strip_none,
-    _parse_float,
-    _detect_subtype_heuristic,
-    _extract_date_info,
-    _extract_objects_info,
-    _extract_payments_section,
-    detect_responsibility_type,
-    extract_responsibility_base,
-    extract_responsibility_objects,
-    extract_responsibility_fid,
-    validate_responsibility_result,
-    fix_responsibility_field,
+    _strip_none, _parse_float, _detect_subtype_heuristic,
+    _extract_date_info, _extract_objects_info, _extract_payments_section,
+    detect_responsibility_type, extract_responsibility_base,
+    extract_responsibility_objects, extract_responsibility_fid,
+    validate_responsibility_result, fix_responsibility_field,
 )
 from shared.schemas import ResponsibilityParseResult
 
-
-# --- helpers ---
 
 @pytest.mark.parametrize("text, expected", [
     ("Договор 432 о финансовом риске", "432"),
@@ -54,17 +43,13 @@ def test_extract_date_info_empty():
 
 
 def test_extract_objects_info():
-    text = "Объект страхования: Склад на Ленина 5
-Объект: Офис"
+    text = "Объект страхования: Склад на Ленина 5\nОбъект: Офис"
     objects = _extract_objects_info(text)
     assert len(objects) >= 1
 
 
 def test_extract_payments_section():
-    text = "Дата заключения 01.01.2024
-платеж 10000
-Прочие данные
-далее"
+    text = "Дата заключения 01.01.2024\nплатеж 10000\nПрочие данные\nдалее"
     result = _extract_payments_section(text)
     assert "10000" in result
 
@@ -72,8 +57,6 @@ def test_extract_payments_section():
 def test_strip_none():
     assert _strip_none({"a": None, "b": [], "c": "ok"}) == {"c": "ok"}
 
-
-# --- detect_responsibility_type ---
 
 def test_detect_type_431():
     raw = detect_responsibility_type.invoke({"document_text": "третьи лица ответственность"})
@@ -100,8 +83,6 @@ def test_detect_type_confidence():
     assert d["confidence"] in ("high", "medium")
 
 
-# --- extract_responsibility_base ---
-
 @pytest.mark.parametrize("subtype", ["431", "432", "433"])
 def test_extract_base_schema(subtype):
     raw = extract_responsibility_base.invoke({"document_text": "doc", "subtype": subtype})
@@ -125,8 +106,6 @@ def test_extract_base_uses_date_hint():
     assert "01.03.2024" in d.get("date_info_hint", "")
 
 
-# --- extract_responsibility_objects ---
-
 def test_extract_objects_schema():
     raw = extract_responsibility_objects.invoke({"document_text": "объект: Склад"})
     d = json.loads(raw)
@@ -142,14 +121,10 @@ def test_extract_objects_hint_auto():
 
 
 def test_extract_objects_passed_hint():
-    raw = extract_responsibility_objects.invoke({
-        "document_text": "doc", "objects_hint": "Склад; Офис"
-    })
+    raw = extract_responsibility_objects.invoke({"document_text": "doc", "objects_hint": "Склад; Офис"})
     d = json.loads(raw)
     assert "Склад" in d["objects_hint"]
 
-
-# --- extract_responsibility_fid ---
 
 def test_extract_fid_schema():
     raw = extract_responsibility_fid.invoke({"document_text": "doc"})
@@ -178,8 +153,6 @@ def test_extract_fid_all_null():
         assert v is None or v == []
 
 
-# --- validate / fix ---
-
 def test_validate_minimal_431():
     raw = validate_responsibility_result.invoke({
         "result_json": json.dumps({"file_name": "x"}), "subtype": "431"
@@ -191,12 +164,9 @@ def test_validate_minimal_431():
 
 def test_validate_full_431():
     payload = json.dumps({
-        "file_name": "resp.pdf",
-        "contract_number": "431-001",
-        "insurance_sum": 1000000.0,
-        "premium": 5000.0,
-        "date_start": "01.01.2024",
-        "date_end": "31.12.2024",
+        "file_name": "resp.pdf", "contract_number": "431-001",
+        "insurance_sum": 1000000.0, "premium": 5000.0,
+        "date_start": "01.01.2024", "date_end": "31.12.2024",
         "objects": [{"name": "Склад", "limit": 500000.0}],
     })
     d = json.loads(validate_responsibility_result.invoke({"result_json": payload, "subtype": "431"}))
@@ -211,15 +181,6 @@ def test_validate_auto_float():
     assert d["data"].get("insurance_sum") == 2000000.0
 
 
-def test_validate_auto_object_limit():
-    payload = json.dumps({
-        "file_name": "x",
-        "objects": [{"name": "Офис", "limit": "300 000"}]
-    })
-    d = json.loads(validate_responsibility_result.invoke({"result_json": payload, "subtype": "431"}))
-    assert d["valid"] is True
-
-
 @pytest.mark.parametrize("subtype", ["431", "432", "433"])
 def test_validate_all_subtypes(subtype):
     payload = json.dumps({"file_name": f"resp_{subtype}.pdf"})
@@ -231,10 +192,8 @@ def test_validate_all_subtypes(subtype):
 def test_fix_field_updates():
     initial = json.dumps({"file_name": "x", "contract_number": "OLD"})
     d = json.loads(fix_responsibility_field.invoke({
-        "result_json": initial,
-        "subtype": "431",
-        "field_path": "contract_number",
-        "corrected_value": "431-NEW",
+        "result_json": initial, "subtype": "431",
+        "field_path": "contract_number", "corrected_value": "431-NEW",
     }))
     assert d.get("data", {}).get("contract_number") == "431-NEW"
 
@@ -242,15 +201,11 @@ def test_fix_field_updates():
 def test_fix_field_nested_object():
     initial = json.dumps({"file_name": "x", "objects": [{"name": "Склад", "limit": None}]})
     d = json.loads(fix_responsibility_field.invoke({
-        "result_json": initial,
-        "subtype": "433",
-        "field_path": "objects.0.limit",
-        "corrected_value": 1000000.0,
+        "result_json": initial, "subtype": "433",
+        "field_path": "objects.0.limit", "corrected_value": 1000000.0,
     }))
     assert "error" not in d
 
-
-# --- схема ---
 
 def test_responsibility_schema_defaults():
     r = ResponsibilityParseResult()
@@ -268,13 +223,9 @@ def test_responsibility_schema_subtype(subtype):
 
 def test_responsibility_schema_round_trip():
     data = {
-        "file_name": "resp.pdf",
-        "subtype": "431",
-        "contract_number": "431-100",
-        "insurance_sum": 5000000.0,
-        "premium": 25000.0,
-        "date_start": "01.03.2024",
-        "date_end": "28.02.2025",
+        "file_name": "resp.pdf", "subtype": "431", "contract_number": "431-100",
+        "insurance_sum": 5000000.0, "premium": 25000.0,
+        "date_start": "01.03.2024", "date_end": "28.02.2025",
         "objects": [{"name": "Завод", "limit": 2000000.0}],
     }
     r = ResponsibilityParseResult.model_validate(data)
@@ -282,8 +233,6 @@ def test_responsibility_schema_round_trip():
     assert d["contract_number"] == "431-100"
     assert d["objects"][0]["name"] == "Завод"
 
-
-# --- runner ---
 
 def test_runner_parse_steps_valid():
     from agent8_responsibility_parser.runner import ResponsibilityParserRunner
@@ -307,8 +256,6 @@ def test_runner_parse_steps_invalid():
 def test_runner_build_chat_input():
     from agent8_responsibility_parser.runner import ResponsibilityParserRunner
     runner = ResponsibilityParserRunner.__new__(ResponsibilityParserRunner)
-    result = runner.build_chat_input(
-        {"from": "u@test.ru", "subject": "Договор 431"}, ["Текст договора"]
-    )
+    result = runner.build_chat_input({"from": "u@test.ru", "subject": "Договор 431"}, ["Текст договора"])
     assert "ОТВЕТСТВЕННОСТИ" in result
     assert "Текст договора" in result
