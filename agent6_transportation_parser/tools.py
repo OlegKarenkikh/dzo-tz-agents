@@ -65,7 +65,7 @@ class ValidateTransportInput(BaseModel):
 class FixTransportFieldInput(BaseModel):
     model_config = ConfigDict(strict=True)
     result_json: str = Field(description="Текущий JSON результата")
-    field_path: str = Field(description="Путь к полю, напр. \'cargo_weight\'")
+    field_path: str = Field(description="Путь к полю, напр. 'cargo_weight'")
     corrected_value: Any = Field(description="Исправленное значение поля")
 
 
@@ -170,7 +170,7 @@ def extract_transport_base(document_text: str) -> str:
                 "date_end": None,
             },
             "agent_note": (
-                "Заполни поле \'extracted\'. Суммы — числа float. "
+                "Заполни поле 'extracted'. Суммы — числа float. "
                 "Валюта: только RUR, USD, EUR. Даты: DD.MM.YYYY."
             ),
         }
@@ -193,11 +193,11 @@ def extract_transport_route(document_text: str) -> str:
         schema: dict[str, Any] = {
             "instruction": (
                 "Определи маршрут перевозки. Укажи: "
-                "\'route_specified\': true/false (указан ли маршрут явно), "
-                "\'departure\': пункт отправления, "
-                "\'destination\': пункт назначения, "
-                "\'via\': список пунктов перегрузки (может быть пустым), "
-                "\'route_string\': строка формата \'А → Б\' или \'А → В → Б\'."
+                "'route_specified': true/false (указан ли маршрут явно), "
+                "'departure': пункт отправления, "
+                "'destination': пункт назначения, "
+                "'via': список пунктов перегрузки (может быть пустым), "
+                "'route_string': строка формата 'А → Б' или 'А → В → Б'."
             ),
             "extracted": {
                 "route_specified": False,
@@ -231,7 +231,7 @@ def extract_transport_additional(document_text: str) -> str:
         schema: dict[str, Any] = {
             "instruction": (
                 "Извлеки из текста: Вид перевозки груза (список строк), "
-                "Вес груза (строка с единицей, напр. \'10 тонн\' или \'500 кг\'), "
+                "Вес груза (строка с единицей, напр. '10 тонн' или '500 кг'), "
                 "Упаковка, Особые условия перевозки, "
                 "Количество мест (число), Марка/модель ТС (если указана)."
             ),
@@ -245,7 +245,7 @@ def extract_transport_additional(document_text: str) -> str:
             },
             "agent_note": (
                 "transport_types_raw — список строк. "
-                "cargo_weight_raw — строка как есть (напр. \'10 тонн\', \'500 кг\'). "
+                "cargo_weight_raw — строка как есть (напр. '10 тонн', '500 кг'). "
                 "Числа не округляй."
             ),
         }
@@ -279,8 +279,8 @@ def resolve_transport_type(transport_types_raw: list[str]) -> str:
             "resolved": list(set(resolved)),
             "unresolved": unresolved,
             "instruction": (
-                "Для каждого элемента из \'unresolved\' найди наиближайшее значение "
-                "из \'transport_types_list\' и добавь в \'resolved\'."
+                "Для каждого элемента из 'unresolved' найди наиближайшее значение "
+                "из 'transport_types_list' и добавь в 'resolved'."
             ) if unresolved else "",
             "agent_note": "Верни финальный список resolved как transport_type в результат.",
         }
@@ -318,7 +318,10 @@ def validate_transport_result(result_json: str) -> str:
             logger.info("✅ validate_transport_result: валидация прошла успешно")
             return json.dumps({"valid": True, "data": clean}, ensure_ascii=False, indent=2)
         except ValidationError as ve:
-            errors = [f"{\'.\'join(str(x) for x in e[\'loc\'])}: {e[\'msg\']}" for e in ve.errors()]
+            errors = [
+                f"{'.'.join(str(x) for x in e['loc'])}: {e['msg']}"
+                for e in ve.errors()
+            ]
             logger.warning("⚠️ validate_transport_result: ошибки %s", errors)
             return json.dumps(
                 {"valid": False, "errors": errors, "data": _strip_none(raw)},
@@ -332,7 +335,7 @@ def validate_transport_result(result_json: str) -> str:
 @tool(args_schema=FixTransportFieldInput)
 def fix_transport_field(result_json: str, field_path: str, corrected_value: Any) -> str:
     """Точечно исправляет одно поле в результате разбора перевозки.
-    field_path использует точечную нотацию: \'cargo_weight\', \'insurer\'.
+    field_path использует точечную нотацию: 'cargo_weight', 'insurer'.
     После исправления автоматически перезапускает validate_transport_result.
     """
     try:
@@ -349,7 +352,7 @@ def fix_transport_field(result_json: str, field_path: str, corrected_value: Any)
             node[parts[-1]] = corrected_value
         elif isinstance(node, list):
             node[int(parts[-1])] = corrected_value
-        logger.info("✅ fix_transport_field: поле \"%s\" исправлено", field_path)
+        logger.info('✅ fix_transport_field: поле "%s" исправлено', field_path)
         return validate_transport_result.invoke(
             {"result_json": json.dumps(data, ensure_ascii=False)}
         )
