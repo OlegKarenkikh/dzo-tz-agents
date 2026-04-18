@@ -73,6 +73,11 @@ include = [
     "agent2_tz_inspector*",
     "agent21_tender_inspector*",
     "agent3_collector_inspector*",
+    "agent4_leasing_parser*",
+    "agent5_osago_parser*",
+    "agent6_transportation_parser*",
+    "agent7_osgop_parser*",
+    "agent8_responsibility_parser*",
     "shared*",
     "api*",
 ]
