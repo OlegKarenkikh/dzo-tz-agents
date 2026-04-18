@@ -8,7 +8,7 @@ import time
 import pytest
 from fastapi.testclient import TestClient
 
-# API_KEY устанавлен в conftest.py (значение: "test-secret")
+# API_KEY устанавлен в conftest.py
 from api.app import (  # noqa: E402
     _has_tz_agent_analysis_observation,
     _is_token_limit_error_text,
