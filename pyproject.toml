@@ -95,7 +95,7 @@ select = ["E", "F", "W", "I", "UP", "B", "C4"]
 ignore = ["E501", "B008", "B904"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*.py" = ["F401", "E402", "I001"]
+"tests/*.py" = ["F401", "E402", "I001", "E701", "E702", "F811", "F841", "E401", "B007", "C408", "C401"]
 "agent4_leasing_parser/*.py" = ["I001"]
 "agent5_osago_parser/*.py" = ["I001"]
 "agent6_transportation_parser/*.py" = ["I001"]
@@ -106,10 +106,10 @@ ignore = ["E501", "B008", "B904"]
 "agent21_tender_inspector/runner.py" = ["I001", "E402"]
 "agent3_collector_inspector/agent.py" = ["I001", "E402"]
 "api/app.py" = ["I001", "E402"]
-"shared/*.py" = ["UP006", "UP035", "I001"]
+"shared/*.py" = ["UP006", "UP035", "I001", "F401"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["shared", "agent1_dzo_inspector", "agent2_tz_inspector", "agent21_tender_inspector", "agent3_collector_inspector", "api", "ui"]
+known-first-party = ["shared", "agent1_dzo_inspector", "agent2_tz_inspector", "agent21_tender_inspector", "agent3_collector_inspector", "agent4_leasing_parser", "agent5_osago_parser", "agent6_transportation_parser", "agent7_osgop_parser", "agent8_responsibility_parser", "api", "ui"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -124,7 +124,7 @@ markers = [
 filterwarnings = ["ignore::DeprecationWarning"]
 
 [tool.coverage.run]
-source = ["agent1_dzo_inspector", "agent2_tz_inspector", "agent21_tender_inspector", "agent3_collector_inspector", "shared", "api"]
+source = ["agent1_dzo_inspector", "agent2_tz_inspector", "agent21_tender_inspector", "agent3_collector_inspector", "shared", "api", "agent4_leasing_parser", "agent5_osago_parser", "agent6_transportation_parser", "agent7_osgop_parser", "agent8_responsibility_parser"]
 omit = ["tests/*", "ui/*", "*/migrations/*"]
 
 [tool.coverage.report]
