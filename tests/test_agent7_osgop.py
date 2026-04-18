@@ -1,11 +1,9 @@
-"""tests/test_agent7_osgop.py — тесты agent7_osgop_parser."""
+"""tests/test_agent7_osgop.py"""
 from __future__ import annotations
-
 import json
 import sys
 import types
 from unittest.mock import MagicMock
-
 import pytest
 
 if "langgraph.prebuilt" not in sys.modules:
@@ -14,22 +12,13 @@ if "langgraph.prebuilt" not in sys.modules:
     sys.modules["langgraph.prebuilt"] = _m
 
 from agent7_osgop_parser.tools import (
-    _strip_none,
-    _parse_float,
-    _extract_tariff_short,
-    _extract_table_section,
-    extract_osgop_base,
-    extract_osgop_insurant,
-    extract_osgop_territory,
-    extract_osgop_additional,
-    extract_osgop_transport,
-    validate_osgop_result,
-    fix_osgop_field,
+    _strip_none, _parse_float, _extract_tariff_short, _extract_table_section,
+    extract_osgop_base, extract_osgop_insurant, extract_osgop_territory,
+    extract_osgop_additional, extract_osgop_transport,
+    validate_osgop_result, fix_osgop_field,
 )
 from shared.schemas import OsgopParseResult
 
-
-# --- helpers ---
 
 @pytest.mark.parametrize("v, exp", [
     (None, None), (0, 0.0), ("1 500,5", 1500.5), ("abc", None), ({}, None),
@@ -47,10 +36,7 @@ def test_strip_none_list():
 
 
 def test_extract_tariff_short_found():
-    text = "Прочее
-ТАРИФ автобус 5%
-дата: 01.01.2024
-Прочее"
+    text = "Прочее\nТАРИФ автобус 5%\nдата: 01.01.2024\nПрочее"
     result = _extract_tariff_short(text)
     assert "ТАРИФ" in result.upper()
 
@@ -60,11 +46,7 @@ def test_extract_tariff_short_not_found():
 
 
 def test_extract_table_section_found():
-    text = "AAA
-КОЛИЧЕСТВО ПЛАТЕЖЕЙ
-100
-ТАРИФЫ
-BBB"
+    text = "AAA\nКОЛИЧЕСТВО ПЛАТЕЖЕЙ\n100\nТАРИФЫ\nBBB"
     result = _extract_table_section(text, "КОЛИЧЕСТВО ПЛАТЕЖЕЙ", "ТАРИФЫ")
     assert "100" in result
 
@@ -72,8 +54,6 @@ BBB"
 def test_extract_table_section_not_found():
     assert _extract_table_section("text", "MISSING", "END") == ""
 
-
-# --- инструменты ---
 
 def test_extract_osgop_base_schema():
     raw = extract_osgop_base.invoke({"document_text": "полис"})
@@ -106,11 +86,7 @@ def test_extract_osgop_territory_schema():
 
 
 def test_extract_osgop_additional_auto_extract():
-    text = "ТАРИФ автобус 5%
-КОЛИЧЕСТВО ПЛАТЕЖЕЙ
-3 платежа
-ТАРИФЫ
-далее"
+    text = "ТАРИФ автобус 5%\nКОЛИЧЕСТВО ПЛАТЕЖЕЙ\n3 платежа\nТАРИФЫ\nдалее"
     raw = extract_osgop_additional.invoke({"document_text": text})
     d = json.loads(raw)
     assert "tariffs_section" in d
@@ -119,9 +95,7 @@ def test_extract_osgop_additional_auto_extract():
 
 def test_extract_osgop_additional_passed_info():
     raw = extract_osgop_additional.invoke({
-        "document_text": "doc",
-        "tariffs_info": "автобус: 5%",
-        "payments_info": "01.01.2024: 10000",
+        "document_text": "doc", "tariffs_info": "автобус: 5%", "payments_info": "01.01.2024: 10000"
     })
     d = json.loads(raw)
     assert "автобус" in d["tariffs_section"]
@@ -135,17 +109,11 @@ def test_extract_osgop_transport_schema():
 
 
 def test_extract_osgop_transport_removes_table():
-    text = "Полис
-Сведения о транспортных средствах
-Марка: ПАЗ
-ОКОНЧАНИЕ СЕКЦИИ
-Далее"
+    text = "Полис\nСведения о транспортных средствах\nМарка: ПАЗ\nДАТА"
     raw = extract_osgop_transport.invoke({"document_text": text})
     d = json.loads(raw)
     assert "ПАЗ" not in d.get("text_without_table", "")
 
-
-# --- validate / fix ---
 
 def test_validate_osgop_minimal():
     raw = validate_osgop_result.invoke({"result_json": json.dumps({"file_name": "x.pdf"})})
@@ -155,14 +123,9 @@ def test_validate_osgop_minimal():
 
 def test_validate_osgop_full():
     payload = json.dumps({
-        "file_name": "osgop.pdf",
-        "policy_number": "OSGOP-001",
-        "insurance_sum": 5000000.0,
-        "premium": 25000.0,
-        "currency": "RUR",
-        "date_start": "01.01.2024",
-        "date_end": "31.12.2024",
-        "insurer_name": "ООО Страховая",
+        "file_name": "osgop.pdf", "policy_number": "OSGOP-001",
+        "insurance_sum": 5000000.0, "premium": 25000.0, "currency": "RUR",
+        "date_start": "01.01.2024", "date_end": "31.12.2024",
         "vehicle_count": 5,
     })
     d = json.loads(validate_osgop_result.invoke({"result_json": payload}))
@@ -199,8 +162,6 @@ def test_fix_osgop_field_nested():
     assert "error" not in d
 
 
-# --- схема ---
-
 def test_osgop_schema_defaults():
     r = OsgopParseResult()
     assert r.file_name == ""
@@ -216,21 +177,15 @@ def test_osgop_schema_insurance_sum(sum_val):
 
 def test_osgop_schema_round_trip():
     data = {
-        "file_name": "osgop.pdf",
-        "policy_number": "OSGOP-999",
-        "insurance_sum": 10000000.0,
-        "premium": 50000.0,
-        "currency": "RUR",
-        "vehicle_count": 10,
-        "transportation_types": ["Автобус"],
+        "file_name": "osgop.pdf", "policy_number": "OSGOP-999",
+        "insurance_sum": 10000000.0, "premium": 50000.0, "currency": "RUR",
+        "vehicle_count": 10, "transportation_types": ["Автобус"],
     }
     r = OsgopParseResult.model_validate(data)
     d = r.model_dump(mode="json")
     assert d["policy_number"] == "OSGOP-999"
     assert d["vehicle_count"] == 10
 
-
-# --- runner ---
 
 def test_runner_parse_steps_valid():
     from agent7_osgop_parser.runner import OsgopParserRunner
@@ -253,9 +208,7 @@ def test_runner_parse_steps_invalid():
 def test_runner_build_chat_input():
     from agent7_osgop_parser.runner import OsgopParserRunner
     runner = OsgopParserRunner.__new__(OsgopParserRunner)
-    result = runner.build_chat_input(
-        {"from": "u@test.ru", "subject": "Полис ОСГОП"}, ["Текст полиса"]
-    )
+    result = runner.build_chat_input({"from": "u@test.ru", "subject": "Полис ОСГОП"}, ["Текст полиса"])
     assert "ОСГОП" in result
     assert "u@test.ru" in result
     assert "Текст полиса" in result
