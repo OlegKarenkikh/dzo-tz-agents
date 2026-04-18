@@ -275,3 +275,63 @@ class TransportParseResult(BaseModel):
     insurance_sum: Optional[float] = None
     premium: Optional[float] = None
     parse_errors: list[str] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# OsgopParseResult — agent7
+# ---------------------------------------------------------------------------
+
+class OsgopParseResult(BaseModel):
+    """Structured output for OSGOP parser agent (agent7).
+    Mirrors DA OsgopResponse fields.
+    """
+    file_name: str = ""
+    policy_number: str | None = None
+    insurer_company: str | None = None
+    insurer_name: str | None = None
+    insurer_inn: str | None = None
+    insurer_kpp: str | None = None
+    insurer_address: str | None = None
+    date_start: str | None = None
+    date_end: str | None = None
+    insurance_sum: float | None = None
+    premium: float | None = None
+    currency: str | None = None
+    vehicle_count: int | None = None
+    transportation_types: list[str] = Field(default_factory=list)
+    vehicle_models: list[str] = Field(default_factory=list)
+    tariffs: dict = Field(default_factory=dict)
+    payment_schedule: list = Field(default_factory=list)
+    franchise: float | None = None
+    regions: list[str] = Field(default_factory=list)
+    special_conditions: str | None = None
+    parse_errors: list[str] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# ResponsibilityParseResult — agent8 (types 431 / 432 / 433)
+# ---------------------------------------------------------------------------
+
+class ResponsibilityParseResult(BaseModel):
+    """Structured output for Responsibility parser agent (agent8).
+    Covers all three subtypes: 431, 432, 433.
+    """
+    file_name: str = ""
+    subtype: str = "431"
+    contract_number: str | None = None
+    date_start: str | None = None
+    date_end: str | None = None
+    date_conclusion: str | None = None
+    insurance_sum: float | None = None
+    premium: float | None = None
+    currency: str | None = None
+    insurer: str | None = None
+    policyholder: str | None = None
+    beneficiary: str | None = None
+    risks: list[str] = Field(default_factory=list)
+    roles: dict = Field(default_factory=dict)
+    objects: list[dict] = Field(default_factory=list)
+    fid: dict | None = None
+    credit_limit: float | None = None
+    payment_schedule: list = Field(default_factory=list)
+    parse_errors: list[str] = Field(default_factory=list)
