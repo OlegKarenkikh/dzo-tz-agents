@@ -24,13 +24,9 @@ from shared.schemas import (
 # ---------------------------------------------------------------------------
 
 def test_leasing_address_max_length_enforced():
-    addr = LeasingAddressSchema(
-        city="x" * 300,
-        street="y" * 300,
-        house="h" * 50,
-    )
-    # Pydantic v2 max_length raises ValidationError on exceed
-    # Let's test via model_validate with max_length exceeded
+    # Pydantic v2 raises ValidationError on construction when max_length exceeded
+    with pytest.raises(ValidationError):
+        LeasingAddressSchema(city="x" * 300, street="y" * 300, house="h" * 50)
     with pytest.raises(ValidationError):
         LeasingAddressSchema.model_validate({"house": "x" * 25})
 
