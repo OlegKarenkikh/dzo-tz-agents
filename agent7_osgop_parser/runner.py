@@ -1,31 +1,18 @@
-"""
-agent7_osgop_parser/runner.py
-Email-раннер для агента разбора полисов ОСГОП.
-"""
+"""agent7_osgop_parser/runner.py"""
 from __future__ import annotations
-
 import json
 from typing import Any
-
 import config
 from shared.email_sender import send_email
 from shared.logger import setup_logger
 from shared.runner_base import BaseEmailRunner
-
 from .agent import create_osgop_agent
 
 logger = setup_logger("runner_osgop")
 
 
 class OsgopParserRunner(BaseEmailRunner):
-    """Runner для агента разбора полисов ОСГОП.
-
-    Workflow:
-    1. Получает письмо с вложением (полис ОСГОП)
-    2. Агент: extract_base → extract_insurant → extract_territory →
-              extract_additional → extract_transport → validate → fix
-    3. Отправляет JSON-результат в ответном письме
-    """
+    """Runner для агента разбора полисов ОСГОП."""
 
     @property
     def agent_id(self) -> str:
@@ -45,25 +32,19 @@ class OsgopParserRunner(BaseEmailRunner):
         return create_osgop_agent()
 
     def build_chat_input(self, mail: dict, attachment_texts: list[str]) -> str:
-        body = "
-".join(attachment_texts) or mail.get("body", "")
+        body = "\n".join(attachment_texts) or mail.get("body", "")
         sep = "=" * 60
         return (
-            f"ВХОДЯЩИЙ ПОЛИС ОСГОП
-"
-            f"От: {mail.get('from', '')}
-"
-            f"Тема: {mail.get('subject', '')}
-"
-            f"{sep}
-"
+            f"ВХОДЯЩИЙ ПОЛИС ОСГОП\n"
+            f"От: {mail.get('from', '')}\n"
+            f"Тема: {mail.get('subject', '')}\n"
+            f"{sep}\n"
             f"{body}"
         )
 
     def parse_steps(self, steps: list, result: dict, job_id: str) -> tuple[str, dict, str]:
         decision = ""
         artifacts: dict = {}
-
         for _tool_name, obs in steps:
             if not isinstance(obs, dict):
                 continue
@@ -77,16 +58,12 @@ class OsgopParserRunner(BaseEmailRunner):
             if obs.get("error"):
                 decision = "Ошибка разбора"
                 artifacts["error"] = obs["error"]
-
         if not decision:
             output = result.get("output", "")
             decision = "Разбор завершён" if "разбор завершён" in output.lower() else "Требуется проверка"
-
         data = artifacts.get("osgop_data", {})
         policy = data.get("policy_number", "") if isinstance(data, dict) else ""
-        reply_subject = (
-            f"Результат разбора ОСГОП: {policy}" if policy else "Результат разбора ОСГОП"
-        )
+        reply_subject = f"Результат разбора ОСГОП: {policy}" if policy else "Результат разбора ОСГОП"
         return decision, artifacts, reply_subject
 
     def send_reply(self, sender, subject, reply_subject, decision, artifacts) -> None:
@@ -94,11 +71,10 @@ class OsgopParserRunner(BaseEmailRunner):
         errors = artifacts.get("validation_errors", [])
         error_msg = artifacts.get("error", "")
         div_style = "font-family:Arial;font-size:14px"
-
         if error_msg:
             html = f'<div style="{div_style}"><p><strong>Ошибка: {error_msg}</strong></p></div>'
         elif errors:
-            eb = chr(10).join(f"  - {e}" for e in errors)
+            eb = "\n".join(f"  - {e}" for e in errors)
             html = (
                 f'<div style="{div_style}">'
                 f"<p><strong>Решение: {decision}</strong></p>"
@@ -111,6 +87,5 @@ class OsgopParserRunner(BaseEmailRunner):
                 f"<p><strong>Разбор ОСГОП завершён.</strong></p>"
                 f"<pre>{json.dumps(data, ensure_ascii=False, indent=2)}</pre></div>"
             )
-
         send_email(to=sender, subject=reply_subject or f"Re: {subject}", html_body=html)
-        logger.info("Ответ агента ОСГОП отправлен → %s", sender)
+        logger.info("Ответ агента ОСГОП отправлен: %s", sender)
