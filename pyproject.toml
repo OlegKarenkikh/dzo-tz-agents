@@ -95,7 +95,7 @@ select = ["E", "F", "W", "I", "UP", "B", "C4"]
 ignore = ["E501", "B008", "B904"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*.py" = ["F401", "E402", "I001", "E701", "E702", "F811", "F841", "E401", "B007", "C408", "C401"]
+"tests/*.py" = ["F401", "E402", "I001", "E701", "E702", "F811", "F841", "E401", "B007", "C408", "C401", "UP017", "UP031"]
 "agent4_leasing_parser/*.py" = ["I001"]
 "agent5_osago_parser/*.py" = ["I001"]
 "agent6_transportation_parser/*.py" = ["I001"]
