@@ -58,7 +58,13 @@ class TZInspectionResult(BaseModel):
     @field_validator("overall_status", mode="before")
     @classmethod
     def normalize_status(cls, v: str) -> str:
-        return str(v) if v else ""
+        if not v:
+            return ""
+        s = str(v).strip()
+        # Нормализуем ALLCAPS → "Первая заглавная, остальные строчные"
+        if s.isupper():
+            return s[0].upper() + s[1:].lower() if s else s
+        return s
 
     category: str = ""
     sections: list[dict] = Field(default_factory=list)

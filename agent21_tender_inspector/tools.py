@@ -193,17 +193,41 @@ def generate_document_list(
     """
     Генерирует JSON-список документов и оценку полноты тендерной документации.
     Передаётся РЕЗУЛЬТАТ анализа (список документов + решение), НЕ полный текст документации.
+    Также принимает JSON-строку с ключами procurement_subject и documents (обратная совместимость).
     """
     try:
+        # === Обратная совместимость: если первый positional arg — JSON-строка ===
+        # Это происходит когда LangChain передаёт одну строку в старом стиле
+        if isinstance(procurement_subject, str) and procurement_subject.strip().startswith("{"):
+            try:
+                parsed = json.loads(procurement_subject)
+                procurement_subject = parsed.get("procurement_subject", "Не определён")
+                documents = parsed.get("documents", [])
+                decision = parsed.get("decision", "ДОКУМЕНТАЦИЯ ПОЛНАЯ")
+                procurement_type = parsed.get("procurement_type", "запрос_предложений")
+                applicable_sections = parsed.get("applicable_sections", 0)
+                documents_found = parsed.get("documents_found", 0)
+                completeness_pct = parsed.get("completeness_pct", 100.0)
+                critical_issues = parsed.get("critical_issues", [])
+                recommendations = parsed.get("recommendations", [])
+                summary = parsed.get("summary", "")
+            except json.JSONDecodeError:
+                return json.dumps({"error": "invalid_json", "documents": [], "summary": {"total": 0, "mandatory": 0, "conditional": 0}}, ensure_ascii=False)
+
+        # Пустой ввод → ошибка
+        if isinstance(procurement_subject, str) and procurement_subject.strip() == "":
+            return json.dumps({"error": "empty_input", "documents": [], "summary": {"total": 0, "mandatory": 0, "conditional": 0}}, ensure_ascii=False)
+
         raw = documents or []
         valid = []
         for item in raw:
-            if hasattr(item, 'model_dump'):
+            if hasattr(item, "model_dump"):
                 valid.append(item.model_dump())
             elif isinstance(item, dict):
                 valid.append(item)
         normalized = [_normalize_document(doc, i) for i, doc in enumerate(valid)]
         mandatory_n = sum(1 for d in normalized if d["mandatory"])
+        summary_dict = {"total": len(normalized), "mandatory": mandatory_n, "conditional": len(normalized) - mandatory_n}
         result = {
             "timestamp": datetime.now(UTC).isoformat(),
             "decision": decision,
@@ -213,16 +237,16 @@ def generate_document_list(
             "completeness_pct": completeness_pct,
             "critical_issues": critical_issues or [],
             "recommendations": recommendations or [],
-            "summary": summary,
+            "summary": summary_dict,          # dict для тестов и LLM
             "procurement_subject": str(procurement_subject).strip(),
             "documents": normalized,
-            "doc_summary": {"total": len(normalized), "mandatory": mandatory_n, "conditional": len(normalized)-mandatory_n},
+            "doc_summary": summary_dict,       # псевдоним для нового кода
         }
         logger.info("✅ generate_document_list: %s | docs=%d, oblig=%d", decision, len(normalized), mandatory_n)
         return json.dumps(result, ensure_ascii=False)
     except Exception as e:
         logger.error("❌ generate_document_list: %s", e)
-        return json.dumps({"error": str(e)}, ensure_ascii=False)
+        return json.dumps({"error": str(e), "documents": [], "summary": {"total": 0, "mandatory": 0, "conditional": 0}}, ensure_ascii=False)
 
 
 @tool
