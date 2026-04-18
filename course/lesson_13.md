@@ -223,6 +223,27 @@ grep "Creating agent\|Cache hit" logs/agent.log | head -20
 
 ---
 
+## 🛠️ Практическое задание
+
+**Задача:** Воспроизведи защиту от дублей из урока.
+
+1. Запусти агента ДЗО дважды с одинаковым `request_id`:
+```bash
+curl -X POST http://localhost:8000/api/v1/dzo/inspect \
+  -H "X-Request-ID: test-dedup-001" \
+  -d '{"email_text": "Тестовый запрос"}'
+
+# Снова тот же request_id
+curl -X POST http://localhost:8000/api/v1/dzo/inspect \
+  -H "X-Request-ID: test-dedup-001" \
+  -d '{"email_text": "Тестовый запрос"}'
+```
+2. Убедись, что второй ответ содержит `"status": "duplicate"` вместо повторного анализа.
+3. Проверь логи — LLM не должна вызываться второй раз.
+
+**Ожидаемый результат:** Второй запрос возвращает кешированный результат за < 50ms без вызова LLM.
+
+
 ## ✅ Проверь себя
 
 1. Назови три уровня защиты LLM-агента.
