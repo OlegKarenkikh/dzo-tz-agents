@@ -16,7 +16,7 @@ from api.app import app  # noqa: E402
 
 client = TestClient(app, raise_server_exceptions=False)
 
-TEST_KEY = "test-secret"  # Соответствует conftest.py
+TEST_KEY = os.environ.get("API_KEY", "sandbox-test-api-key-12345")
 
 
 # ─── CORS ─────────────────────────────────────────────────────
