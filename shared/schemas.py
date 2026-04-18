@@ -31,29 +31,44 @@ class DZOInspectionResult(BaseModel):
 
 
 class TZInspectionResult(BaseModel):
-    """Structured output for TZ inspector agent."""
-    overall_status: str = "Требует доработки"
+    """Structured output for TZ inspector agent.
+
+    Принимает поле 'decision' (формат tz_v2.md) и 'overall_status' (обратная совместимость).
+    """
+    decision: str = "ВЕРНУТЬ НА ДОРАБОТКУ"
+
+    @field_validator("decision", mode="before")
+    @classmethod
+    def normalize_decision(cls, v: str) -> str:
+        if not isinstance(v, str):
+            return "ВЕРНУТЬ НА ДОРАБОТКУ"
+        canonical = {
+            "принять": "ПРИНЯТЬ",
+            "принять с замечанием": "ПРИНЯТЬ С ЗАМЕЧАНИЕМ",
+            "вернуть на доработку": "ВЕРНУТЬ НА ДОРАБОТКУ",
+            "соответствует": "ПРИНЯТЬ",
+            "требует доработки": "ВЕРНУТЬ НА ДОРАБОТКУ",
+            "не соответствует": "ВЕРНУТЬ НА ДОРАБОТКУ",
+            "вернуть": "ВЕРНУТЬ НА ДОРАБОТКУ",
+        }
+        return canonical.get(v.lower().strip(), v if v in {"ПРИНЯТЬ","ПРИНЯТЬ С ЗАМЕЧАНИЕМ","ВЕРНУТЬ НА ДОРАБОТКУ"} else "ВЕРНУТЬ НА ДОРАБОТКУ")
+
+    overall_status: str = ""
 
     @field_validator("overall_status", mode="before")
     @classmethod
     def normalize_status(cls, v: str) -> str:
-        if not isinstance(v, str):
-            return str(v)
-        mapping = {
-            "соответствует": "Соответствует",
-            "принять": "Соответствует",
-            "принять с замечанием": "Принять с замечанием",
-            "требует доработки": "Требует доработки",
-            "вернуть на доработку": "Вернуть на доработку",
-            "вернуть": "Вернуть на доработку",
-        }
-        return mapping.get(v.lower().strip(), v)
+        return str(v) if v else ""
 
     category: str = ""
     sections: list[dict] = Field(default_factory=list)
+    sections_present: dict = Field(default_factory=dict)
+    missing_critical: list[str] = Field(default_factory=list)
+    missing_optional: list[str] = Field(default_factory=list)
     critical_issues: list[str] = Field(default_factory=list)
     recommendations: list[str] = Field(default_factory=list)
     score_pct: float = Field(ge=0, le=100, default=0)
+    summary: str = ""
 
 
 class TenderInspectionResult(BaseModel):

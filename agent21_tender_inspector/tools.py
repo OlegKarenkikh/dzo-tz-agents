@@ -3,6 +3,7 @@ import re
 from datetime import UTC, datetime
 
 from langchain.tools import tool
+from pydantic import BaseModel, ConfigDict, Field
 
 from shared.agent_tooling import invoke_agent_as_tool
 from shared.logger import setup_logger
@@ -147,89 +148,80 @@ def _normalize_document(doc: dict, idx: int) -> dict:
 #  Инструменты агента                                                          #
 # --------------------------------------------------------------------------- #
 
-@tool
-def generate_document_list(query: str) -> str:
-    """
-    Генерирует структурированный JSON-список документов, требуемых от участника закупки.
+class _DocItem(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    name: str = ""
+    type: str = "иное"
+    category: str = "other"
+    mandatory: bool = True
+    section_reference: str = ""
+    requirements: str = ""
+    validity: str = "Не указан"
+    quote: str = ""
+    application_part: str = "qualification"
+    basis: str = "Прямое требование"
 
-    ⚠️ НЕ передавай полный текст документации! Передай ТОЛЬКО результаты анализа:
-    {"procurement_subject":"Страхование ДМС",
-     "documents":[
-       {"name":"Копия лицензии ЦБ РФ на ДМС",
-        "type":"лицензия","category":"certificate","mandatory":true,
-        "section_reference":"Раздел 3.2",
-        "requirements":"Нотариально заверенная копия, действующая на дату подачи",
-        "validity":"действующая на дату подачи",
-        "quote":"Копия лицензии ЦБ РФ на ДМС — нотариально заверенная",
-        "application_part":"qualification",
-        "basis":"Прямое требование"},
-       {"name":"Свидетельство о членстве в РСС",
-        "type":"свидетельство","category":"certificate","mandatory":true,
-        "section_reference":"Раздел 2.2",
-        "requirements":"Действующее на дату подачи заявки",
-        "validity":"действующее",
-        "quote":"Участник должен состоять в Российском союзе страховщиков",
-        "application_part":"qualification",
-        "basis":"Прямое требование"}
-     ]}
+
+class _GenDocListInput(BaseModel):
+    """Structured args — исключает ошибку 'Error invoking tool with kwargs'."""
+    model_config = ConfigDict(extra="allow")
+    procurement_subject: str = "Не определён"
+    documents: list = Field(default_factory=list)
+    decision: str = "ДОКУМЕНТАЦИЯ ПОЛНАЯ"
+    procurement_type: str = "запрос_предложений"
+    applicable_sections: int = 0
+    documents_found: int = 0
+    completeness_pct: float = 100.0
+    critical_issues: list = Field(default_factory=list)
+    recommendations: list = Field(default_factory=list)
+    summary: str = ""
+
+
+@tool(args_schema=_GenDocListInput)
+def generate_document_list(
+    procurement_subject: str = "Не определён",
+    documents: list = None,
+    decision: str = "ДОКУМЕНТАЦИЯ ПОЛНАЯ",
+    procurement_type: str = "запрос_предложений",
+    applicable_sections: int = 0,
+    documents_found: int = 0,
+    completeness_pct: float = 100.0,
+    critical_issues: list = None,
+    recommendations: list = None,
+    summary: str = "",
+) -> str:
+    """
+    Генерирует JSON-список документов и оценку полноты тендерной документации.
+    Передаётся РЕЗУЛЬТАТ анализа (список документов + решение), НЕ полный текст документации.
     """
     try:
-        logger.debug("🔧 generate_document_list вызван (%d симв.)", len(query) if query else 0)
-
-        # Если сам запрос пустой/пробелы — LLM не смогла выдать результат
-        if not query or not query.strip():
-            return json.dumps(
-                {"error": "Пустой запрос инструмента (превышен лимит токенов LLM)"},
-                ensure_ascii=False,
-            )
-
-        d = _parse_query(query, "generate_document_list")
-
-        if d is None or not isinstance(d, dict):
-            logger.warning(
-                "⚠️ generate_document_list: получен не-JSON или не-dict, создаём скелет результата"
-            )
-            d = {
-                "procurement_subject": "Не определён",
-                "documents": [],
-            }
-
-        raw_docs = d.get("documents", [])
-        if not isinstance(raw_docs, list):
-            raw_docs = []
-
-        # Оставляем только dict-элементы, чтобы _normalize_document не падал на doc.get(...)
-        valid_docs = [doc for doc in raw_docs if isinstance(doc, dict)]
-        skipped_count = len(raw_docs) - len(valid_docs)
-        if skipped_count > 0:
-            logger.warning(
-                "⚠️ generate_document_list: пропущено %d не-dict документов из %d",
-                skipped_count,
-                len(raw_docs),
-            )
-
-        documents = [_normalize_document(doc, i) for i, doc in enumerate(valid_docs)]
-
-        mandatory_count = sum(1 for doc in documents if doc["mandatory"])
-        conditional_count = len(documents) - mandatory_count
-
+        raw = documents or []
+        valid = []
+        for item in raw:
+            if hasattr(item, 'model_dump'):
+                valid.append(item.model_dump())
+            elif isinstance(item, dict):
+                valid.append(item)
+        normalized = [_normalize_document(doc, i) for i, doc in enumerate(valid)]
+        mandatory_n = sum(1 for d in normalized if d["mandatory"])
         result = {
             "timestamp": datetime.now(UTC).isoformat(),
-            "procurement_subject": str(d.get("procurement_subject", "Не определён")).strip(),
-            "documents": documents,
-            "summary": {
-                "total": len(documents),
-                "mandatory": mandatory_count,
-                "conditional": conditional_count,
-            },
+            "decision": decision,
+            "procurement_type": procurement_type,
+            "applicable_sections": applicable_sections,
+            "documents_found": documents_found or len(normalized),
+            "completeness_pct": completeness_pct,
+            "critical_issues": critical_issues or [],
+            "recommendations": recommendations or [],
+            "summary": summary,
+            "procurement_subject": str(procurement_subject).strip(),
+            "documents": normalized,
+            "doc_summary": {"total": len(normalized), "mandatory": mandatory_n, "conditional": len(normalized)-mandatory_n},
         }
-        logger.info(
-            "✅ generate_document_list: список готов (%d документов, %d обязательных)",
-            len(documents), mandatory_count,
-        )
+        logger.info("✅ generate_document_list: %s | docs=%d, oblig=%d", decision, len(normalized), mandatory_n)
         return json.dumps(result, ensure_ascii=False)
     except Exception as e:
-        logger.error("❌ generate_document_list: ошибка %s", e)
+        logger.error("❌ generate_document_list: %s", e)
         return json.dumps({"error": str(e)}, ensure_ascii=False)
 
 

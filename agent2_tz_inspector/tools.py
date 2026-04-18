@@ -95,9 +95,14 @@ class PeerAgentInvokeInput(BaseModel):
 # ---------------------------------------------------------------------------
 
 class _TZReportInput(BaseModel):
-    """Permissive input schema — validation happens inside the function body."""
+    """Permissive input schema — принимает новый формат tz_v2.md и старый формат."""
     model_config = ConfigDict(extra="allow")
 
+    decision: str = ""
+    sections_present: dict = Field(default_factory=dict)
+    missing_critical: list = Field(default_factory=list)
+    missing_optional: list = Field(default_factory=list)
+    summary: str = ""
     overall_status: str = "Требует доработки"
     category: str = "Не определена"
     sections: list = Field(default_factory=list)
@@ -108,6 +113,11 @@ class _TZReportInput(BaseModel):
 
 @tool(args_schema=_TZReportInput)
 def generate_json_report(
+    decision: str = "",
+    sections_present: dict = None,
+    missing_critical: list = None,
+    missing_optional: list = None,
+    summary: str = "",
     overall_status: str = "Требует доработки",
     category: str = "Не определена",
     sections: list = None,
@@ -118,24 +128,35 @@ def generate_json_report(
     """
     Генерирует структурированный JSON-отчёт проверки ТЗ по 8 разделам.
     Передай ТОЛЬКО краткие результаты анализа — не полный текст ТЗ.
+    Принимает новый формат (decision, sections_present, missing_critical) и старый (overall_status, sections).
     """
+    effective = decision if decision else overall_status
     kwargs = {
-        "overall_status": overall_status,
+        "decision": effective,
+        "overall_status": effective,
         "category": category,
         "sections": sections or [],
-        "critical_issues": critical_issues or [],
+        "sections_present": sections_present or {},
+        "critical_issues": critical_issues or missing_critical or [],
+        "missing_critical": missing_critical or [],
+        "missing_optional": missing_optional or [],
         "recommendations": recommendations or [],
         "score_pct": score_pct,
+        "summary": summary,
     }
     try:
         validated = TZInspectionResult.model_validate(kwargs)
         return json.dumps(validated.model_dump(), ensure_ascii=False, indent=2)
     except ValidationError as e:
-        # Graceful fallback — return raw JSON with validation warnings
+        logger.warning("⚠️ generate_json_report ValidationError: %s", e)
         return json.dumps({
-            "raw_input": kwargs,
-            "validation_errors": [err["msg"] for err in e.errors()],
-            "overall_status": kwargs.get("overall_status", "Требует доработки"),
+            "decision": effective,
+            "score_pct": score_pct,
+            "sections_present": sections_present or {},
+            "missing_critical": missing_critical or [],
+            "missing_optional": missing_optional or [],
+            "recommendations": recommendations or [],
+            "summary": summary,
         }, ensure_ascii=False, indent=2)
 
 
