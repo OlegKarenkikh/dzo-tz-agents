@@ -19,9 +19,9 @@
 | № | Тема | Иллюстрации |
 |---|------|------------|
 | 1 | 🖥️ Изолированное окружение (venv) | `lesson_01_venv.jpg`, `lesson_01_git.jpg` |
-| 2 | 🐛 Баг — что это и как искать | `lesson_02_bug.png` |
-| 3 | 🌐 curl — разговариваем с агентом | `lesson_03_http.png` |
-| 4 | 🔑 Токен — ваш ключ к агентам | `lesson_04_token.png` |
+| 2 | 🐛 Баг — что это и как искать | `lesson_02_bug.jpg` |
+| 3 | 🌐 curl — разговариваем с агентом | `lesson_03_http.jpg` |
+| 4 | 🔑 Токен — ваш ключ к агентам | `lesson_04_token.jpg` |
 
 👉 Файлы: [lesson_01](lesson_01_venv.md) · [lesson_02](lesson_02_bug.md) · [lesson_03](lesson_03_curl.md) · [lesson_04](lesson_04_token.md)
 
@@ -29,10 +29,10 @@
 
 | № | Тема | Иллюстрации |
 |---|------|------------|
-| 5 | 🧠 LLM — мозг агента, паттерн ReAct | `lesson_05_llm_tools.png`, `lesson_05_temperature.png` |
-| 6 | 🔧 Инструмент — что это и как создать | `lesson_06_what_is_tool.png`, `lesson_06_docstring.png` |
-| 7 | 🤝 Агент как инструмент — межагентные вызовы | `lesson_07_agent_as_tool.png` |
-| 8 | 🌐 MCP и A2A — интеграция с внешним миром | `lesson_08_mcp_a2a.png` |
+| 5 | 🧠 LLM — мозг агента, паттерн ReAct | `lesson_05_llm_tools.jpg`, `lesson_05_temperature.jpg` |
+| 6 | 🔧 Инструмент — что это и как создать | `lesson_06_what_is_tool.jpg`, `lesson_06_docstring.jpg` |
+| 7 | 🤝 Агент как инструмент — межагентные вызовы | `lesson_07_agent_as_tool.jpg` |
+| 8 | 🌐 MCP и A2A — интеграция с внешним миром | `lesson_08_mcp_a2a.jpg` |
 
 👉 Файлы: [lesson_05](lesson_05_llm.md) · [lesson_06](lesson_06_what_is_tool.md) · [lesson_07](lesson_07_agent_as_tool.md) · [lesson_08](lesson_08_mcp_a2a.md)
 
@@ -40,9 +40,9 @@
 
 | № | Тема | Иллюстрации |
 |---|------|------------|
-| 9 | 🤖 Агент ДЗО — инспектор заявок | `lesson_09_agent_dzo.png` |
-| 10 | 📄 Агент ТЗ — инспектор технических заданий | `lesson_10_agent_tz.png` |
-| 11 | 📊 Агент Тендер и Collector | `lesson_11_agents_tender_collector.png`, `lesson_14_agent21_tender.png`, `lesson_15_agent3_collector.png` |
+| 9 | 🤖 Агент ДЗО — инспектор заявок | `lesson_09_agent_dzo.jpg` |
+| 10 | 📄 Агент ТЗ — инспектор технических заданий | `lesson_10_agent_tz.jpg` |
+| 11 | 📊 Агент Тендер и Collector | `lesson_11_agents_tender_collector.jpg`, `lesson_14_agent21_tender.jpg`, `lesson_15_agent3_collector.jpg` |
 
 👉 Файлы: [lesson_09](lesson_09_agent_dzo.md) · [lesson_10](lesson_10_agent_tz.md) · [lesson_11](lesson_11_agents_tender_collector.md)
 
@@ -50,11 +50,11 @@
 
 | № | Тема | Иллюстрации |
 |---|------|------------|
-| 12 | 📝 Промпты — анатомия и правила | `lesson_12_prompt_dzo.png` |
-| 13 | 🛡️ Безопасность LLM и защита промптов | `lesson_13_llm_protection.png`, `lesson_13_defense_levels.png` |
-| 14 | 🤝 Межагентные вызовы: peer и Тендер | `lesson_14_peer_call.png`, `lesson_14_tender_lifecycle.png` |
-| 15 | 🔍 Агент Collector: сбор и проверка ИНН | `lesson_15_inn_check.png` |
-| 16 | ✍️ Шаблоны промптов и версионирование | `lesson_16_prompt_template.png`, `lesson_16_versioning.png`, `lesson_16_7sections.png` |
+| 12 | 📝 Промпты — анатомия и правила | `lesson_12_prompt_dzo.jpg` |
+| 13 | 🛡️ Безопасность LLM и защита промптов | `lesson_13_llm_protection.jpg`, `lesson_13_defense_levels.jpg` |
+| 14 | 🤝 Межагентные вызовы: peer и Тендер | `lesson_14_peer_call.jpg`, `lesson_14_tender_lifecycle.jpg` |
+| 15 | 🔍 Агент Collector: сбор и проверка ИНН | `lesson_15_inn_check.jpg` |
+| 16 | ✍️ Шаблоны промптов и версионирование | `lesson_16_prompt_template.jpg`, `lesson_16_versioning.jpg`, `lesson_16_7sections.jpg` |
 
 👉 Файлы: [lesson_12](lesson_12_prompts.md) · [lesson_13](lesson_13.md) · [lesson_14](lesson_14.md) · [lesson_15](lesson_15.md) · [lesson_16](lesson_16.md)
 
@@ -62,8 +62,8 @@
 
 | № | Тема | Иллюстрации |
 |---|------|------------|
-| 17 | 🧪 Тестирование агентов: unit, mock, e2e | `lesson_17_test_pyramid.png`, `lesson_17_mock_vs_real.png`, `lesson_17_pytest_markers.png` |
-| 18 | 🚀 CI/CD: GitHub Actions и деплой | `lesson_18_ci_pipeline.png`, `lesson_18_ci_jobs.png`, `lesson_18_deploy_flow.png` |
+| 17 | 🧪 Тестирование агентов: unit, mock, e2e | `lesson_17_test_pyramid.jpg`, `lesson_17_mock_vs_real.jpg`, `lesson_17_pytest_markers.jpg` |
+| 18 | 🚀 CI/CD: GitHub Actions и деплой | `lesson_18_ci_pipeline.jpg`, `lesson_18_ci_jobs.jpg`, `lesson_18_deploy_flow.jpg` |
 
 👉 Файлы: [lesson_17](lesson_17_testing.md) · [lesson_18](lesson_18_ci.md)
 
@@ -71,7 +71,7 @@
 
 | № | Тема | Иллюстрации |
 |---|------|------------|
-| 19 | 🔧 Навыки агента — инструменты, схемы и docstring | `lesson_19_tool_anatomy.png`, `lesson_19_tools_registry.png`, `lesson_19_docstring_rules.png` |
+| 19 | 🔧 Навыки агента — инструменты, схемы и docstring | `lesson_19_tool_anatomy.jpg`, `lesson_19_tools_registry.jpg`, `lesson_19_docstring_rules.jpg` |
 
 👉 Файл: [lesson_19](lesson_19_skills.md)
 
@@ -79,7 +79,7 @@
 
 ## 📖 Справочник
 
-- [Глоссарий всех терминов](glossary.md) — ДЗО, ТЗ, НМЦ, СРО, IMAP, LLM и другие · `glossary_terms.png`
+- [Глоссарий всех терминов](glossary.md) — ДЗО, ТЗ, НМЦ, СРО, IMAP, LLM и другие · `glossary_terms.jpg`
 - [Все иллюстрации курса](images/) — картинки курса в едином стиле
 
 ---
