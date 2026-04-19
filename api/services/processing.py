@@ -5,11 +5,17 @@
 """
 import base64
 import concurrent.futures
+import json
 import logging
 import threading
 import time
 from datetime import UTC, datetime
 
+from fastapi import HTTPException
+from openai import APIStatusError, AuthenticationError
+from openai import RateLimitError as _RLE
+
+from api.metrics import DECISIONS_TOTAL, JobTimer
 from api.schemas import ProcessRequest
 from api.services.decision import (
     apply_email_artifact,
@@ -30,19 +36,15 @@ from config import (
     MODEL_NAME,
 )
 from shared.database import (
-    count_history as db_count_history,
     create_job,
     find_duplicate_job,
     get_job as db_get_job,
-    get_history as db_get_history,
     update_job,
 )
-
-import json
-import math
-
-from api.metrics import DECISIONS_TOTAL, JobTimer
-from fastapi import HTTPException
+from shared.insurance_domain import (
+    is_insurance_tender,
+    validate_insurance_tender_requirements,
+)
 
 logger = logging.getLogger("api")
 
@@ -346,9 +348,7 @@ def process_with_agent(job_id: str, agent_type: str, request: ProcessRequest, ru
                     except TimeoutError:
                         raise
                     except Exception as exc:
-                        from openai import APIStatusError, AuthenticationError
-                        from openai import RateLimitError as _RLE
-                        _es = str(exc)
+                                _es = str(exc)
                         is_rate = isinstance(exc, _RLE) or ("429" in _es and "rate" in _es.lower())
                         is_tok = (
                             (isinstance(exc, APIStatusError) and getattr(exc, "status_code", 0) == 413)
@@ -402,7 +402,8 @@ def process_with_agent(job_id: str, agent_type: str, request: ProcessRequest, ru
                 if last_exc is None:
                     break
 
-                from openai import APIStatusError as _AS, RateLimitError as _RL
+                _AS = APIStatusError
+                _RL = _RLE
                 _es2 = str(last_exc)
                 _sw = (
                     isinstance(last_exc, (_RL, _AS))
@@ -511,9 +512,6 @@ def process_with_agent(job_id: str, agent_type: str, request: ProcessRequest, ru
 
             if agent_type == "tender":
                 try:
-                    from shared.insurance_domain import (
-                        is_insurance_tender, validate_insurance_tender_requirements,
-                    )
                     _ft = " ".join(att.filename or "" for att in (request.attachments or []))
                     if not _ft:
                         _ft = result.get("output", "")
