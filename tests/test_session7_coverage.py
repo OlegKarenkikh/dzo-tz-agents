@@ -414,7 +414,7 @@ class TestAgentCardWithBaseUrl:
 
 class TestDatabasePgPaths:
     def _mock_pool(self):
-        """Returns (pool_mock, conn_mock, cursor_mock)."""
+        """Returns (pool_mock, conn_mock, cursor_mock). psycopg v3: pool.connection() ctx mgr."""
         cursor = MagicMock()
         cursor.__enter__ = lambda s: s
         cursor.__exit__ = MagicMock(return_value=False)
@@ -423,14 +423,15 @@ class TestDatabasePgPaths:
         conn.__enter__ = lambda s: s
         conn.__exit__ = MagicMock(return_value=False)
         pool = MagicMock()
-        pool.getconn.return_value = conn
+        pool.connection.return_value.__enter__ = lambda s: conn
+        pool.connection.return_value.__exit__ = MagicMock(return_value=False)
         return pool, conn, cursor
 
     def test_init_db_pg_success(self, monkeypatch):
         import shared.database as db
         pool, conn, cursor = self._mock_pool()
         monkeypatch.setattr(db, "DATABASE_URL", "postgresql://mock")
-        with patch("psycopg2.pool.ThreadedConnectionPool", return_value=pool):
+        with patch("psycopg_pool.ConnectionPool", return_value=pool):
             with patch.object(db, "_pool", None):
                 db.init_db()
         cursor.execute.assert_called()
@@ -445,7 +446,7 @@ class TestDatabasePgPaths:
         assert result is None
 
     def test_find_duplicate_pg_returns_row(self, monkeypatch):
-        import shared.database as db, psycopg2.extras
+        import shared.database as db
         pool, conn, cursor = self._mock_pool()
         fake_row = {"job_id": "abc", "agent": "dzo", "status": "done",
                     "sender": "a@b.com", "subject": "Subj", "decision": "ПРИНЯТЬ",
@@ -455,7 +456,7 @@ class TestDatabasePgPaths:
         conn.cursor.return_value = cursor
         monkeypatch.setattr(db, "DATABASE_URL", "postgresql://mock")
         monkeypatch.setattr(db, "_pool", pool)
-        with patch("psycopg2.extras.RealDictCursor", MagicMock):
+        with patch("psycopg.rows.dict_row", MagicMock):
             result = db.find_duplicate_job("dzo", "a@b.com", "Subj")
         assert result is not None
 
@@ -481,7 +482,7 @@ class TestDatabasePgPaths:
         cursor.fetchone.return_value = None
         monkeypatch.setattr(db, "DATABASE_URL", "postgresql://mock")
         monkeypatch.setattr(db, "_pool", pool)
-        with patch("psycopg2.extras.RealDictCursor", MagicMock):
+        with patch("psycopg.rows.dict_row", MagicMock):
             result = db.get_job("nonexistent")
         assert result is None
 
@@ -491,7 +492,7 @@ class TestDatabasePgPaths:
         cursor.fetchall.return_value = []
         monkeypatch.setattr(db, "DATABASE_URL", "postgresql://mock")
         monkeypatch.setattr(db, "_pool", pool)
-        with patch("psycopg2.extras.RealDictCursor", MagicMock):
+        with patch("psycopg.rows.dict_row", MagicMock):
             result = db.get_history(agent="dzo", status="done", limit=10, offset=0)
         assert result == []
 
@@ -516,7 +517,7 @@ class TestDatabasePgPaths:
                                         "approved": 1, "rework": 1, "escalated": 0}
         monkeypatch.setattr(db, "DATABASE_URL", "postgresql://mock")
         monkeypatch.setattr(db, "_pool", pool)
-        with patch("psycopg2.extras.RealDictCursor", MagicMock):
+        with patch("psycopg.rows.dict_row", MagicMock):
             result = db.get_stats()
         assert result is not None  # either dict or {} on error
 
@@ -542,7 +543,7 @@ class TestDatabasePgPaths:
         import shared.database as db
         monkeypatch.setattr(db, "DATABASE_URL", "postgresql://mock")
         pool = MagicMock()
-        pool.getconn.side_effect = Exception("pg connection failed")
+        pool.connection.side_effect = Exception("pg connection failed")
         monkeypatch.setattr(db, "_pool", pool)
         # find_duplicate_job should handle PG errors gracefully
         result = db.find_duplicate_job("dzo", "a@b.com", "S")
@@ -554,4 +555,4 @@ class TestDatabasePgPaths:
         monkeypatch.setattr(db, "_pool", pool)
         monkeypatch.setattr(db, "DATABASE_URL", "postgresql://mock")
         db.close_db()
-        pool.closeall.assert_called_once()
+        pool.close.assert_called_once()
