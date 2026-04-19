@@ -9,6 +9,7 @@ from unittest.mock import MagicMock
 # explicitly via CLI env vars (e.g. OPENAI_API_KEY=real_key pytest -m integration).
 os.environ.setdefault("OPENAI_API_KEY", "sk-test")
 os.environ.setdefault("API_KEY", "sandbox-test-api-key-12345")
+os.environ.setdefault("CORS_ORIGINS", "http://localhost:8501")
 os.environ.setdefault("LLM_BACKEND", "openai")
 
 
