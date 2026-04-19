@@ -1,13 +1,12 @@
 """
 Эндпоинты управления задачами: /jobs, /history, /stats, SSE-stream.
-
-Перенесено из api/app.py (TD-01).
 """
 from __future__ import annotations
 
 import asyncio
 import json
 import logging
+import math
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -54,7 +53,6 @@ def get_history(
     offset = (page - 1) * per_page
     total = db_count_history(agent_type=agent)
     items = db_get_history(agent_type=agent, limit=per_page, offset=offset)
-    import math
     pages = max(1, math.ceil(total / per_page))
     return PaginatedResponse(
         total=total, page=page, per_page=per_page, pages=pages,
@@ -71,6 +69,7 @@ def get_stats(_key: str = Depends(require_api_key)):
 @router.get("/jobs/{job_id}/stream")
 async def stream_job(job_id: str):
     """SSE endpoint для отслеживания прогресса задачи в реальном времени."""
+
     async def _event_gen():
         last_events_count = 0
         poll_interval = 1.0
@@ -79,7 +78,7 @@ async def stream_job(job_id: str):
         while True:
             job = db_get_job(job_id)
             if not job:
-                yield "event: error\ndata: {}\"message\":\"not_found\"}\n\n"
+                yield 'event: error\ndata: {"message":"not_found"}\n\n'
                 return
             result = job.get("result") or {}
             log = result.get("processing_log") or {}
@@ -95,7 +94,9 @@ async def stream_job(job_id: str):
                     payload["error"] = job.get("error")
                 yield "event: done\ndata: " + json.dumps(payload, ensure_ascii=False) + "\n\n"
                 return
-            yield "event: heartbeat\ndata: " + json.dumps({"status": status, "ts": datetime.now(UTC).isoformat()}) + "\n\n"
+            yield "event: heartbeat\ndata: " + json.dumps(
+                {"status": status, "ts": datetime.now(UTC).isoformat()}
+            ) + "\n\n"
             await asyncio.sleep(poll_interval)
             idle_sec += poll_interval
             if idle_sec > max_idle_sec:
