@@ -82,6 +82,9 @@ def get_stats(_key: str = Depends(require_api_key)):
 @router.get("/jobs/{job_id}/stream")
 async def stream_job(job_id: str, _key: str = Depends(require_api_key)):
     """SSE endpoint для отслеживания прогресса задачи в реальном времени."""
+    # Проверяем сразу — TestClient не умеет в async generator 404
+    if not db_get_job(job_id):
+        raise HTTPException(status_code=404, detail="Job not found")
 
     async def _event_gen():
         last_events_count = 0
