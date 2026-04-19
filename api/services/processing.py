@@ -91,7 +91,7 @@ def check_and_process(
     return {"duplicate": False, "existing_job_id": None, "job": job, "message": ""}
 
 
-def process_with_agent(job_id: str, agent_type: str, request: ProcessRequest, run_log) -> None:
+def process_with_agent(job_id: str, agent_type: str, request: ProcessRequest, run_log: list | None = None) -> None:
     """Фоновая задача: запускает агента и сохраняет результат в БД."""
     from shared.llm import (
         LOCAL_BACKENDS, build_fallback_chain, effective_openai_key,
@@ -554,7 +554,8 @@ def process_with_agent(job_id: str, agent_type: str, request: ProcessRequest, ru
                 },
             )
             with _run_log_lock:
-                run_log.append({"agent": agent_type, "ts": ts, "status": "ok", "job_id": job_id})
+                if run_log is not None:
+                    run_log.append({"agent": agent_type, "ts": ts, "status": "ok", "job_id": job_id})
             logger.info("[%s] Завершено. Решение: %s", job_id, decision)
 
         except Exception as e:
@@ -571,7 +572,9 @@ def process_with_agent(job_id: str, agent_type: str, request: ProcessRequest, ru
                 },
             )
             with _run_log_lock:
-                run_log.append({"agent": agent_type, "ts": ts, "status": "error",
+                if run_log is not None:
+                    run_log.append({"agent": agent_type, "ts": ts, "status": "error",
                                 "job_id": job_id, "error": str(e)})
             logger.error("[%s] Ошибка: %s", job_id, e)
             return
+
