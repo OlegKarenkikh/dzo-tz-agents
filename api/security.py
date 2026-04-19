@@ -11,6 +11,7 @@ from fastapi import Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.security import APIKeyHeader
 
+
 logger = logging.getLogger("api")
 
 _DEFAULT_API_KEYS = {"change-me-strong-api-key", "my-test-api-key-12345", ""}
