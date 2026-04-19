@@ -18,8 +18,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
       - name: Install ruff
@@ -34,8 +34,8 @@ jobs:
     needs: lint
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
       - name: Install mypy + stubs
@@ -59,14 +59,14 @@ jobs:
       LLM_BACKEND: "openai"
       JWT_SECRET: "test-secret-for-unit-tests-only"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
 
       - name: Cache pip
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cache/pip
           key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('pyproject.toml', 'requirements.txt') }}
@@ -116,7 +116,7 @@ jobs:
         if: matrix.python-version == '3.11'
         uses: codecov/codecov-action@v5
         with:
-          file: coverage.xml
+          files: coverage.xml
           fail_ci_if_error: false
 
   # ─── E2E Tests (main only or manual dispatch) ───────────────────────────────
@@ -126,8 +126,8 @@ jobs:
     timeout-minutes: 40
     if: (github.ref == 'refs/heads/main' && github.event_name == 'push') || github.event_name == 'workflow_dispatch'
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
@@ -181,7 +181,7 @@ jobs:
 
       - name: Upload accuracy report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: accuracy-report
           path: accuracy_report.json
@@ -205,7 +205,7 @@ jobs:
       packages: write
       actions: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
