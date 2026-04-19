@@ -289,7 +289,7 @@ class EmailClient:
             conn = imaplib.IMAP4_SSL(self.host, self.port)
             conn.login(self.user, self.password)
             conn.select("INBOX")
-            _, data = conn.fetch(email_uid.encode(), "(RFC822)")
+            _, data = conn.fetch(email_uid, "(RFC822)")
             raw_bytes_att = data[0][1] if isinstance(data[0][1], (bytes, bytearray)) else b""
             raw_msg = email.message_from_bytes(raw_bytes_att)
             for part in raw_msg.walk():
