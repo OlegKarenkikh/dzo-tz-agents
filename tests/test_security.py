@@ -191,6 +191,6 @@ class TestInputSizeValidation:
             },
             headers={"X-API-Key": TEST_KEY},
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 202
         data = resp.json()
         assert data.get("job") is not None or "job_id" in data
