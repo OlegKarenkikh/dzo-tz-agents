@@ -57,13 +57,15 @@ def list_jobs(
 @router.get("/history", response_model=PaginatedResponse)
 def get_history(
     agent: str | None = None,
+    status: str | None = None,
+    decision: str | None = None,
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
     _key: str = Depends(require_api_key),
 ):
     offset = (page - 1) * per_page
-    total = db_count_history(agent=agent)
-    items = db_get_history(agent=agent, limit=per_page, offset=offset)
+    total = db_count_history(agent=agent, status=status, decision=decision)
+    items = db_get_history(agent=agent, status=status, decision=decision, limit=per_page, offset=offset)
     pages = max(1, math.ceil(total / per_page))
     return PaginatedResponse(
         total=total, page=page, per_page=per_page, pages=pages,
