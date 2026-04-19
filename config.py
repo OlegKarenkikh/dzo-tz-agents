@@ -150,3 +150,6 @@ CORS_ORIGINS: list[str] = [
 ]
 ENABLE_MCP: bool = os.getenv("ENABLE_MCP", "false").lower() == "true"
 LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
+
+# -- HTTP rate limiting (slowapi) -------------------------------------------
+RATE_LIMIT: str = os.getenv("RATE_LIMIT", "")  # e.g. "100/minute"
