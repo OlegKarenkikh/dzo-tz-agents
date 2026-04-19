@@ -79,7 +79,9 @@ async def upload_file(
         attachments=[AttachmentData(filename=filename, content_base64=content_b64, mime_type=mime)],
         force=force,
     )
-    _agent = agent_type if agent_type else detect_agent_type(request)
+    _agent = (detect_agent_type(request)
+               if not agent_type or agent_type == "auto"
+               else agent_type)
     if _agent not in AGENT_REGISTRY:
         raise HTTPException(status_code=400, detail="Неизвестный агент: " + repr(_agent))
     from fastapi.responses import JSONResponse
