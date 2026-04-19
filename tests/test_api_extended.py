@@ -247,33 +247,33 @@ class TestProcessEndpoints:
 
     def test_process_dzo_returns_job(self, client):
         r = client.post("/api/v1/process/dzo", json=self._body("dzo"), headers=HEADERS)
-        assert r.status_code == 200
+        assert r.status_code == 202
         data = r.json()
         assert "job" in data
 
     def test_process_tz_returns_job(self, client):
         r = client.post("/api/v1/process/tz", json=self._body("tz"), headers=HEADERS)
-        assert r.status_code == 200
+        assert r.status_code == 202
         assert "job" in r.json()
 
     def test_process_tender_returns_job(self, client):
         r = client.post("/api/v1/process/tender", json=self._body("tender"), headers=HEADERS)
-        assert r.status_code == 200
+        assert r.status_code == 202
         assert "job" in r.json()
 
     def test_process_collector_returns_job(self, client):
         r = client.post("/api/v1/process/collector", json=self._body("collector"), headers=HEADERS)
-        assert r.status_code == 200
+        assert r.status_code == 202
         assert "job" in r.json()
 
     def test_process_auto_returns_job(self, client):
         r = client.post("/api/v1/process/auto", json=self._body("auto"), headers=HEADERS)
-        assert r.status_code == 200
+        assert r.status_code == 202
         assert "job" in r.json()
 
     def test_process_generic_agent_dzo(self, client):
         r = client.post("/api/v1/process/dzo", json=self._body(), headers=HEADERS)
-        assert r.status_code == 200
+        assert r.status_code == 202
 
     def test_process_invalid_agent_400(self, client):
         r = client.post("/api/v1/process/nonexistent_agent",
@@ -285,7 +285,7 @@ class TestProcessEndpoints:
         db.update_job(jid, status="done", decision="Заявка полная")
         body = {**self._body(), "force": False}
         r = client.post("/api/v1/process/dzo", json=body, headers=HEADERS)
-        assert r.status_code == 200
+        assert r.status_code == 202
         data = r.json()
         assert data["duplicate"] is True
         assert data["existing_job_id"] == jid
@@ -295,7 +295,7 @@ class TestProcessEndpoints:
         db.update_job(jid, status="done", decision="Заявка полная")
         r = client.post("/api/v1/process/dzo",
                         json={**self._body(), "force": True}, headers=HEADERS)
-        assert r.status_code == 200
+        assert r.status_code == 202
         data = r.json()
         assert data["duplicate"] is False
 
@@ -314,7 +314,7 @@ class TestProcessEndpoints:
 class TestJobsCRUD:
     def test_list_jobs_empty(self, client):
         r = client.get("/api/v1/jobs", headers=HEADERS)
-        assert r.status_code == 200
+        assert r.status_code == 202
         data = r.json()
         assert data["total"] == 0
         assert data["items"] == []
@@ -352,7 +352,7 @@ class TestJobsCRUD:
     def test_delete_job_success(self, client):
         jid = db.create_job("dzo")
         r = client.delete(f"/api/v1/jobs/{jid}", headers=HEADERS)
-        assert r.status_code == 200
+        assert r.status_code == 204
         assert db.get_job(jid) is None
 
     def test_delete_job_not_found_404(self, client):
