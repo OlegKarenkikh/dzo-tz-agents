@@ -62,7 +62,7 @@ def fetch_unseen_emails(
     Помечает письма как прочитанные после обработки.
     Соединение гарантированно закрывается через finally.
     """
-    emails = []
+    emails: list[dict] = []
     M: imaplib.IMAP4_SSL | None = None
     try:
         M = imaplib.IMAP4_SSL(imap_host, imap_port)
@@ -76,7 +76,8 @@ def fetch_unseen_emails(
         for uid in uids[0].split():
             try:
                 _, data = M.fetch(uid, "(RFC822)")
-                msg = email.message_from_bytes(data[0][1])
+                raw_part = data[0][1] if isinstance(data[0][1], (bytes, bytearray)) else b""
+                msg = email.message_from_bytes(raw_part)
 
                 subject = _decode_str(msg.get("Subject", ""))
                 from_ = _decode_str(msg.get("From", ""))
@@ -91,11 +92,11 @@ def fetch_unseen_emails(
 
                     if ct == "text/plain" and "attachment" not in cd:
                         payload = part.get_payload(decode=True)
-                        if payload:
+                        if payload and isinstance(payload, (bytes, bytearray)):
                             body = payload.decode("utf-8", errors="ignore")
                     elif ct == "text/html" and "attachment" not in cd and not body:
                         payload = part.get_payload(decode=True)
-                        if payload:
+                        if payload and isinstance(payload, (bytes, bytearray)):
                             body = payload.decode("utf-8", errors="ignore")
                     elif "attachment" in cd or part.get_filename():
                         filename = _decode_str(part.get_filename() or "unknown")
@@ -107,7 +108,7 @@ def fetch_unseen_emails(
                                 "ext": ext,
                                 "data": payload,
                                 "mime": part.get_content_type(),
-                                "b64": base64.b64encode(payload).decode(),
+                                "b64": base64.b64encode(payload if isinstance(payload, (bytes, bytearray)) else b"").decode(),
                             })
 
                 M.store(uid, "+FLAGS", "\\\\Seen")
@@ -257,7 +258,8 @@ class EmailClient:
                     continue
                 try:
                     _, data = conn.fetch(uid, "(RFC822)")
-                    raw_msg = email.message_from_bytes(data[0][1])
+                    raw_part_fetch = data[0][1] if isinstance(data[0][1], (bytes, bytearray)) else b""
+                    raw_msg = email.message_from_bytes(raw_part_fetch)
                     msg = self._parse_email_message(uid.decode(), raw_msg)
                     if subject_filter and subject_filter.lower() not in msg.subject.lower():
                         continue
@@ -287,13 +289,14 @@ class EmailClient:
             conn = imaplib.IMAP4_SSL(self.host, self.port)
             conn.login(self.user, self.password)
             conn.select("INBOX")
-            _, data = conn.fetch(email_uid.encode(), "(RFC822)")
-            raw_msg = email.message_from_bytes(data[0][1])
+            _, data = conn.fetch(email_uid, "(RFC822)")
+            raw_bytes_att = data[0][1] if isinstance(data[0][1], (bytes, bytearray)) else b""
+            raw_msg = email.message_from_bytes(raw_bytes_att)
             for part in raw_msg.walk():
                 fn = _decode_str(part.get_filename() or "")
                 if fn == attachment_id:
                     payload = part.get_payload(decode=True)
-                    return payload or b""
+                    return payload if isinstance(payload, (bytes, bytearray)) else b""
         except Exception as e:
             logger.error("Error downloading attachment: %s", e)
         finally:
@@ -345,7 +348,7 @@ class EmailClient:
             cd = str(part.get("Content-Disposition", ""))
             if ct == "text/plain" and "attachment" not in cd:
                 payload = part.get_payload(decode=True)
-                if payload:
+                if payload and isinstance(payload, (bytes, bytearray)):
                     body = payload.decode("utf-8", errors="ignore")
             elif "attachment" in cd or part.get_filename():
                 filename = _decode_str(part.get_filename() or "unknown")
@@ -357,7 +360,7 @@ class EmailClient:
                         "ext": ext,
                         "data": payload,
                         "mime": ct,
-                        "b64": base64.b64encode(payload).decode(),
+                        "b64": base64.b64encode(payload if isinstance(payload, (bytes, bytearray)) else b"").decode(),
                         "size_bytes": len(payload),
                     })
 

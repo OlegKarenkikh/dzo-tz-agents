@@ -163,26 +163,26 @@ def generate_json_report(
 @tool(args_schema=CorrectedTzInput)
 def generate_corrected_tz(
     title: str = "Исправленное ТЗ",
-    original_sections: list[OriginalSection] = None,
-    added_sections: list[AddedSection] = None,
-    modifications: list[Modification] = None,
+    original_sections: list[OriginalSection] | None = None,
+    added_sections: list[AddedSection] | None = None,
+    modifications: list[Modification] | None = None,
 ) -> str:
     """
     Генерирует HTML-версию исправленного ТЗ с цветовой разметкой.
     Передай только список изменений — не полный текст ТЗ.
     """
-    original_sections = original_sections or []
-    added_sections = added_sections or []
-    modifications = modifications or []
+    orig_sections: list[OriginalSection] = list(original_sections) if original_sections else []
+    added_secs: list[AddedSection] = list(added_sections) if added_sections else []
+    mods_list: list[Modification] = list(modifications) if modifications else []
     try:
         logger.debug("🔧 generate_corrected_tz вызван (разделов: %d, изменений: %d)",
-                     len(original_sections), len(modifications))
+                     len(orig_sections), len(mods_list))
         sections_html = ""
-        for sec in original_sections:
-            mods = [m for m in modifications if m.section == sec.name]
+        for sec in orig_sections:
+            sec_mods = [m for m in mods_list if m.section == sec.name]
             sections_html += f"<h2>{html_escape(sec.name)}</h2>"
-            if mods:
-                for m in mods:
+            if sec_mods:
+                for m in sec_mods:
                     old, new = html_escape(m.old_text), html_escape(m.new_text)
                     sections_html += (
                         f"<p><span style='background:#FFD7D7;text-decoration:line-through'>[БЫЛО: {old}]</span>"
@@ -195,11 +195,11 @@ def generate_corrected_tz(
             else:
                 sections_html += f"<p>{html_escape(sec.content)}</p>"
 
-        for sec in added_sections:
+        for added_sec in added_secs:
             sections_html += (
-                f"<h2><span style='background:#FFFF00;color:#CC0000'>[ДОБАВЛЕНО] {html_escape(sec.name)}</span></h2>"
+                f"<h2><span style='background:#FFFF00;color:#CC0000'>[ДОБАВЛЕНО] {html_escape(added_sec.name)}</span></h2>"
                 f"<p><span style='background:#FFFF00;color:#CC0000'>"
-                f"{html_escape(sec.content or '[Заполните раздел]')}</span></p>"
+                f"{html_escape(added_sec.content or '[Заполните раздел]')}</span></p>"
             )
 
         html = (

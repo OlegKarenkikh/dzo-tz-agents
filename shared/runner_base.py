@@ -51,7 +51,7 @@ class BaseAgentRunner:
 
         self._logger.debug("Результат агента (тип: %s): %s", type(result).__name__, result)
 
-        output = ""
+        output: str = ""
         messages: list = []
         intermediate_steps: list = []
 
@@ -59,9 +59,10 @@ class BaseAgentRunner:
             messages = result.get("messages") or []
             if messages:
                 last = messages[-1]
-                output = getattr(last, "content", "") or ""
+                _raw_content = getattr(last, "content", "")
+                output = _raw_content if isinstance(_raw_content, str) else ""
                 if isinstance(output, list):
-                    output = "\n".join(str(x) for x in output)
+                    output = "\n".join(str(x) for x in output if x is not None)
                 # Fallback: some models (e.g. qwen3 via proxy) only emit
                 # tool_calls and never produce a closing text summary.
                 # 1) Walk backwards through AIMessages for non-empty content.

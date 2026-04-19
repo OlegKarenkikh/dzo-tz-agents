@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, dev]
+    branches: [main, dev, fix/audit-remediation]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -13,9 +13,10 @@ concurrency:
 
 jobs:
 
-  # ─── Lint ───────────────────────────────────────────
+  # ─── Lint ───────────────────────────────────────────────────────────────────
   lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -26,13 +27,37 @@ jobs:
       - name: Lint (check-only, no auto-fix)
         run: ruff check . --config pyproject.toml
 
-  # ─── Tests (matrix) ────────────────────────────────
-  test:
+
+  # ─── Type check (mypy) ──────────────────────────────────────────────────────
+  typecheck:
     runs-on: ubuntu-latest
     needs: lint
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install mypy + stubs
+        run: pip install mypy types-psycopg2 pydantic
+      - name: Run mypy
+        run: mypy shared/ api/ config.py --ignore-missing-imports --no-strict-optional
+
+  # ─── Tests (matrix) ─────────────────────────────────────────────────────────
+  test:
+    runs-on: ubuntu-latest
+    needs: [lint, typecheck]
+    timeout-minutes: 25
     strategy:
       matrix:
         python-version: ["3.11", "3.12"]
+    env:
+      # DATABASE_URL intentionally unset: psycopg2 cannot parse asyncpg:// DSN.
+      # database.py automatically falls back to in-memory store when URL is empty.
+      API_KEY: "sandbox-test-api-key-12345"
+      OPENAI_API_KEY: "sk-unit-test"
+      LLM_BACKEND: "openai"
+      JWT_SECRET: "test-secret-for-unit-tests-only"
     steps:
       - uses: actions/checkout@v4
 
@@ -52,15 +77,13 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[ui,dev]"
+          # Extra runtime deps required by tests but not in core pyproject.toml extras
+          pip install "mcp[cli]>=1.3.0" PyJWT
 
       - name: Start API server
         run: |
           uvicorn api.app:app --host 0.0.0.0 --port 8000 > /tmp/uvicorn.log 2>&1 &
           echo $! > /tmp/uvicorn.pid
-        env:
-          LLM_BACKEND: "openai"
-          OPENAI_API_KEY: "sk-unit-test"
-          API_KEY: "sandbox-test-api-key-12345"
 
       - name: Wait for API server to be ready
         run: |
@@ -81,9 +104,6 @@ jobs:
         env:
           TEST_API_BASE: "http://localhost:8000"
           TEST_API_KEY: "sandbox-test-api-key-12345"
-          LLM_BACKEND: "openai"
-          OPENAI_API_KEY: "sk-unit-test"
-          API_KEY: "sandbox-test-api-key-12345"
 
       - name: Stop API server
         if: always()
@@ -99,10 +119,11 @@ jobs:
           file: coverage.xml
           fail_ci_if_error: false
 
-  # ─── E2E Tests (main only or manual dispatch) ─────
+  # ─── E2E Tests (main only or manual dispatch) ───────────────────────────────
   e2e:
     runs-on: ubuntu-latest
     needs: test
+    timeout-minutes: 40
     if: (github.ref == 'refs/heads/main' && github.event_name == 'push') || github.event_name == 'workflow_dispatch'
     steps:
       - uses: actions/checkout@v4
@@ -114,6 +135,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[ui,dev]"
+          pip install "mcp[cli]>=1.3.0" PyJWT
 
       - name: Start API server
         run: |
@@ -165,10 +187,18 @@ jobs:
           path: accuracy_report.json
           if-no-files-found: ignore
 
-  # ─── Docker build + Trivy CVE scan ────────────────────────────
+  # ─── Docker build + Trivy CVE scan ──────────────────────────────────────────
+  #
+  # Security strategy:
+  # - Trivy always runs with exit-code=0 and uploads SARIF to Security tab.
+  # - A separate "security-gate" step reads the SARIF and fails ONLY when
+  #   there are CRITICAL findings WITH an available fix (fixedVersion != "").
+  # - OS-level CVE without upstream fix are tracked in TECHNICAL_DEBT.md and
+  #   must NOT block CI (ignore-unfixed=true handles this at Trivy level too).
   docker:
     runs-on: ubuntu-latest
     needs: [test]
+    timeout-minutes: 20
     permissions:
       contents: read
       security-events: write
@@ -190,7 +220,10 @@ jobs:
           cache-to: type=gha,mode=max
           load: true
 
-      - name: Trivy CVE scan
+      - name: Trivy CVE scan (SARIF upload, no hard fail)
+        # exit-code=0: scan always completes so SARIF is always uploaded.
+        # Security policy is enforced by the "security-gate" step below.
+        # ignore-unfixed: skip CVE where no patched package exists yet.
         uses: aquasecurity/trivy-action@0.35.0
         with:
           image-ref: dzo-tz-agents:${{ github.sha }}
@@ -199,6 +232,51 @@ jobs:
           severity: CRITICAL,HIGH
           exit-code: "0"
           ignore-unfixed: true
+          trivyignores: .trivyignore
+
+      - name: Security gate — fail on CRITICAL CVE with fix available
+        # Policy: only block CI for CRITICAL CVE that have a patched version.
+        # HIGH CVE without fix are tracked in GitHub Security tab.
+        run: |
+          CRITICAL_WITH_FIX=$(python3 - << 'EOF'
+          import json, sys
+
+          try:
+              with open("trivy-results.sarif") as f:
+                  sarif = json.load(f)
+          except FileNotFoundError:
+              print(0)
+              sys.exit(0)
+
+          rules_by_id = {}
+          for run in sarif.get("runs", []):
+              for rule in run.get("tool", {}).get("driver", {}).get("rules", []):
+                  rules_by_id[rule["id"]] = rule
+
+          count = 0
+          for run in sarif.get("runs", []):
+              for result in run.get("results", []):
+                  rule_id = result.get("ruleId", "")
+                  rule = rules_by_id.get(rule_id, {})
+                  props = rule.get("properties", {})
+                  # security-severity >= 9.0 → CRITICAL in CVSS
+                  score = float(props.get("security-severity", "0"))
+                  # fixedVersion is set by Trivy when a patched pkg exists
+                  has_fix = bool(props.get("fixedVersion", "").strip())
+                  if score >= 9.0 and has_fix:
+                      count += 1
+
+          print(count)
+          EOF
+          )
+
+          echo "CRITICAL CVE with available fix: ${CRITICAL_WITH_FIX}"
+          if [ "${CRITICAL_WITH_FIX}" -gt "0" ]; then
+            echo "::error::${CRITICAL_WITH_FIX} CRITICAL CVE(s) with available fix detected."
+            echo "Update affected packages or add justified entries to .trivyignore"
+            exit 1
+          fi
+          echo "Security gate passed — no CRITICAL CVE with available fix."
 
       - name: Upload Trivy SARIF
         if: always()
@@ -207,7 +285,7 @@ jobs:
           sarif_file: trivy-results.sarif
 
       - name: Generate SBOM
-        uses: anchore/sbom-action@v0
+        uses: anchore/sbom-action@v0.17.0
         with:
           image: dzo-tz-agents:${{ github.sha }}
           artifact-name: sbom-${{ github.sha }}.spdx.json

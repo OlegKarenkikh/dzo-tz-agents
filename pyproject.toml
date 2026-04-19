@@ -109,7 +109,7 @@ ignore = ["E501", "B008", "B904"]
 "agent21_tender_inspector/runner.py" = ["I001", "E402"]
 "agent3_collector_inspector/agent.py" = ["I001", "E402"]
 "api/app.py" = ["I001", "E402"]
-"shared/*.py" = ["UP006", "UP035", "I001", "F401", "C408", "UP045"]
+"shared/*.py" = ["I001", "F401", "C408", "UP045"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["shared", "agent1_dzo_inspector", "agent2_tz_inspector", "agent21_tender_inspector", "agent3_collector_inspector", "agent4_leasing_parser", "agent5_osago_parser", "agent6_transportation_parser", "agent7_osgop_parser", "agent8_responsibility_parser", "api", "ui"]

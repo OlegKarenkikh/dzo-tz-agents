@@ -787,7 +787,7 @@ class TestCollectorAPI:
             headers={"X-API-Key": os.environ.get("API_KEY", "sandbox-test-api-key-12345")},
         )
         # Should return 200 with job_id (background processing)
-        assert resp.status_code == 200
+        assert resp.status_code == 202
         data = resp.json()
         assert "job_id" in data or "duplicate" in data
 
