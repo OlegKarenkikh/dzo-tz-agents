@@ -348,7 +348,7 @@ def process_with_agent(job_id: str, agent_type: str, request: ProcessRequest, ru
                     except TimeoutError:
                         raise
                     except Exception as exc:
-                                _es = str(exc)
+                        _es = str(exc)
                         is_rate = isinstance(exc, _RLE) or ("429" in _es and "rate" in _es.lower())
                         is_tok = (
                             (isinstance(exc, APIStatusError) and getattr(exc, "status_code", 0) == 413)
