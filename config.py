@@ -143,3 +143,10 @@ JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", "HS256")
 
 # -- MCP async pipeline ------------------------------------------------------
 MCP_AGENT_TIMEOUT_SECONDS: int = _safe_int("MCP_AGENT_TIMEOUT_SECONDS", 300)
+
+# -- API server ------------------------------------------------------------------
+CORS_ORIGINS: list[str] = [
+    o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()
+]
+ENABLE_MCP: bool = os.getenv("ENABLE_MCP", "false").lower() == "true"
+LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
