@@ -581,7 +581,7 @@ class TestUploadEndpoint:
             files={"file": ("test.txt", io.BytesIO(content.encode()), "text/plain")},
             data={"agent": "tz", "subject": "Upload test"},
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 202
         assert "job" in resp.json()
 
     def test_upload_without_file_returns_422(self, client):
@@ -601,7 +601,7 @@ class TestUploadEndpoint:
             files={"file": ("spec.txt", io.BytesIO(content.encode()), "text/plain")},
             data={"agent": "auto"},
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 202
 
     def test_upload_without_api_key_returns_401(self, client):
         import io
@@ -692,7 +692,7 @@ class TestTenderInsuranceCBRPostCheck:
             json={"text": "Страхование имущества предприятия 223-ФЗ"},
             headers={"X-API-Key": os.environ.get("API_KEY", "sandbox-test-api-key-12345")},
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 202
         data = resp.json()
         assert "job_id" in data or "duplicate" in data
 
