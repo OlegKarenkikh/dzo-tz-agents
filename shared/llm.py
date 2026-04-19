@@ -459,7 +459,7 @@ def build_llm(temperature: float = 0.0, model_name_override: str | None = None) 
 
     effective_temp = temperature if temperature != 0.0 else LLM_TEMPERATURE
 
-    model_kwargs = {}
+    model_kwargs: dict[str, int | float] = {}
     if LLM_SEED is not None:
         model_kwargs["seed"] = int(LLM_SEED)  # LLM_SEED is int | None; branch ensures non-None
     if LLM_TOP_P != 1.0:
