@@ -1,6 +1,3 @@
-"""
-Эндпоинты управления задачами: /jobs, /history, /stats, SSE-stream.
-"""
 from __future__ import annotations
 
 import asyncio
