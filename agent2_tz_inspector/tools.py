@@ -163,9 +163,9 @@ def generate_json_report(
 @tool(args_schema=CorrectedTzInput)
 def generate_corrected_tz(
     title: str = "Исправленное ТЗ",
-    original_sections: list[OriginalSection] = None,
-    added_sections: list[AddedSection] = None,
-    modifications: list[Modification] = None,
+    original_sections: list[OriginalSection] | None = None,
+    added_sections: list[AddedSection] | None = None,
+    modifications: list[Modification] | None = None,
 ) -> str:
     """
     Генерирует HTML-версию исправленного ТЗ с цветовой разметкой.
