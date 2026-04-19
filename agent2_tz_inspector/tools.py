@@ -171,15 +171,15 @@ def generate_corrected_tz(
     Генерирует HTML-версию исправленного ТЗ с цветовой разметкой.
     Передай только список изменений — не полный текст ТЗ.
     """
-    original_sections = original_sections or []
-    added_sections = added_sections or []
-    modifications = modifications or []
+    orig_sections: list[OriginalSection] = list(original_sections) if original_sections else []
+    added_secs: list[AddedSection] = list(added_sections) if added_sections else []
+    mods_list: list[Modification] = list(modifications) if modifications else []
     try:
         logger.debug("🔧 generate_corrected_tz вызван (разделов: %d, изменений: %d)",
-                     len(original_sections), len(modifications))
+                     len(orig_sections), len(mods_list))
         sections_html = ""
-        for sec in original_sections:
-            mods = [m for m in modifications if m.section == sec.name]
+        for sec in orig_sections:
+            sec_mods = [m for m in mods_list if m.section == sec.name]
             sections_html += f"<h2>{html_escape(sec.name)}</h2>"
             if mods:
                 for m in mods:
@@ -195,7 +195,7 @@ def generate_corrected_tz(
             else:
                 sections_html += f"<p>{html_escape(sec.content)}</p>"
 
-        for sec in added_sections:
+        for sec in added_secs:
             sections_html += (
                 f"<h2><span style='background:#FFFF00;color:#CC0000'>[ДОБАВЛЕНО] {html_escape(sec.name)}</span></h2>"
                 f"<p><span style='background:#FFFF00;color:#CC0000'>"
