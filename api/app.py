@@ -23,7 +23,6 @@ FastAPI REST API для обработки документов агентами
 from __future__ import annotations
 
 import logging
-import os
 import time
 from collections import deque
 from contextlib import asynccontextmanager
@@ -31,7 +30,6 @@ from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 from fastapi import FastAPI, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
