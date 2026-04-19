@@ -1,8 +1,8 @@
 """
 Аутентификация и security-утилиты API.
-
-Перенесено из api/app.py (TD-01).
 """
+from __future__ import annotations
+
 import logging
 import os
 import secrets
@@ -11,7 +11,6 @@ from fastapi import Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.security import APIKeyHeader
 
-
 logger = logging.getLogger("api")
 
 _DEFAULT_API_KEYS = {"change-me-strong-api-key", "my-test-api-key-12345", ""}
@@ -19,27 +18,18 @@ _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 
 def get_api_key() -> str:
-    """Legacy: return first configured API key (backward compat)."""
     return os.getenv("API_KEY", "")
 
 
 def verify_jwt(token: str) -> dict | None:
-    """Verify a JWT bearer token. Returns payload or None."""
-    from config import JWT_SECRET, JWT_ALGORITHM
+    from config import JWT_ALGORITHM, JWT_SECRET
     if not JWT_SECRET:
         return None
     try:
         import jwt
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        return payload
-    except jwt.exceptions.ExpiredSignatureError:
-        logger.debug("JWT expired")
-        return None
-    except jwt.exceptions.DecodeError:
-        logger.debug("JWT decode error")
-        return None
+        return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
     except Exception:
-        logger.warning("JWT unexpected error")
+        logger.debug("JWT verify failed")
         return None
 
 
@@ -72,19 +62,21 @@ def require_api_key(key: str | None = Depends(_api_key_header)) -> str:
 
 
 def make_mcp_auth_guard(mcp_available: bool, cors_origins: list[str]):
-    """Фабрика middleware для защиты /mcp endpoint."""
-
     async def _mcp_auth_guard(request: Request, call_next):
         path = request.url.path
-        if mcp_available and (path == "/mcp" or path.startswith("/mcp/")) and request.method != "OPTIONS":
+        if (
+            mcp_available
+            and (path == "/mcp" or path.startswith("/mcp/"))
+            and request.method != "OPTIONS"
+        ):
             api_key = get_api_key()
             if api_key:
                 provided = (request.headers.get("X-API-Key") or "").strip()
                 if not provided:
-                    auth_header = request.headers.get("Authorization", "").strip()
-                    scheme, _, credentials = auth_header.partition(" ")
+                    auth = request.headers.get("Authorization", "").strip()
+                    scheme, _, creds = auth.partition(" ")
                     if scheme.lower() == "bearer":
-                        provided = credentials.strip()
+                        provided = creds.strip()
                 if not provided or not secrets.compare_digest(provided, api_key):
                     response = JSONResponse({"detail": "Unauthorized"}, status_code=401)
                     origin = request.headers.get("origin", "")
@@ -95,7 +87,9 @@ def make_mcp_auth_guard(mcp_available: bool, cors_origins: list[str]):
                         response.headers["Access-Control-Allow-Origin"] = cors_origins[0]
                         response.headers["Access-Control-Allow-Credentials"] = "true"
                     response.headers["Access-Control-Allow-Methods"] = "GET, POST, DELETE"
-                    response.headers["Access-Control-Allow-Headers"] = "X-API-Key, Authorization, Content-Type, Accept, X-Requested-With"
+                    response.headers["Access-Control-Allow-Headers"] = (
+                        "X-API-Key, Authorization, Content-Type, Accept, X-Requested-With"
+                    )
                     return response
         return await call_next(request)
 
