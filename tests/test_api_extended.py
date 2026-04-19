@@ -314,7 +314,7 @@ class TestProcessEndpoints:
 class TestJobsCRUD:
     def test_list_jobs_empty(self, client):
         r = client.get("/api/v1/jobs", headers=HEADERS)
-        assert r.status_code == 202
+        assert r.status_code == 200
         data = r.json()
         assert data["total"] == 0
         assert data["items"] == []
