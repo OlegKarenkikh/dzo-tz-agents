@@ -22,7 +22,7 @@ router = APIRouter(prefix="/api/v1", tags=["process"])
 _run_log: list[dict] = []
 
 
-@router.post("/process", response_model=DuplicateResponse)
+@router.post("/process", response_model=DuplicateResponse, status_code=202)
 def process_document(
     request: ProcessRequest,
     background_tasks: BackgroundTasks,
@@ -36,14 +36,17 @@ def process_document(
     return check_and_process(agent_type, request, background_tasks, _run_log, AGENT_REGISTRY)
 
 
-@router.post("/process/{agent_type}", response_model=DuplicateResponse)
+@router.post("/process/{agent_type}", response_model=DuplicateResponse, status_code=202)
 def process_document_explicit(
     agent_type: str,
     request: ProcessRequest,
     background_tasks: BackgroundTasks,
     _key: str = Depends(require_api_key),
 ):
-    if agent_type not in AGENT_REGISTRY:
+    # "auto" — псевдоним: определяем агента автоматически
+    if agent_type == "auto":
+        agent_type = detect_agent_type(request)
+    elif agent_type not in AGENT_REGISTRY:
         raise HTTPException(status_code=400, detail="Неизвестный агент: " + repr(agent_type))
     logger.info(
         "/process/%s subject=%r sender=%r",
@@ -79,7 +82,9 @@ async def upload_file(
     _agent = agent_type if agent_type else detect_agent_type(request)
     if _agent not in AGENT_REGISTRY:
         raise HTTPException(status_code=400, detail="Неизвестный агент: " + repr(_agent))
-    return check_and_process(_agent, request, background_tasks, _run_log, AGENT_REGISTRY)
+    from fastapi.responses import JSONResponse
+    result = check_and_process(_agent, request, background_tasks, _run_log, AGENT_REGISTRY)
+    return JSONResponse(content=result, status_code=202)
 
 
 @router.get("/run_log")
