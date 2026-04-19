@@ -313,7 +313,14 @@ def _verify_jwt(token: str) -> dict | None:
         import jwt
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         return payload
+    except jwt.exceptions.ExpiredSignatureError:
+        logger.debug("JWT expired")
+        return None
+    except jwt.exceptions.DecodeError:
+        logger.debug("JWT decode error")
+        return None
     except Exception:
+        logger.warning("JWT unexpected error")
         return None
 
 
@@ -472,7 +479,7 @@ def _apply_email_artifact(artifacts: dict, tool_name: str, email_html: str) -> N
 _KNOWN_DECISIONS = {
     "ПРИНЯТЬ", "ПРИНЯТЬ С ЗАМЕЧАНИЕМ", "ВЕРНУТЬ НА ДОРАБОТКУ",
     "ЗАЯВКА ПОЛНАЯ", "ТРЕБУЕТСЯ ДОРАБОТКА", "ТРЕБУЕТСЯ ЭСКАЛАЦИЯ",
-    "ДОКУМЕНТАЦИЯ ПОЛНАЯ", "ТРЕБУЕТСЯ ДОРАБОТКА", "КРИТИЧЕСКИЕ НАРУШЕНИЯ",
+    "ДОКУМЕНТАЦИЯ ПОЛНАЯ", "КРИТИЧЕСКИЕ НАРУШЕНИЯ",
     "СБОР ЗАВЕРШЁН", "СБОР НЕ ЗАВЕРШЁН", "ТРЕБУЕТСЯ ПРОВЕРКА",
     "СООТВЕТСТВУЕТ", "НЕ СООТВЕТСТВУЕТ",
 }
@@ -1533,31 +1540,31 @@ def check_duplicate(request: Request, agent: str = Query(..., description="ID а
     return DuplicateResponse(duplicate=False, message="Дубликатов не найдено")
 
 
-@app.post("/api/v1/process/dzo", summary="Обработать заявку ДЗО")
+@app.post("/api/v1/process/dzo", status_code=202, summary="Обработать заявку ДЗО")
 @limiter.limit(PROCESS_RATE_LIMIT)
 def process_dzo(body: ProcessRequest, background_tasks: BackgroundTasks, request: Request, _: str = Depends(_require_api_key)):
     return _check_and_process("dzo", body, background_tasks)
 
 
-@app.post("/api/v1/process/tz", summary="Обработать ТЗ")
+@app.post("/api/v1/process/tz", status_code=202, summary="Обработать ТЗ")
 @limiter.limit(PROCESS_RATE_LIMIT)
 def process_tz(body: ProcessRequest, background_tasks: BackgroundTasks, request: Request, _: str = Depends(_require_api_key)):
     return _check_and_process("tz", body, background_tasks)
 
 
-@app.post("/api/v1/process/tender", summary="Парсинг тендерной документации")
+@app.post("/api/v1/process/tender", status_code=202, summary="Парсинг тендерной документации")
 @limiter.limit(PROCESS_RATE_LIMIT)
 def process_tender(body: ProcessRequest, background_tasks: BackgroundTasks, request: Request, _: str = Depends(_require_api_key)):
     return _check_and_process("tender", body, background_tasks)
 
 
-@app.post("/api/v1/process/collector", summary="Сбор документов тендерного отбора")
+@app.post("/api/v1/process/collector", status_code=202, summary="Сбор документов тендерного отбора")
 @limiter.limit(PROCESS_RATE_LIMIT)
 def process_collector(body: ProcessRequest, background_tasks: BackgroundTasks, request: Request, _: str = Depends(_require_api_key)):
     return _check_and_process("collector", body, background_tasks)
 
 
-@app.post("/api/v1/upload", summary="Загрузка и обработка файла (multipart/form-data)")
+@app.post("/api/v1/upload", status_code=202, summary="Загрузка и обработка файла (multipart/form-data)")
 async def upload_and_process(
     background_tasks: BackgroundTasks,
     request: Request,
@@ -1642,14 +1649,14 @@ async def upload_and_process(
     return _check_and_process(agent, proc_request, background_tasks)
 
 
-@app.post("/api/v1/process/auto", summary="Автоопределение типа")
+@app.post("/api/v1/process/auto", status_code=202, summary="Автоопределение типа")
 @limiter.limit(PROCESS_RATE_LIMIT)
 def process_auto(body: ProcessRequest, background_tasks: BackgroundTasks, request: Request, _: str = Depends(_require_api_key)):
     agent_type = _detect_agent_type(body)
     return _check_and_process(agent_type, body, background_tasks)
 
 
-@app.post("/api/v1/process/{agent}", summary="Обработать документ указанным агентом")
+@app.post("/api/v1/process/{agent}", status_code=202, summary="Обработать документ указанным агентом")
 @limiter.limit(PROCESS_RATE_LIMIT)
 def process_agent(body: ProcessRequest, background_tasks: BackgroundTasks, request: Request, agent: str = Path(...), _: str = Depends(_require_api_key)):
     return _check_and_process(agent, body, background_tasks)
@@ -1767,12 +1774,11 @@ async def stream_job(job_id: str, request: Request, _: str = Depends(_require_ap
     return EventSourceResponse(event_generator())
 
 
-@app.delete("/api/v1/jobs/{job_id}", summary="Удалить задание")
+@app.delete("/api/v1/jobs/{job_id}", status_code=204, response_model=None, summary="Удалить задание")
 @limiter.limit(DEFAULT_RATE_LIMIT)
 def delete_job(job_id: str, request: Request, _: str = Depends(_require_api_key)):
     if not db_delete_job(job_id):
         raise HTTPException(status_code=404, detail="Задание " + repr(job_id) + " не найдено")
-    return {"message": "Задание " + repr(job_id) + " удалено"}
 
 
 @app.get("/api/v1/history", summary="История")
