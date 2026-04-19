@@ -13,13 +13,13 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 
-from api.security import require_api_key
 from api.schemas import PaginatedResponse
+from api.security import require_api_key
 from shared.database import (
-    get_job as db_get_job,
-    get_history as db_get_history,
     count_history as db_count_history,
     delete_job as db_delete_job,
+    get_history as db_get_history,
+    get_job as db_get_job,
 )
 
 logger = logging.getLogger("api")
