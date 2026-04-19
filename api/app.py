@@ -86,7 +86,7 @@ if CORS_ORIGINS:
         CORSMiddleware,
         allow_origins=CORS_ORIGINS,
         allow_credentials=True,
-        allow_methods=["*"],
+        allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
         allow_headers=["*"],
     )
 
@@ -169,6 +169,9 @@ def check_duplicate(
     subject: str = Query(default=""),
     _key: str = Depends(require_api_key),
 ):
+    from api.services.routing import AGENT_REGISTRY as _reg
+    if agent_type not in _reg:
+        raise HTTPException(status_code=400, detail=f"Неизвестный агент: {agent_type!r}")
     from shared.database import find_duplicate_job
     dup = find_duplicate_job(agent_type, sender_email, subject)
     if dup:
