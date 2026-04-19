@@ -203,4 +203,6 @@ from config import (                         # noqa: E402
     AGENT_JOB_TIMEOUT_SEC,
     AGENT_RATE_LIMIT_BACKOFF,
 )
-from shared.database import init_db          # noqa: E402
+from shared.database import init_db, close_db  # noqa: E402
+from config import PUBLIC_BASE_URL           # noqa: E402, F401
+
