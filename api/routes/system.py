@@ -81,9 +81,11 @@ from fastapi import Request, HTTPException  # noqa: E402
 def _agent_card_base_url(request: Request) -> str:
     """Priority: PUBLIC_BASE_URL env > AGENT_CARD_ALLOWED_HOSTS > HTTP 500."""
     import sys as _sys
-    import api.routes.system as _self
-    pub = getattr(_self, "_PUBLIC_BASE_URL_OVERRIDE", None)
-    if pub is None:
+    # Сначала смотрим api.app.PUBLIC_BASE_URL (тесты патчат его через monkeypatch)
+    _api_app = _sys.modules.get("api.app")
+    pub = getattr(_api_app, "PUBLIC_BASE_URL", None) if _api_app else None
+    # Fallback: os.environ
+    if not pub:
         pub = _os.getenv("PUBLIC_BASE_URL", "")
     if pub:
         return pub.rstrip("/")
