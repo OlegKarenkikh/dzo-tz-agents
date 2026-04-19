@@ -164,8 +164,8 @@ def resolve_agent_endpoint(
 # ── /api/v1/check-duplicate ──────────────────────────────────────────────────
 @app.get("/api/v1/check-duplicate")
 def check_duplicate(
-    agent_type: str = Query(...),
-    sender_email: str = Query(default=""),
+    agent_type: str = Query(alias="agent"),
+    sender_email: str = Query(default="", alias="sender"),
     subject: str = Query(default=""),
     _key: str = Depends(require_api_key),
 ):
