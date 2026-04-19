@@ -230,8 +230,10 @@ def _agent_card_base_url(request: Request) -> str:
     Raises HTTPException 403 if host is not trusted.
     Raises HTTPException 500 if no config at all.
     """
-    if PUBLIC_BASE_URL:
-        return PUBLIC_BASE_URL.rstrip("/")
+    import sys as _sys
+    _pub = getattr(_sys.modules[__name__], "PUBLIC_BASE_URL", None)
+    if _pub:
+        return _pub.rstrip("/")
     allowed_raw = _os.getenv("AGENT_CARD_ALLOWED_HOSTS", "")
     allowed = [h.strip() for h in allowed_raw.split(",") if h.strip()]
     if not allowed:
