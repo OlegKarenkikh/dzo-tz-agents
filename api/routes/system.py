@@ -67,26 +67,66 @@ def list_agents():
     }
 
 
+_AGENT_SKILL_ID: dict[str, str] = {
+    "dzo": "inspect_dzo",
+    "tz": "inspect_tz",
+    "tender": "inspect_tender",
+    "collector": "collect_documents",
+}
+
+import os as _os  # noqa: E402
+from fastapi import Request, HTTPException  # noqa: E402
+
+
+def _agent_card_base_url(request: Request) -> str:
+    """Priority: PUBLIC_BASE_URL env > AGENT_CARD_ALLOWED_HOSTS > HTTP 500."""
+    import sys as _sys
+    import api.routes.system as _self
+    pub = getattr(_self, "_PUBLIC_BASE_URL_OVERRIDE", None)
+    if pub is None:
+        pub = _os.getenv("PUBLIC_BASE_URL", "")
+    if pub:
+        return pub.rstrip("/")
+    allowed_raw = _os.getenv("AGENT_CARD_ALLOWED_HOSTS", "")
+    allowed = [h.strip() for h in allowed_raw.split(",") if h.strip()]
+    if not allowed:
+        raise HTTPException(
+            status_code=500,
+            detail="PUBLIC_BASE_URL not configured and AGENT_CARD_ALLOWED_HOSTS not set",
+        )
+    host = request.headers.get("host", "").split(":")[0]
+    if host not in allowed:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Host {host!r} not in AGENT_CARD_ALLOWED_HOSTS",
+        )
+    return f"https://{host}"
+
+
 @router.get("/.well-known/agent.json")
-def agent_card():
+def agent_card(request: Request):
+    """A2A Agent Card (A2A spec 0.2.1)."""
+    base_url = _agent_card_base_url(request)
+    skills = [
+        {
+            "id": _AGENT_SKILL_ID.get(ag_id, f"inspect_{ag_id}"),
+            "name": ag["name"],
+            "description": ag.get("description", ""),
+            "tags": [ag_id],
+        }
+        for ag_id, ag in AGENT_REGISTRY.items()
+    ]
     return {
-        "name": "AISRM Multi-Agent API",
-        "version": "1.0",
-        "description": "Система инспекции документов на базе LLM-агентов",
-        "url": "/api/v1",
+        "name": "AISRM Document Processing API",
+        "description": "Мульти-агентная система инспекции документов",
+        "version": "1.0.0",
+        "protocolVersion": "0.2.1",
+        "url": base_url,
         "capabilities": {
-            "streaming": False,
+            "streaming": True,
             "pushNotifications": False,
-            "stateTransitionHistory": True,
         },
         "defaultInputModes": ["application/json"],
         "defaultOutputModes": ["application/json"],
-        "skills": [
-            {
-                "id": ag_id,
-                "name": ag["name"],
-                "description": ag.get("description", ""),
-            }
-            for ag_id, ag in AGENT_REGISTRY.items()
-        ],
+        "skills": skills,
     }
