@@ -1225,7 +1225,7 @@ def _process_with_agent(job_id: str, agent_type: str, request: ProcessRequest) -
                         validate_insurance_tender_requirements,
                     )
                     _full_text = " ".join(
-                        att.get("content", "") or ""
+                        att.filename or ""
                         for att in (request.attachments or [])
                     )
                     if not _full_text:
