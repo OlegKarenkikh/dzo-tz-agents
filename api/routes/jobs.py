@@ -46,8 +46,8 @@ def get_history(
     _key: str = Depends(require_api_key),
 ):
     offset = (page - 1) * per_page
-    total = db_count_history(agent_type=agent)
-    items = db_get_history(agent_type=agent, limit=per_page, offset=offset)
+    total = db_count_history(agent=agent)
+    items = db_get_history(agent=agent, limit=per_page, offset=offset)
     pages = max(1, math.ceil(total / per_page))
     return PaginatedResponse(
         total=total, page=page, per_page=per_page, pages=pages,
