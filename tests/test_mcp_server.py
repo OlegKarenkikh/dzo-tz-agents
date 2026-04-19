@@ -307,21 +307,22 @@ class TestA2AAgentCard:
 
     def test_mcp_endpoint_requires_api_key_when_set(self, client):
         """Проверяем что /mcp возвращает 401 при заданном API_KEY без ключа."""
-        with patch("api.app._get_api_key", return_value="secret-key"):
-            resp = client.get("/mcp")
+        with patch("api.security.get_api_key", return_value="secret-key"):
+            resp = client.get("/mcp", follow_redirects=False)
         assert resp.status_code == 401
 
     def test_mcp_401_has_cors_headers(self, client):
         """401 response from _mcp_auth_guard must include CORS headers."""
-        with patch("api.app._get_api_key", return_value="secret-key"):
-            resp = client.get("/mcp", headers={"Origin": "http://localhost:8501"})
+        with patch("api.security.get_api_key", return_value="secret-key"):
+            resp = client.get("/mcp", headers={"Origin": "http://localhost:8501"},
+                              follow_redirects=False)
         assert resp.status_code == 401
         assert "access-control-allow-origin" in resp.headers
         assert "access-control-allow-methods" in resp.headers
 
     def test_mcp_endpoint_accepts_valid_api_key(self, client):
         """Проверяем что /mcp принимает валидный ключ в X-API-Key."""
-        with patch("api.app._get_api_key", return_value="secret-key"):
+        with patch("api.security.get_api_key", return_value="secret-key"):
             resp = client.get("/mcp", headers={"X-API-Key": "secret-key"}, follow_redirects=False)
         # Auth guard пропустил запрос → получаем redirect 307 (не 401).
         # follow_redirects=False исключает RuntimeError от FastMCP (нет lifespan).
