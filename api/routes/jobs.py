@@ -50,7 +50,9 @@ def list_jobs(
     offset = (page - 1) * per_page
     total = db_count_history(agent=agent)
     items = db_get_history(agent=agent, limit=per_page, offset=offset)
-    return {"total": total, "items": items}
+    pages = max(1, math.ceil(total / per_page)) if total > 0 else 1
+    return {"total": total, "items": items, "page": page,
+            "per_page": per_page, "pages": pages, "has_next": page < pages}
 
 @router.get("/history", response_model=PaginatedResponse)
 def get_history(
