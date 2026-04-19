@@ -171,3 +171,27 @@ def check_duplicate(
     if dup:
         return {"duplicate": True, "existing_job_id": dup["job_id"], "job": dup}
     return {"duplicate": False, "existing_job_id": None, "job": None}
+
+
+# ── Backward-compat re-exports (тесты импортируют из api.app) ────────────────
+# После рефакторинга TD-01 функции переехали в api/services/.
+from api.services.decision import (          # noqa: E402
+    apply_email_artifact as _apply_email_artifact,
+    attachment_meta as _attachment_meta,
+    has_tz_agent_analysis_observation as _has_tz_agent_analysis_observation,
+    is_result_usable_for_agent as _is_result_usable_for_agent,
+    is_token_limit_error_text as _is_token_limit_error_text,
+    looks_like_tz_content as _looks_like_tz_content,
+    normalize_decision as _normalize_decision,
+    KNOWN_DECISIONS as _KNOWN_DECISIONS,
+    DECISION_SYNONYMS as _DECISION_SYNONYMS,
+    TECHNICAL_STATUSES as _TECHNICAL_STATUSES,
+)
+from api.services.processing import (        # noqa: E402
+    process_with_agent as _process_with_agent,
+    format_created_at as _format_created_at,
+)
+from api.services.routing import (           # noqa: E402
+    detect_agent_type as _resolve_agent,
+    detect_agent_type as _fallback_agent_id,
+)
