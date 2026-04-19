@@ -60,7 +60,7 @@ async def upload_file(
     file: UploadFile = File(...),
     sender_email: str = Form(default=""),
     subject: str = Form(default=""),
-    agent_type: str | None = Form(default=None),
+    agent_type: str | None = Form(default=None, alias='agent'),
     force: bool = Form(default=False),
     background_tasks: BackgroundTasks = BackgroundTasks(),
     _key: str = Depends(require_api_key),
