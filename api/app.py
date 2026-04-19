@@ -138,7 +138,8 @@ app.include_router(metrics_router)
 # ── /status — последние запуски агентов ───────────────────────────────────────
 @app.get("/status")
 def get_status(n: int = Query(default=10, ge=1, le=200)):
-    return {"run_log": _run_log[-n:]}
+    recent = _run_log[-n:]
+    return {"runs": len(recent), "last_runs": recent, "run_log": recent}
 
 
 # ── /api/v1/resolve-agent — только определить агента ────────────────────────
@@ -152,9 +153,11 @@ def resolve_agent_endpoint(
     agent_type = detect_agent_type(request)
     agent_info = AGENT_REGISTRY.get(agent_type, {})
     return {
+        "agent": agent_type,
         "agent_type": agent_type,
         "agent_name": agent_info.get("name"),
         "confidence": "keyword_match",
+        "available_agents": list(AGENT_REGISTRY.keys()),
     }
 
 
