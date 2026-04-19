@@ -38,6 +38,7 @@ def health_check():
         "status": "ok" if db_ok else "degraded",
         "timestamp": datetime.now(UTC).isoformat(),
         "uptime_seconds": uptime_sec,
+        "uptime_sec": uptime_sec,          # backward compat
         "db": "ok" if db_ok else "error",
         "db_error": db_error,
         "jobs_count": jobs_count,
@@ -47,6 +48,7 @@ def health_check():
         "python": sys.version.split()[0],
         "host": socket.gethostname(),
         "platform": platform.system(),
+        "agent_mode": LLM_BACKEND,          # backward compat
     }
 
 
