@@ -103,9 +103,8 @@ if RATE_LIMIT:
 _mcp_available = False
 if ENABLE_MCP:
     try:
-        from shared.mcp_server import create_mcp_app
-        mcp_app = create_mcp_app()
-        app.mount("/mcp", mcp_app)
+        from shared.mcp_server import mcp as _mcp_server
+        app.mount("/mcp", _mcp_server.streamable_http_app())
         _mcp_available = True
         logger.info("MCP endpoint подключён на /mcp")
     except Exception as _e:
