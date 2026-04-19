@@ -195,11 +195,11 @@ def generate_corrected_tz(
             else:
                 sections_html += f"<p>{html_escape(sec.content)}</p>"
 
-        for sec in added_secs:
+        for added_sec in added_secs:
             sections_html += (
-                f"<h2><span style='background:#FFFF00;color:#CC0000'>[ДОБАВЛЕНО] {html_escape(sec.name)}</span></h2>"
+                f"<h2><span style='background:#FFFF00;color:#CC0000'>[ДОБАВЛЕНО] {html_escape(added_sec.name)}</span></h2>"
                 f"<p><span style='background:#FFFF00;color:#CC0000'>"
-                f"{html_escape(sec.content or '[Заполните раздел]')}</span></p>"
+                f"{html_escape(added_sec.content or '[Заполните раздел]')}</span></p>"
             )
 
         html = (
