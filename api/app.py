@@ -209,3 +209,66 @@ from config import (                         # noqa: E402
 from shared.database import init_db, close_db  # noqa: E402
 from config import PUBLIC_BASE_URL           # noqa: E402, F401
 
+import os as _os  # noqa: E402
+
+# ── Backward-compat alias for tests ──────────────────────────────────────────
+from api.security import get_api_key as _get_api_key  # noqa: E402, F401
+
+# ── A2A skill-id mapping (agent_id → MCP tool name) ─────────────────────────
+_AGENT_SKILL_ID: dict[str, str] = {
+    "dzo": "inspect_dzo",
+    "tz": "inspect_tz",
+    "tender": "inspect_tender",
+    "collector": "collect_documents",
+}
+
+
+def _agent_card_base_url(request: Request) -> str:
+    """
+    Returns the base URL for the agent card.
+    Priority: PUBLIC_BASE_URL > AGENT_CARD_ALLOWED_HOSTS host-check > 500.
+    Raises HTTPException 403 if host is not trusted.
+    Raises HTTPException 500 if no config at all.
+    """
+    if PUBLIC_BASE_URL:
+        return PUBLIC_BASE_URL.rstrip("/")
+    allowed_raw = _os.getenv("AGENT_CARD_ALLOWED_HOSTS", "")
+    allowed = [h.strip() for h in allowed_raw.split(",") if h.strip()]
+    if not allowed:
+        raise HTTPException(status_code=500,
+            detail="PUBLIC_BASE_URL not configured and AGENT_CARD_ALLOWED_HOSTS not set")
+    host = request.headers.get("host", "").split(":")[0]
+    if host not in allowed:
+        raise HTTPException(status_code=403,
+            detail=f"Host {host!r} not in AGENT_CARD_ALLOWED_HOSTS")
+    return f"https://{host}"
+
+
+@app.get("/.well-known/agent.json", include_in_schema=False)
+def agent_card(request: Request):
+    """A2A Agent Card — describes this agent to other agents."""
+    base_url = _agent_card_base_url(request)
+    skills = []
+    for agent_id, info in AGENT_REGISTRY.items():
+        skill_id = _AGENT_SKILL_ID.get(agent_id, agent_id)
+        skills.append({
+            "id": skill_id,
+            "name": info.get("name", agent_id),
+            "description": info.get("description", ""),
+            "tags": [agent_id],
+        })
+    return {
+        "name": "AISRM Document Processing API",
+        "description": "Мульти-агентная система инспекции документов",
+        "version": "1.0.0",
+        "protocolVersion": "0.2.1",
+        "url": base_url,
+        "capabilities": {
+            "streaming": True,
+            "pushNotifications": False,
+        },
+        "skills": skills,
+        "defaultInputModes": ["application/json"],
+        "defaultOutputModes": ["application/json"],
+    }
+
