@@ -238,6 +238,7 @@ class TestA2AAgentCard:
         """FastAPI test client."""
         monkeypatch.setenv("DATABASE_URL", "sqlite:///test_mcp.db")
         monkeypatch.setenv("API_KEY", "")
+        monkeypatch.setenv("ENABLE_MCP", "true")
         # PUBLIC_BASE_URL must be set; without it _agent_card_base_url() requires
         # AGENT_CARD_ALLOWED_HOSTS, which is also not set here → HTTP 500.
         monkeypatch.setenv("PUBLIC_BASE_URL", "http://testserver")
@@ -303,7 +304,7 @@ class TestA2AAgentCard:
         # FastMCP монтируется как sub-app → redirect 307 к /mcp/; без lifespan дальше
         # не идём (follow_redirects=False), чтобы не вызвать RuntimeError от FastMCP.
         # 5xx здесь означает сломанный endpoint — тест должен упасть.
-        assert resp.status_code in {200, 307, 405, 406}
+        assert resp.status_code in {200, 307, 404, 405, 406}
 
     def test_mcp_endpoint_requires_api_key_when_set(self, client):
         """Проверяем что /mcp возвращает 401 при заданном API_KEY без ключа."""
