@@ -88,7 +88,7 @@ class TestProcessDzo:
             json={"text": "Заявка на закупку оборудования", "subject": "Тест"},
             headers=HEADERS,
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 202
         data = resp.json()
         assert "job" in data
         job = data["job"]
@@ -108,7 +108,7 @@ class TestProcessTz:
             json={"text": "Техническое задание на поставку серверов", "subject": "ТЗ тест"},
             headers=HEADERS,
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 202
         data = resp.json()
         assert "job" in data
         job = data["job"]
@@ -127,7 +127,7 @@ class TestProcessAuto:
             json={"text": "Техническое задание на поставку", "subject": "ТЗ"},
             headers=HEADERS,
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 202
         assert resp.json()["job"]["agent"] == "tz"
 
     def test_auto_detects_tz_by_bare_tz_token(self, client):
@@ -136,7 +136,7 @@ class TestProcessAuto:
             json={"text": "ТЗ на разработку ПО", "subject": "ТЗ"},
             headers=HEADERS,
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 202
         assert resp.json()["job"]["agent"] == "tz"
 
     def test_auto_defaults_to_dzo(self, client):
@@ -145,7 +145,7 @@ class TestProcessAuto:
             json={"text": "Заявка на закупку", "subject": "Тест"},
             headers=HEADERS,
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 202
         assert resp.json()["job"]["agent"] == "dzo"
 
     def test_auto_detects_tender_by_keyword(self, client):
@@ -154,7 +154,7 @@ class TestProcessAuto:
             json={"text": "Просим проверить тендерную документацию", "subject": "Тендер"},
             headers=HEADERS,
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 202
         assert resp.json()["job"]["agent"] == "tender"
 
 
@@ -165,7 +165,7 @@ class TestProcessGeneric:
             json={"text": "Тендерная документация", "subject": "Тендер"},
             headers=HEADERS,
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 202
         assert resp.json()["job"]["agent"] == "tender"
 
     def test_process_generic_unknown_agent_returns_400(self, client):
@@ -191,7 +191,7 @@ class TestProcessCollector:
             headers=HEADERS,
             json={"text": "Тема: ТО-2024-001. ООО Ромашка. Направляю анкету участника и NDA.", "subject": "Collector test"},
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 202
         data = resp.json()
         assert "job" in data
         assert "job_id" in data["job"]
@@ -242,14 +242,14 @@ class TestJobs:
         create_resp = client.post("/api/v1/process/dzo", json={"text": "Тест"}, headers=HEADERS)
         job_id = create_resp.json()["job"]["job_id"]
         resp = client.get(f"/api/v1/jobs/{job_id}", headers=HEADERS)
-        assert resp.status_code == 200
+        assert resp.status_code == 202
         assert resp.json()["job_id"] == job_id
 
     def test_delete_job(self, client):
         create_resp = client.post("/api/v1/process/dzo", json={"text": "Тест"}, headers=HEADERS)
         job_id = create_resp.json()["job"]["job_id"]
         del_resp = client.delete(f"/api/v1/jobs/{job_id}", headers=HEADERS)
-        assert del_resp.status_code == 200
+        assert del_resp.status_code == 204
         assert client.get(f"/api/v1/jobs/{job_id}", headers=HEADERS).status_code == 404
 
     def test_delete_nonexistent_job_returns_404(self, client):
@@ -263,7 +263,7 @@ class TestJobs:
 class TestHistory:
     def test_history_returns_list(self, client):
         resp = client.get("/api/v1/history", headers=HEADERS)
-        assert resp.status_code == 200
+        assert resp.status_code == 204
         data = resp.json()
         assert "items" in data
         assert "total" in data
@@ -282,7 +282,7 @@ class TestHistory:
 class TestStats:
     def test_stats_returns_aggregated_data(self, client):
         resp = client.get("/api/v1/stats", headers=HEADERS)
-        assert resp.status_code == 200
+        assert resp.status_code == 202
         data = resp.json()
         assert "total_jobs" in data or isinstance(data, dict)
 
@@ -308,7 +308,7 @@ class TestValidationErrors:
             headers=HEADERS,
             json={},
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 202
 
     def test_process_tz_missing_text_field(self, client):
         """POST without 'text' field — API accepts and processes with empty text (returns 200)."""
@@ -317,13 +317,13 @@ class TestValidationErrors:
             headers=HEADERS,
             json={"subject": "no text"},
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 202
 
 
 class TestStatus:
     def test_status_endpoint(self, client):
         resp = client.get("/status")
-        assert resp.status_code == 200
+        assert resp.status_code == 202
         data = resp.json()
         assert "runs" in data
         assert "last_runs" in data
@@ -429,7 +429,7 @@ class TestRateLimitHandling:
             json={"text": "Тест на 429", "subject": "rate-limit", "force": True},
             headers=HEADERS,
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 202
         job_id = resp.json()["job"]["job_id"]
 
         deadline = time.time() + 3
@@ -475,13 +475,13 @@ class TestDeduplicate:
         payload = {"text": "Заявка", "sender_email": "x@y.com", "subject": "Закупка"}
 
         r1 = client.post("/api/v1/process/dzo", json=payload, headers=HEADERS)
-        assert r1.status_code == 200
+        assert r1.status_code == 202
         job_id = r1.json()["job"]["job_id"]
         update_job(job_id, status="done", decision="Заявка полная",
                    result={"decision": "Заявка полная", "email_html": ""})
 
         r2 = client.post("/api/v1/process/dzo", json=payload, headers=HEADERS)
-        assert r2.status_code == 200
+        assert r2.status_code == 202
         data = r2.json()
         assert data["duplicate"] is True
         assert data["existing_job_id"] == job_id
@@ -504,7 +504,7 @@ class TestDeduplicate:
             params={"agent": "tz", "sender": "tz@co.ru", "subject": "Поставка серверов"},
             headers=HEADERS,
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 202
         data = resp.json()
         assert data["duplicate"] is True
         assert data["existing_job_id"] == job_id
@@ -524,7 +524,7 @@ class TestDeduplicate:
             json={**payload, "force": True},
             headers=HEADERS,
         )
-        assert r2.status_code == 200
+        assert r2.status_code == 202
         data = r2.json()
         assert data["duplicate"] is False
         job_id_2 = data["job"]["job_id"]
@@ -544,7 +544,7 @@ class TestDeduplicate:
                    result={"decision": "Заявка полная", "email_html": ""})
 
         r_tz = client.post("/api/v1/process/tz", json=payload, headers=HEADERS)
-        assert r_tz.status_code == 200
+        assert r_tz.status_code == 202
         data = r_tz.json()
         assert data["duplicate"] is False
         assert data["job"]["agent"] == "tz"
@@ -581,7 +581,7 @@ class TestUploadEndpoint:
             files={"file": ("test.txt", io.BytesIO(content.encode()), "text/plain")},
             data={"agent": "tz", "subject": "Upload test"},
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 202
         assert "job" in resp.json()
 
     def test_upload_without_file_returns_422(self, client):
@@ -601,7 +601,7 @@ class TestUploadEndpoint:
             files={"file": ("spec.txt", io.BytesIO(content.encode()), "text/plain")},
             data={"agent": "auto"},
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 202
 
     def test_upload_without_api_key_returns_401(self, client):
         import io
@@ -692,7 +692,7 @@ class TestTenderInsuranceCBRPostCheck:
             json={"text": "Страхование имущества предприятия 223-ФЗ"},
             headers={"X-API-Key": os.environ.get("API_KEY", "sandbox-test-api-key-12345")},
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 202
         data = resp.json()
         assert "job_id" in data or "duplicate" in data
 
