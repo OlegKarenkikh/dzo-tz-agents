@@ -1,7 +1,5 @@
 """
 Системные эндпоинты: /health, /agents, /.well-known/agent.json.
-
-Перенесено из api/app.py (TD-01).
 """
 from __future__ import annotations
 
@@ -14,6 +12,8 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter
 
+from api.services.routing import AGENT_REGISTRY
+
 logger = logging.getLogger("api")
 
 router = APIRouter(tags=["system"])
@@ -23,7 +23,7 @@ _start_time = time.time()
 
 @router.get("/health")
 def health_check():
-    from config import MODEL_NAME, LLM_BACKEND
+    from config import LLM_BACKEND, MODEL_NAME
     from shared.database import count_history
     try:
         jobs_count = count_history()
@@ -52,7 +52,6 @@ def health_check():
 
 @router.get("/agents")
 def list_agents():
-    from api.services.routing import AGENT_REGISTRY
     return {
         "agents": [
             {
@@ -81,7 +80,11 @@ def agent_card():
         "defaultInputModes": ["application/json"],
         "defaultOutputModes": ["application/json"],
         "skills": [
-            {"id": ag_id, "name": ag["name"], "description": ag.get("description", "")}
+            {
+                "id": ag_id,
+                "name": ag["name"],
+                "description": ag.get("description", ""),
+            }
             for ag_id, ag in AGENT_REGISTRY.items()
         ],
     }
