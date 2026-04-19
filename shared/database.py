@@ -1,9 +1,7 @@
-✅ psycopg2 убран (или только в комментарии)
-✅ psycopg_pool есть
-✅ dict_row используется
-✅ pool.connection() есть
-✅ close() есть
-н — хранит в памяти (in-memory dict).
+"""
+PostgreSQL хранилище для истории обработок.
+Использует psycopg (v3) с ConnectionPool (thread-safe).
+Fallback: если DATABASE_URL не задан — хранит в памяти (in-memory dict).
 """
 import json
 import logging
@@ -66,29 +64,21 @@ def _pg_available() -> bool:
 
 
 def _get_pool():
-    """RC-01: double-checked locking — гарантирует единственный пул при конкурентном старте.
-    psycopg v3: используем psycopg_pool.ConnectionPool (thread-safe, min_size/max_size).
-    """
+    """RC-01: double-checked locking — гарантирует единственный пул при конкурентном старте."""
     global _pool
     if _pool is None:               # fast-path без блокировки
         with _pool_lock:
             if _pool is None:       # повторная проверка под замком
                 from psycopg_pool import ConnectionPool
-                _pool = ConnectionPool(
-                    DATABASE_URL,
-                    min_size=2,
-                    max_size=10,
-                    open=True,
-                )
+                _pool = ConnectionPool(DATABASE_URL, min_size=2, max_size=10, open=True)
                 logger.info("Пул psycopg(v3)-соединений инициализирован (min=2, max=10).")
     return _pool
 
 
 @contextmanager
 def _get_conn():
-    """psycopg v3: pool.connection() — context manager возвращает conn в пул автоматически."""
-    pool = _get_pool()
-    with pool.connection() as conn:
+    """psycopg v3: pool.connection() — возвращает conn в пул автоматически."""
+    with _get_pool().connection() as conn:
         yield conn
 
 
@@ -98,7 +88,7 @@ def close_db():
     if _pool is not None:
         try:
             _pool.close()
-            logger.info("Пул psycopg(v3)-соединений PostgreSQL закрыт.")
+            logger.info("Пул psycopg(v3) PostgreSQL закрыт.")
         except Exception as e:
             logger.error("Ошибка при закрытии пула: %s", e)
         finally:
@@ -154,7 +144,7 @@ def find_duplicate_job(agent: str, sender: str, subject: str) -> dict | None:
         return None
     if _pg_available():
         try:
-            # psycopg2.extras заменён на psycopg.rows.dict_row
+            from psycopg.rows import dict_row
             with _get_conn() as conn:
                 cur = conn.cursor(row_factory=dict_row)
                 cur.execute("""
@@ -265,7 +255,7 @@ def update_job(
 def get_job(job_id: str) -> dict | None:
     if _pg_available():
         try:
-            # psycopg2.extras заменён на psycopg.rows.dict_row
+            from psycopg.rows import dict_row
             with _get_conn() as conn:
                 cur = conn.cursor(row_factory=dict_row)
                 cur.execute("SELECT * FROM jobs WHERE job_id = %s", (job_id,))
@@ -292,7 +282,7 @@ def get_history(
 ) -> list[dict]:
     if _pg_available():
         try:
-            # psycopg2.extras заменён на psycopg.rows.dict_row
+            from psycopg.rows import dict_row
             with _get_conn() as conn:
                 cur = conn.cursor(row_factory=dict_row)
                 filters: list[str] = []
@@ -390,7 +380,7 @@ def count_history(
 def get_stats() -> dict[str, int]:
     if _pg_available():
         try:
-            # psycopg2.extras заменён на psycopg.rows.dict_row
+            from psycopg.rows import dict_row
             with _get_conn() as conn:
                 cur = conn.cursor(row_factory=dict_row)
                 cur.execute("""
