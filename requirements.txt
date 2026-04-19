@@ -1,5 +1,6 @@
 # LLM / Langchain (langchain pulls langchain-core, langgraph, etc.)
 langchain>=0.2.0
+langsmith>=0.7.0  # pin: GHSA-rr7j-v2q5-chgv fix
 langchain-openai>=0.1.0
 langgraph>=0.2
 openai>=1.30.0
@@ -23,6 +24,7 @@ schedule>=1.2.0
 
 # API
 fastapi>=0.111.0
+python-multipart>=0.0.20  # pin: CVE-2026-40347 fix
 uvicorn[standard]>=0.30.0
 slowapi>=0.1.9
 pydantic>=2.7.0
