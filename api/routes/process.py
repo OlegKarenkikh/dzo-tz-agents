@@ -12,8 +12,8 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPExcepti
 
 from api.schemas import AttachmentData, DuplicateResponse, ProcessRequest
 from api.security import require_api_key
-from api.services.routing import detect_agent_type, AGENT_REGISTRY
 from api.services.processing import check_and_process
+from api.services.routing import AGENT_REGISTRY, detect_agent_type
 
 logger = logging.getLogger("api")
 
