@@ -82,8 +82,6 @@ def agent_card():
         "defaultOutputModes": ["application/json"],
         "skills": [
             {"id": ag_id, "name": ag["name"], "description": ag.get("description", "")}
-            for ag_id, ag in (
-                __import__("api.services.routing", fromlist=["AGENT_REGISTRY"]).AGENT_REGISTRY.items()
-            )
+            for ag_id, ag in AGENT_REGISTRY.items()
         ],
     }
