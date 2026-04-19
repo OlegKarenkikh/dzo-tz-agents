@@ -29,14 +29,28 @@ def get_job(job_id: str, _key: str = Depends(require_api_key)):
     return job
 
 
-@router.delete("/jobs/{job_id}")
+@router.delete("/jobs/{job_id}", status_code=204)
 def delete_job(job_id: str, _key: str = Depends(require_api_key)):
     job = db_get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Задача не найдена")
     db_delete_job(job_id)
-    return {"deleted": True, "job_id": job_id}
+    return None
 
+
+
+
+@router.get("/jobs")
+def list_jobs(
+    agent: str | None = None,
+    page: int = Query(1, ge=1),
+    per_page: int = Query(20, ge=1, le=100),
+    _key: str = Depends(require_api_key),
+):
+    offset = (page - 1) * per_page
+    total = db_count_history(agent=agent)
+    items = db_get_history(agent=agent, limit=per_page, offset=offset)
+    return {"total": total, "items": items}
 
 @router.get("/history", response_model=PaginatedResponse)
 def get_history(
@@ -62,7 +76,7 @@ def get_stats(_key: str = Depends(require_api_key)):
 
 
 @router.get("/jobs/{job_id}/stream")
-async def stream_job(job_id: str):
+async def stream_job(job_id: str, _key: str = Depends(require_api_key)):
     """SSE endpoint для отслеживания прогресса задачи в реальном времени."""
 
     async def _event_gen():
