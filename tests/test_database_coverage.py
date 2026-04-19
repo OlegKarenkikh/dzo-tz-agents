@@ -400,7 +400,7 @@ class TestCloseDb:
         original = db._pool
         db._pool = mock_pool
         db.close_db()
-        mock_pool.closeall.assert_called_once()
+        mock_pool.close.assert_called_once()
         assert db._pool is None
         db._pool = original
 

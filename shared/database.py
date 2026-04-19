@@ -1,6 +1,6 @@
 """
 PostgreSQL хранилище для истории обработок.
-Использует psycopg2 с ThreadedConnectionPool.
+Использует psycopg (v3) с ConnectionPool (thread-safe).
 Fallback: если DATABASE_URL не задан — хранит в памяти (in-memory dict).
 """
 import json
@@ -69,27 +69,17 @@ def _get_pool():
     if _pool is None:               # fast-path без блокировки
         with _pool_lock:
             if _pool is None:       # повторная проверка под замком
-                import psycopg2.pool
-                _pool = psycopg2.pool.ThreadedConnectionPool(2, 10, DATABASE_URL)
-                logger.info("Пул psycopg2-соединений инициализирован (min=2, max=10).")
+                from psycopg_pool import ConnectionPool
+                _pool = ConnectionPool(DATABASE_URL, min_size=2, max_size=10, open=True)
+                logger.info("Пул psycopg(v3)-соединений инициализирован (min=2, max=10).")
     return _pool
 
 
 @contextmanager
 def _get_conn():
-    pool = _get_pool()
-    conn = pool.getconn()
-    try:
+    """psycopg v3: pool.connection() — возвращает conn в пул автоматически."""
+    with _get_pool().connection() as conn:
         yield conn
-    finally:
-        try:
-            pool.putconn(conn)
-        except Exception:
-            logger.warning("Не удалось вернуть соединение в пул, закрываем принудительно")
-            try:
-                conn.close()
-            except Exception:
-                pass
 
 
 def close_db():
@@ -97,8 +87,8 @@ def close_db():
     global _pool
     if _pool is not None:
         try:
-            _pool.closeall()
-            logger.info("Пул соединений PostgreSQL закрыт.")
+            _pool.close()
+            logger.info("Пул psycopg(v3) PostgreSQL закрыт.")
         except Exception as e:
             logger.error("Ошибка при закрытии пула: %s", e)
         finally:
@@ -154,9 +144,9 @@ def find_duplicate_job(agent: str, sender: str, subject: str) -> dict | None:
         return None
     if _pg_available():
         try:
-            import psycopg2.extras
+            from psycopg.rows import dict_row
             with _get_conn() as conn:
-                cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+                cur = conn.cursor(row_factory=dict_row)
                 cur.execute("""
                     SELECT * FROM jobs
                     WHERE agent = %s AND sender = %s AND subject = %s AND status = 'done'
@@ -265,9 +255,9 @@ def update_job(
 def get_job(job_id: str) -> dict | None:
     if _pg_available():
         try:
-            import psycopg2.extras
+            from psycopg.rows import dict_row
             with _get_conn() as conn:
-                cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+                cur = conn.cursor(row_factory=dict_row)
                 cur.execute("SELECT * FROM jobs WHERE job_id = %s", (job_id,))
                 row = cur.fetchone()
                 cur.close()
@@ -292,9 +282,9 @@ def get_history(
 ) -> list[dict]:
     if _pg_available():
         try:
-            import psycopg2.extras
+            from psycopg.rows import dict_row
             with _get_conn() as conn:
-                cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+                cur = conn.cursor(row_factory=dict_row)
                 filters: list[str] = []
                 params: list = []
                 if agent:
@@ -390,9 +380,9 @@ def count_history(
 def get_stats() -> dict[str, int]:
     if _pg_available():
         try:
-            import psycopg2.extras
+            from psycopg.rows import dict_row
             with _get_conn() as conn:
-                cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+                cur = conn.cursor(row_factory=dict_row)
                 cur.execute("""
                     SELECT
                         COUNT(*)                                          AS total,
