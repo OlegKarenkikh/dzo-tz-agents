@@ -108,7 +108,7 @@ ignore = ["E501", "B008", "B904"]
 "agent2_tz_inspector/runner.py" = ["I001", "E402"]
 "agent21_tender_inspector/runner.py" = ["I001", "E402"]
 "agent3_collector_inspector/agent.py" = ["I001", "E402"]
-"api/app.py" = ["I001", "E402"]
+"api/app.py" = ["I001", "E402", "F401"]
 "shared/*.py" = ["I001", "F401", "C408", "UP045"]
 
 [tool.ruff.lint.isort]
