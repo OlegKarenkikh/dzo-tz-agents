@@ -212,3 +212,62 @@ from config import PUBLIC_BASE_URL           # noqa: E402, F401
 
 # ── Backward-compat alias for tests ────────────────────────────────────────
 from api.security import get_api_key as _get_api_key  # noqa: E402, F401
+
+import os as _os  # noqa: E402
+
+# ── A2A skill-id mapping ──────────────────────────────────────────────────────
+_AGENT_SKILL_ID: dict[str, str] = {
+    "dzo":       "inspect_dzo",
+    "tz":        "inspect_tz",
+    "tender":    "inspect_tender",
+    "collector": "collect_documents",
+}
+
+
+def _agent_card_base_url(request: Request) -> str:
+    """Priority: PUBLIC_BASE_URL (module attr) > AGENT_CARD_ALLOWED_HOSTS > 500/403."""
+    import sys as _sys
+    # читаем динамически, чтобы monkeypatch в тестах работал
+    _pub = getattr(_sys.modules.get(__name__), "PUBLIC_BASE_URL", None)
+    if not _pub:
+        _pub = _os.getenv("PUBLIC_BASE_URL", "")
+    if _pub:
+        return _pub.rstrip("/")
+    allowed_raw = _os.getenv("AGENT_CARD_ALLOWED_HOSTS", "")
+    allowed = [h.strip() for h in allowed_raw.split(",") if h.strip()]
+    if not allowed:
+        raise HTTPException(
+            status_code=500,
+            detail="PUBLIC_BASE_URL not configured and AGENT_CARD_ALLOWED_HOSTS not set",
+        )
+    host = request.headers.get("host", "").split(":")[0]
+    if host not in allowed:
+        raise HTTPException(status_code=403, detail=f"Host {host!r} not in AGENT_CARD_ALLOWED_HOSTS")
+    return f"https://{host}"
+
+
+@app.get("/.well-known/agent.json", include_in_schema=False)
+def agent_card(request: Request):
+    """A2A Agent Card (https://google.github.io/A2A/)."""
+    base_url = _agent_card_base_url(request)
+    skills = [
+        {
+            "id":          _AGENT_SKILL_ID.get(agent_id, f"inspect_{agent_id}"),
+            "name":        info.get("name", agent_id),
+            "description": info.get("description", ""),
+            "tags":        [agent_id],
+        }
+        for agent_id, info in AGENT_REGISTRY.items()
+    ]
+    return {
+        "name":               "AISRM Document Processing API",
+        "description":        "Мульти-агентная система инспекции документов",
+        "version":            "1.0.0",
+        "protocolVersion":    "0.2.1",
+        "url":                base_url,
+        "capabilities":       {"streaming": True, "pushNotifications": False},
+        "skills":             skills,
+        "defaultInputModes":  ["application/json"],
+        "defaultOutputModes": ["application/json"],
+    }
+
