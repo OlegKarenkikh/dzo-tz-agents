@@ -177,7 +177,7 @@ def check_duplicate(
 
 
 # ── Backward-compat re-exports (тесты импортируют из api.app) ────────────────
-# После рефакторинга TD-01 функции переехали в api/services/.
+# После рефакторинга TD-01 функции переехали в api/services/ и config.
 from api.services.decision import (          # noqa: E402
     apply_email_artifact as _apply_email_artifact,
     attachment_meta as _attachment_meta,
@@ -195,6 +195,12 @@ from api.services.processing import (        # noqa: E402
     format_created_at as _format_created_at,
 )
 from api.services.routing import (           # noqa: E402
-    detect_agent_type as _resolve_agent,
-    detect_agent_type as _fallback_agent_id,
+    resolve_agent as _resolve_agent,
+    _fallback_agent_id,
 )
+from config import (                         # noqa: E402
+    AGENT_MAX_RETRIES,
+    AGENT_JOB_TIMEOUT_SEC,
+    AGENT_RATE_LIMIT_BACKOFF,
+)
+from shared.database import init_db          # noqa: E402
