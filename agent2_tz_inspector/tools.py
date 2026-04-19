@@ -181,8 +181,8 @@ def generate_corrected_tz(
         for sec in orig_sections:
             sec_mods = [m for m in mods_list if m.section == sec.name]
             sections_html += f"<h2>{html_escape(sec.name)}</h2>"
-            if mods:
-                for m in mods:
+            if sec_mods:
+                for m in sec_mods:
                     old, new = html_escape(m.old_text), html_escape(m.new_text)
                     sections_html += (
                         f"<p><span style='background:#FFD7D7;text-decoration:line-through'>[БЫЛО: {old}]</span>"
